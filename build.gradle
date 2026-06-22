@@ -1,7 +1,7 @@
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '4.1.0'
-	id 'io.spring.dependency-management' version '1.1.7'
+	id 'org.springframework.boot' version '3.4.0'
+	id 'io.spring.dependency-management' version '1.1.6'
 }
 
 group = 'com.example'
@@ -15,23 +15,46 @@ java {
 
 repositories {
 	mavenCentral()
+	maven { url 'https://repo.spring.io/milestone' }
+}
+
+ext {
+	set('springAiVersion', "1.0.0-M1")
+	// 🚀 Spring AI 1.0.0-M1과 완벽히 호환되는 Spring Cloud 버전 명시
+	set('springCloudVersion', "2024.0.0-M1")
 }
 
 dependencies {
+	// Web & Core
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+
+	// Data & Storage
 	implementation 'org.springframework.boot:spring-boot-starter-data-jdbc'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
-	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
-	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// AI 연동 (Anthropic Claude)
+	implementation 'org.springframework.ai:spring-ai-anthropic-spring-boot-starter'
+
+	// Lombok
+	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
-	testImplementation 'org.springframework.boot:spring-boot-starter-data-jdbc-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-data-redis-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+
+	// Test
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testCompileOnly 'org.projectlombok:lombok'
-	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+dependencyManagement {
+	imports {
+		// Spring AI BOM
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+		// 🚀 에러를 유발하는 내부 Cloud Function 라이브러리 버전을 강제로 맞추기 위한 BOM 추가
+		mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+	}
 }
 
 tasks.named('test') {
