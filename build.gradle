@@ -20,28 +20,18 @@ repositories {
 
 ext {
 	set('springAiVersion', "1.0.0-M1")
-	// 🚀 Spring AI 1.0.0-M1과 완벽히 호환되는 Spring Cloud 버전 명시
 	set('springCloudVersion', "2024.0.0-M1")
 }
 
 dependencies {
-	// Web & Core
 	implementation 'org.springframework.boot:spring-boot-starter-web'
-
-	// Data & Storage
 	implementation 'org.springframework.boot:spring-boot-starter-data-jdbc'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	runtimeOnly 'com.mysql:mysql-connector-j'
-
-	// AI 연동 (Anthropic Claude)
 	implementation 'org.springframework.ai:spring-ai-anthropic-spring-boot-starter'
-
-	// Lombok
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
-
-	// Test
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testCompileOnly 'org.projectlombok:lombok'
 	testAnnotationProcessor 'org.projectlombok:lombok'
@@ -50,9 +40,7 @@ dependencies {
 
 dependencyManagement {
 	imports {
-		// Spring AI BOM
 		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
-		// 🚀 에러를 유발하는 내부 Cloud Function 라이브러리 버전을 강제로 맞추기 위한 BOM 추가
 		mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
 	}
 }
