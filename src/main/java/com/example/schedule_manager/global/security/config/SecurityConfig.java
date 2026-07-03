@@ -16,7 +16,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
-@EnableWebSecurity // Spring Security 활성화
+ @EnableWebSecurity // Spring Security 비활성화 (요청 시 주석 처리)
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -32,17 +32,18 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                // 요청별 접근 권한 설정
+                // 요청별 접근 권한 설정 (보안 비활성화: 전체 허용)
                 .authorizeHttpRequests(auth -> auth
+                        .anyRequest().permitAll()
                         // 로그인·로그아웃·회원가입은 토큰 없이 접근 허용
-                        .requestMatchers("/api/auth/**", "/api/users").permitAll()
+                        // .requestMatchers("/api/auth/**", "/api/users").permitAll()
                         // 그 외 모든 요청은 유효한 토큰 필요
-                        .anyRequest().authenticated()
+                        // .anyRequest().authenticated()
                 )
 
                 // Spring Security 기본 로그인 필터 앞에 JWT 필터를 끼워 넣는다
                 // → 요청이 들어오면 JWT 필터가 먼저 실행돼 토큰을 검증하고 SecurityContext 에 인증 정보를 저장
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 

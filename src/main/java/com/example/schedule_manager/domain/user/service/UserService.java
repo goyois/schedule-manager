@@ -3,6 +3,7 @@ package com.example.schedule_manager.domain.user.service;
 import com.example.schedule_manager.domain.user.dto.UserRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserResponseDto;
 import com.example.schedule_manager.domain.user.entity.User;
+import com.example.schedule_manager.domain.user.entity.UserType;
 import com.example.schedule_manager.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -23,7 +24,7 @@ public class UserService {
                 .username(request.username())
                 .password(passwordEncoder.encode(request.password()))
                 .email(request.email())
-                .userType(request.userType())
+                .userType(request.userType() != null ? request.userType() : UserType.USER)
                 .build();
         return UserResponseDto.from(userRepository.save(user));
     }
