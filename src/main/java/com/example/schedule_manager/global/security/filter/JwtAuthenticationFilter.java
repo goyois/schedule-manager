@@ -20,8 +20,7 @@ import java.io.IOException;
 
 // 모든 HTTP 요청마다 한 번씩 실행되는 JWT 인증 필터
 // 컨트롤러에 도달하기 전에 토큰을 검사해서 유저를 SecurityContext 에 등록한다
-// 보안 비활성화: SecurityConfig 에서 필터 체인에 등록하지 않으므로, Spring Boot 가
-// 자동으로 서블릿 필터로 등록하지 않도록 @Component 도 함께 주석 처리한다
+// SecurityConfig 의 필터 체인(addFilterBefore)에 등록되어 실제로 인증을 수행한다
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
