@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>회원가입 · Schedule Manager</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="logo-mark">S</div>
+        <div class="logo-text">Schedule Manager</div>
+      </div>
+      <h1>계정 만들기</h1>
+      <p class="subtitle">일정을 관리하려면 계정이 필요해요.</p>
+
+      <div id="alert" class="form-alert"></div>
+
+      <form id="signup-form">
+        <div class="field">
+          <label for="username">이름</label>
+          <input type="text" id="username" name="username" placeholder="홍길동" required />
+        </div>
+        <div class="field">
+          <label for="email">이메일</label>
+          <input type="email" id="email" name="email" placeholder="you@example.com" required />
+        </div>
+        <div class="field">
+          <label for="password">비밀번호</label>
+          <input type="password" id="password" name="password" placeholder="비밀번호" required />
+        </div>
+        <div class="field">
+          <label for="userType">유형</label>
+          <select id="userType" name="userType">
+            <option value="USER">일반 사용자</option>
+            <option value="ADMIN">관리자</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">회원가입</button>
+      </form>
+
+      <div class="auth-footer">
+        이미 계정이 있으신가요? <a href="/login">로그인</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/signup.js"></script>
+</body>
+</html>

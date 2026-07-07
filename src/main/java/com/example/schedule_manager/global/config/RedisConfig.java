@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CachingConfigurer;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.interceptor.CacheErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -20,7 +22,14 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 // 아래 CacheManager 빈이 그 애노테이션들이 실제로 사용할 Redis 연동 방식을 정의한다
 @Configuration
 @EnableCaching
-public class RedisConfig {
+public class RedisConfig implements CachingConfigurer {
+
+    // Redis 가 죽어도 @Cacheable/@CacheEvict 가 예외를 던지지 않고 캐시 미스로 취급하도록 하는 핸들러
+    // (CacheFailSafeErrorHandler 참고: 없으면 기본 SimpleCacheErrorHandler 가 예외를 그대로 던져 DB 폴백이 불가능하다)
+    @Override
+    public CacheErrorHandler errorHandler() {
+        return new CacheFailSafeErrorHandler();
+    }
 
     // #v2
     // GenericJackson2JsonRedisSerializer() 기본 생성자는 내부적으로 새 ObjectMapper 를 만드는데,

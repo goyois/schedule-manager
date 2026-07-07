@@ -7,6 +7,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -23,6 +25,7 @@ import java.io.IOException;
 // SecurityConfig 의 필터 체인(addFilterBefore)에 등록되어 실제로 인증을 수행한다
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
@@ -65,7 +68,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     // Redis 에 "blacklist:{token}" 키가 있으면 로그아웃된 토큰 → 인증 거부
+    // Redis 장애 시에도 fail-open(블랙리스트 아님으로 간주)해서, 인증이 필요한 모든 요청이
+    // 이 확인 하나 때문에 통째로 막히지 않게 한다 (로그아웃 직후 재사용 방지보다 가용성을 우선)
     private boolean isBlacklisted(String token) {
-        return Boolean.TRUE.equals(redisTemplate.hasKey("blacklist:" + token));
+        try {
+            return Boolean.TRUE.equals(redisTemplate.hasKey("blacklist:" + token));
+        } catch (DataAccessException e) {
+            log.warn("Redis 블랙리스트 확인 실패, 인증을 계속 진행합니다.", e);
+            return false;
+        }
     }
 }

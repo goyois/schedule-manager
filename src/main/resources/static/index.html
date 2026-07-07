@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>로그인 · Schedule Manager</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="logo-mark">S</div>
+        <div class="logo-text">Schedule Manager</div>
+      </div>
+      <h1>다시 오셨네요</h1>
+      <p class="subtitle">일정을 확인하려면 로그인하세요.</p>
+
+      <div id="alert" class="form-alert"></div>
+
+      <form id="login-form">
+        <div class="field">
+          <label for="email">이메일</label>
+          <input type="email" id="email" name="email" placeholder="you@example.com" required />
+        </div>
+        <div class="field">
+          <label for="password">비밀번호</label>
+          <input type="password" id="password" name="password" placeholder="비밀번호" required />
+        </div>
+        <button type="submit" class="btn btn-primary">로그인</button>
+      </form>
+
+      <div class="auth-footer">
+        계정이 없으신가요? <a href="/signup">회원가입</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/login.js"></script>
+</body>
+</html>

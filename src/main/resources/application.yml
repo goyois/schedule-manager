@@ -1,6 +1,11 @@
 spring:
   profiles:
     default: local
+  data:
+    redis:
+      # 기본 60초 타임아웃이면 Redis 장애 시 요청마다 60초씩 멈춘다 (JwtAuthenticationFilter 의
+      # 블랙리스트 확인, 스케줄 캐시 조회 등). 짧게 잡아 빨리 실패하고 fail-open/DB 폴백으로 넘어가게 한다
+      timeout: 2000ms
 
 management:
   endpoints:

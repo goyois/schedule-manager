@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>대시보드 · Schedule Manager</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="auth-brand">
+        <div class="logo-mark">S</div>
+        <div class="logo-text">Schedule Manager</div>
+      </div>
+
+      <div class="sidebar-section">
+        <h3>카테고리 <span id="category-count"></span></h3>
+        <ul class="category-list" id="category-list">
+          <li class="active" data-category-id="">
+            <span><span class="dot"></span>전체 일정</span>
+          </li>
+        </ul>
+        <form class="add-category-form" id="add-category-form">
+          <input type="text" id="new-category-name" placeholder="새 카테고리" required />
+          <button type="submit" class="btn btn-ghost btn-sm">추가</button>
+        </form>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="user-chip">
+          <div class="avatar" id="user-avatar">?</div>
+          <div class="who">
+            <div class="name" id="user-name">사용자</div>
+            <div class="email" id="user-email">-</div>
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="width: 100%" id="logout-btn">로그아웃</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="view-toolbar">
+        <div class="view-switcher" id="view-switcher">
+          <button type="button" class="view-tab active" data-view="board">보드</button>
+          <button type="button" class="view-tab" data-view="day">일</button>
+          <button type="button" class="view-tab" data-view="week">주</button>
+          <button type="button" class="view-tab" data-view="month">월</button>
+          <button type="button" class="view-tab" data-view="year">년</button>
+        </div>
+        <div class="view-nav" id="view-nav">
+          <button type="button" class="icon-btn" id="view-nav-prev" title="이전">‹</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="view-nav-today">오늘</button>
+          <button type="button" class="icon-btn" id="view-nav-next" title="다음">›</button>
+          <span class="view-range-label" id="view-range-label"></span>
+        </div>
+      </div>
+
+      <div class="main-header">
+        <div>
+          <h1 id="board-title">전체 일정</h1>
+          <div class="today" id="today-label"></div>
+        </div>
+
+        <div class="header-widgets">
+          <div class="month-radar" id="month-radar">
+            <div class="month-radar-face">
+              <svg id="month-radar-svg" viewBox="0 0 247 247" width="247" height="247" role="img" aria-label="현재 뷰 일정 통계 레이더"></svg>
+            </div>
+          </div>
+
+          <div class="today-clock" id="today-clock">
+            <div class="today-clock-face">
+              <svg id="today-clock-svg" viewBox="0 0 160 160" width="180" height="180" role="img" aria-label="오늘 일정 24시간 시계"></svg>
+              <div class="clock-tooltip" id="clock-tooltip"></div>
+            </div>
+            <div class="today-clock-legend" id="today-clock-legend"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-tile">
+          <div class="label">전체 일정</div>
+          <div class="value" id="stat-total">0</div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">대기</div>
+          <div class="value" id="stat-pending">0</div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">진행중</div>
+          <div class="value" id="stat-progress">0</div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">완료</div>
+          <div class="value" id="stat-completed">0</div>
+        </div>
+      </div>
+
+      <div class="board" id="board">
+        <!-- 컬럼은 dashboard.js 가 렌더링합니다 -->
+      </div>
+
+      <div class="calendar-nav" id="calendar-nav">
+        <button type="button" class="icon-btn" id="calendar-nav-prev" title="이전">‹</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="calendar-nav-today">오늘</button>
+        <button type="button" class="icon-btn" id="calendar-nav-next" title="다음">›</button>
+        <span class="view-range-label" id="calendar-range-label"></span>
+      </div>
+
+      <div class="calendar-view" id="calendar-view">
+        <!-- 일/주/월/년 그리드는 dashboard.js 가 렌더링합니다 -->
+      </div>
+    </main>
+  </div>
+
+  <button class="fab" id="open-create-modal" title="새 일정 추가">+</button>
+
+  <div class="modal-overlay" id="schedule-modal-overlay">
+    <div class="modal">
+      <h2 id="modal-title">새 일정</h2>
+      <form id="schedule-form">
+        <input type="hidden" id="schedule-id" />
+
+        <div class="field">
+          <label for="title">제목</label>
+          <input type="text" id="title" placeholder="일정 제목" required />
+        </div>
+
+        <div class="field">
+          <label for="content">내용</label>
+          <textarea id="content" rows="3" placeholder="상세 내용"></textarea>
+        </div>
+
+        <div class="modal-row">
+          <div class="field">
+            <label for="startAt">시작</label>
+            <input type="datetime-local" id="startAt" required />
+          </div>
+          <div class="field">
+            <label for="endAt">종료</label>
+            <input type="datetime-local" id="endAt" required />
+          </div>
+        </div>
+
+        <div class="modal-row">
+          <div class="field">
+            <label for="category-select">카테고리</label>
+            <select id="category-select"></select>
+          </div>
+          <div class="field">
+            <label for="status-select">상태</label>
+            <select id="status-select">
+              <option value="PENDING">대기</option>
+              <option value="IN_PROGRESS">진행중</option>
+              <option value="COMPLETED">완료</option>
+              <option value="CANCELLED">취소</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="user-id-input">작성자 User ID</label>
+          <input type="number" id="user-id-input" placeholder="예: 1" required />
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="cancel-modal-btn">취소</button>
+          <button type="submit" class="btn btn-primary" style="width: auto">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>
