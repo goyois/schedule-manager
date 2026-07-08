@@ -40,6 +40,11 @@ Note: README.md and TASKS.md describe the original task plan (session-based auth
 ## Git workflow
 
 - Commit freely per unit of work; no need to ask before committing.
-- Commit message style follows existing history: `<type>: <description>`, e.g. `feat: add ...`, `chore: ...` — description is often Korean, type prefix in English.
+- As of commit `d933707` ([CHORE-2] CLAUDE.md 추가 (#10)), commit messages follow: `[<CATEGORY>-<n>] <설명> (#<m>)`.
+  - `<CATEGORY>` = uppercased commit type (`FEAT`, `CHORE`, ...), same types as the old `feat:`/`chore:` prefixes.
+  - `<n>` = 1-indexed count of prior commits in that category, computed from `git log --oneline`. Before this scheme, history used bare `feat:`/`chore:` prefixes (6 `feat`, 1 `chore`, 2 with no prefix, excluded from counts) — that history counts toward `<n>`.
+  - `<m>` = 1-indexed count of *all* prior commits total (`git log --oneline | wc -l`), since this repo pushes directly to `main` with no PR flow and has no real PR/issue numbers to reuse.
+  - Recompute both counts from current `git log` before each commit — don't reuse cached numbers from a prior session.
+- Older commits (pre-`d933707`) used `<type>: <description>` (e.g. `feat: add ...`, `chore: ...`) — superseded by the scheme above, kept here only for history context.
 - Always ask for explicit confirmation before `git push` (this repo pushes directly to `main`, no PR flow) — never push proactively.
 - Never amend or force-push without the user explicitly asking.
