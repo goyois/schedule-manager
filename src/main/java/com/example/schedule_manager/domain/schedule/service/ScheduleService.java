@@ -10,30 +10,36 @@ import com.example.schedule_manager.domain.user.entity.User;
 import com.example.schedule_manager.domain.user.entity.UserType;
 import com.example.schedule_manager.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class ScheduleService {
 
     // #v2
-    // getSchedules() 조회 결과를 캐싱하는 캐시 이름. 아래 @Cacheable/@CacheEvict 가 모두 이 이름을 공유해야
-    // 무효화가 실제로 캐싱된 항목에 적용된다
+    // getSchedules() 조회 결과를 캐싱하는 캐시 이름. 아래 @Cacheable 과 evictScheduleCacheForUser() 가 모두
+    // 이 이름을 공유해야 무효화가 실제로 캐싱된 항목에 적용된다
     private static final String SCHEDULE_CACHE = "schedules";
 
     private final ScheduleRepository scheduleRepository;
     private final UserRepository userRepository;
     private final CategoryRepository categoryRepository;
+    private final RedisTemplate<String, Object> redisTemplate;
 
-    // #v2: 새 일정이 생기면 해당 유저의 목록 캐시가 최신 상태가 아니게 된다
-    // getSchedules() 캐시 키가 이제 userId + categoryId 조합이라 특정 키 하나만 골라 지울 수 없으므로 전체 무효화한다
-    @CacheEvict(cacheNames = SCHEDULE_CACHE, allEntries = true)
+    // #v3: 새 일정이 생기면 해당 유저의 목록 캐시가 최신 상태가 아니게 된다
+    // 이전엔 특정 키 하나만 골라 지울 수 없다는 이유로 캐시 전체(allEntries)를 무효화했는데,
+    // 그러면 무관한 다른 유저들의 캐시까지 이 한 번의 쓰기로 전부 날아간다.
+    // create 시점엔 이미 request.userId() 로 대상 유저를 알고 있으므로, 그 유저와 관련된 키만 지운다
     public ScheduleResponseDto createSchedule(ScheduleRequestDto request) {
         User user = userRepository.findById(request.userId()).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
         Category category = categoryRepository.findById(request.categoryId()).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));
@@ -48,7 +54,9 @@ public class ScheduleService {
                 .category(category)
                 .build();
 
-        return ScheduleResponseDto.from(scheduleRepository.save(schedule));
+        ScheduleResponseDto response = ScheduleResponseDto.from(scheduleRepository.save(schedule));
+        evictScheduleCacheForUser(user.getId());
+        return response;
     }
 
     // 요청자 role 에 따라 결과를 제한한다: ADMIN 은 임의의 일정을 조회할 수 있고,
@@ -94,10 +102,10 @@ public class ScheduleService {
                 .toList();
     }
 
-    // #v2: update/delete 는 매개변수로 스케줄 id 만 받기 때문에, 별도 조회 없이는 소유자(userId)를 알 수 없다
-    // 그 소유자만 정확히 골라 무효화하려면 조회가 하나 더 필요해서, 대신 캐시 전체(allEntries)를 무효화한다
-    // (수정/삭제 빈도가 조회보다 훨씬 낮은 걸 고려한 절충)
-    @CacheEvict(cacheNames = SCHEDULE_CACHE, allEntries = true)
+    // #v3: update/delete 는 매개변수로 스케줄 id 만 받기 때문에, 이전엔 소유자(userId)를 알아내려면
+    // 조회가 하나 더 필요하다는 이유로 캐시 전체(allEntries)를 무효화했다.
+    // 그런데 findSchedule(id) 로 이미 스케줄을 로드하는 시점에 schedule.getUser().getId() 를 공짜로 알 수 있으므로,
+    // 추가 조회 없이도 그 유저와 관련된 키만 골라 지울 수 있다
     public ScheduleResponseDto updateSchedule(Long id, ScheduleRequestDto request) {
         Schedule schedule = findSchedule(id);
         Category category = categoryRepository.findById(request.categoryId())
@@ -111,13 +119,41 @@ public class ScheduleService {
                 request.status(),
                 category
         );
+        evictScheduleCacheForUser(schedule.getUser().getId());
         return ScheduleResponseDto.from(schedule);
     }
 
-    // #v2: 위 updateSchedule() 과 같은 이유로 캐시 전체를 무효화한다
-    @CacheEvict(cacheNames = SCHEDULE_CACHE, allEntries = true)
+    // #v3: 위 updateSchedule() 과 같은 이유로 소유자 유저의 캐시만 무효화한다
     public void deleteSchedule(Long id) {
-        scheduleRepository.delete(findSchedule(id));
+        Schedule schedule = findSchedule(id);
+        Long ownerId = schedule.getUser().getId();
+        scheduleRepository.delete(schedule);
+        evictScheduleCacheForUser(ownerId);
+    }
+
+    // #v3: getSchedules() 캐시 키는 "requesterEmail-userId-categoryId" 조합이라 특정 키 하나만 정확히
+    // 골라 지울 순 없지만, userId 세그먼트로 패턴 매칭(Redis KEYS)해서 그 유저와 관련된 키만 지울 수는 있다.
+    // @CacheEvict SpEL 로는 와일드카드 삭제가 안 되므로 RedisTemplate 을 직접 사용한다
+    // (RedisConfig 에 이런 용도로 미리 준비된 redisTemplate 빈을 재사용).
+    //
+    // 알려진 한계: ADMIN 이 userId 없이(전체 조회) 캐싱한 키(예: "email-null-3", "email-null-null")는
+    // 이 패턴에 걸리지 않아 무효화되지 않는다 — 이 캐시엔 TTL 도 없어 그대로 stale 상태로 남는다.
+    // ADMIN 전체조회는 드물게 쓰이는 경로라, 그 대가로 훨씬 흔한 "무관한 유저 캐시까지 통째로 날아가는" 문제를
+    // 없애는 쪽을 택한 절충이다. 완전히 없애려면 캐시 키 구조 자체를 바꿔야 해서 이번 스코프 밖으로 둔다.
+    //
+    // Redis 장애 시에도 update/delete 자체가 500 으로 번지지 않도록 fail-open 한다
+    // (CacheFailSafeErrorHandler 는 @Cacheable/@CacheEvict 애노테이션 경로에만 적용되고, 이 직접 호출엔
+    // 안 걸리므로 여기서 직접 같은 패턴을 적용 — JwtAuthenticationFilter.isBlacklisted() 참고)
+    private void evictScheduleCacheForUser(Long userId) {
+        String pattern = SCHEDULE_CACHE + "::*-" + userId + "-*";
+        try {
+            Set<String> keys = redisTemplate.keys(pattern);
+            if (keys != null && !keys.isEmpty()) {
+                redisTemplate.delete(keys);
+            }
+        } catch (DataAccessException e) {
+            log.warn("일정 캐시 삭제 실패 - userId={}", userId, e);
+        }
     }
 
     private Schedule findSchedule(Long id) {
