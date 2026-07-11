@@ -10,6 +10,7 @@ import com.example.schedule_manager.domain.user.entity.User;
 import com.example.schedule_manager.domain.user.entity.UserType;
 import com.example.schedule_manager.domain.user.repository.UserRepository;
 import com.example.schedule_manager.global.response.ApiResponse;
+import com.example.schedule_manager.global.security.util.JwtUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +22,7 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.cache.CacheManager;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 
@@ -32,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 캐시 적용 전, GET /api/schedules (일정 목록 조회 API)의 baseline 성능을 측정한다.
- * 이미 저장돼 있는 실제 카테고리(work/life/health/growth/admin)를 기준으로
+ * 이미 저장돼 있는 실제 카테고리(업무/일상/운동·건강/자기계발/식단)를 기준으로
  * 조회 성능 차이를 체감할 수 있는 수준의 일정 데이터를 만든 뒤 측정한다.
  * 캐시 적용 후 동일한 방식으로 측정해 두 결과를 비교하기 위한 기준값을 남기는 것이 목적이다.
  */
@@ -43,8 +45,8 @@ class ScheduleServiceTest {
     // ScheduleService 에서 사용하는 캐시 이름과 동일해야 한다
     private static final String SCHEDULE_CACHE_NAME = "schedules";
 
-    // 이미 저장되어 있는 카테고리 이름들 (사전 조건)
-    private static final List<String> CATEGORY_NAMES = List.of("work", "life", "health", "growth", "admin");
+    // 이미 저장되어 있는 카테고리 이름들 (사전 조건) — 로컬 DB(categories 테이블)에 실제로 들어있는 값과 맞춰야 한다
+    private static final List<String> CATEGORY_NAMES = List.of("업무", "일상", "운동/건강", "자기계발", "식단");
 
     private static final int SCHEDULE_COUNT_PER_CATEGORY = 500; // 카테고리별 생성할 일정 건수
     private static final int SCHEDULE_COUNT = SCHEDULE_COUNT_PER_CATEGORY * CATEGORY_NAMES.size(); // 총 조회 대상 건수
@@ -66,6 +68,9 @@ class ScheduleServiceTest {
 
     @Autowired
     private CacheManager cacheManager;
+
+    @Autowired
+    private JwtUtil jwtUtil;
 
     private User testUser;
     private List<Schedule> testSchedules;
@@ -152,7 +157,10 @@ class ScheduleServiceTest {
     }
 
     private void callAndValidate(String url, ParameterizedTypeReference<ApiResponse<List<ScheduleResponseDto>>> responseType) {
-        ResponseEntity<ApiResponse<List<ScheduleResponseDto>>> response = restTemplate.exchange(url, HttpMethod.GET, HttpEntity.EMPTY, responseType);
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Authorization", "Bearer " + jwtUtil.generateToken(testUser.getEmail()));
+        ResponseEntity<ApiResponse<List<ScheduleResponseDto>>> response =
+                restTemplate.exchange(url, HttpMethod.GET, new HttpEntity<>(headers), responseType);
         if (!response.getStatusCode().is2xxSuccessful()) log.error("일정 조회 API 호출 실패: status={}, body={}", response.getStatusCode(), response.getBody());
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(response.getBody()).isNotNull();

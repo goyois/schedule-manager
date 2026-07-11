@@ -80,26 +80,17 @@ public class ScheduleService {
     //
     // role 권한: ADMIN 은 userId 파라미터를 그대로 사용해 임의 유저(또는 전체)의 일정을 조회할 수 있지만,
     // 일반 USER 는 파라미터로 넘어온 userId 를 신뢰하지 않고 본인 id 로 강제해 본인 일정만 돌려받는다
+    // #v4: 이전엔 Schedule 엔티티를 조회한 뒤 스트림에서 ScheduleResponseDto::from 으로 매핑했는데,
+    // user/category 가 LAZY 라 매핑 중 schedule.getUser()/getCategory() 를 호출할 때마다
+    // 영속성 컨텍스트에 없는 프록시는 추가 SELECT 를 유발했다(N+1). ScheduleRepositoryImpl.searchSchedules() 는
+    // QueryDSL projection 으로 user/category 를 join 해 DTO 필드로 바로 뽑아오므로 SQL 1번으로 끝난다
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = SCHEDULE_CACHE, key = "#requesterEmail + '-' + #userId + '-' + #categoryId", unless = "#result.isEmpty()")
     public List<ScheduleResponseDto> getSchedules(String requesterEmail, Long userId, Long categoryId) {
         User requester = findUserByEmail(requesterEmail);
         Long targetUserId = requester.getUserType() == UserType.ADMIN ? userId : requester.getId();
 
-        List<Schedule> schedules;
-        if (targetUserId != null && categoryId != null) {
-            schedules = scheduleRepository.findAllByUserIdAndCategoryId(targetUserId, categoryId);
-        } else if (targetUserId != null) {
-            schedules = scheduleRepository.findAllByUserId(targetUserId);
-        } else if (categoryId != null) {
-            schedules = scheduleRepository.findAllByCategoryId(categoryId);
-        } else {
-            schedules = scheduleRepository.findAll();
-        }
-
-        return schedules.stream()
-                .map(ScheduleResponseDto::from)
-                .toList();
+        return scheduleRepository.searchSchedules(targetUserId, categoryId);
     }
 
     // #v3: update/delete 는 매개변수로 스케줄 id 만 받기 때문에, 이전엔 소유자(userId)를 알아내려면
