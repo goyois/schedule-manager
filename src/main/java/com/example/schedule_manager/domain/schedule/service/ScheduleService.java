@@ -11,7 +11,6 @@ import com.example.schedule_manager.domain.user.entity.UserType;
 import com.example.schedule_manager.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -27,14 +26,15 @@ import java.util.Set;
 public class ScheduleService {
 
     // #v2
-    // getSchedules() 조회 결과를 캐싱하는 캐시 이름. 아래 @Cacheable 과 evictScheduleCacheForUser() 가 모두
-    // 이 이름을 공유해야 무효화가 실제로 캐싱된 항목에 적용된다
-    private static final String SCHEDULE_CACHE = "schedules";
+    // getSchedules() 조회 결과를 캐싱하는 캐시 이름. ScheduleCacheQueryService 의 @Cacheable 과
+    // evictScheduleCacheForUser() 가 모두 이 이름을 공유해야 무효화가 실제로 캐싱된 항목에 적용된다
+    static final String SCHEDULE_CACHE = "schedules";
 
     private final ScheduleRepository scheduleRepository;
     private final UserRepository userRepository;
     private final CategoryRepository categoryRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final ScheduleCacheQueryService scheduleCacheQueryService;
 
     // #v3: 새 일정이 생기면 해당 유저의 목록 캐시가 최신 상태가 아니게 된다
     // 이전엔 특정 키 하나만 골라 지울 수 없다는 이유로 캐시 전체(allEntries)를 무효화했는데,
@@ -73,7 +73,7 @@ public class ScheduleService {
     }
 
     // #v2
-    // (요청자 email + userId + categoryId) 를 키로 조회 결과(List<ScheduleResponseDto>) 를 캐싱한다
+    // (요청자 email + targetUserId + categoryId) 를 키로 조회 결과(List<ScheduleResponseDto>) 를 캐싱한다
     // 첫 호출은 DB 조회 후 결과를 Redis 에 저장하고, 이후 같은 키로 들어오는 호출은 DB 를 거치지 않고
     // Redis 에서 바로 반환한다 (캐시 적용 전/후 성능 비교의 대상이 되는 지점)
     // unless: 조회 결과가 비어 있으면 캐싱하지 않는다 (아직 일정이 없는 유저의 빈 목록이 계속 캐싱되는 것을 방지)
@@ -84,13 +84,16 @@ public class ScheduleService {
     // user/category 가 LAZY 라 매핑 중 schedule.getUser()/getCategory() 를 호출할 때마다
     // 영속성 컨텍스트에 없는 프록시는 추가 SELECT 를 유발했다(N+1). ScheduleRepositoryImpl.searchSchedules() 는
     // QueryDSL projection 으로 user/category 를 join 해 DTO 필드로 바로 뽑아오므로 SQL 1번으로 끝난다
+    // #v5: 캐시 키를 (요청 파라미터 userId 가 아니라) 실제 조회에 쓰이는 targetUserId 로 만들어야
+    // evictScheduleCacheForUser() 의 "*-{userId}-*" 패턴이 이 키에 매치된다. 그런데 targetUserId 는
+    // 이 메서드 안에서 계산되므로, 캐싱 자체는 별도 빈(ScheduleCacheQueryService)에 위임한다
+    // (같은 클래스 안에서 @Cacheable 메서드를 self-invocation 으로 호출하면 프록시를 안 거쳐 캐싱이 무시됨)
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = SCHEDULE_CACHE, key = "#requesterEmail + '-' + #userId + '-' + #categoryId", unless = "#result.isEmpty()")
     public List<ScheduleResponseDto> getSchedules(String requesterEmail, Long userId, Long categoryId) {
         User requester = findUserByEmail(requesterEmail);
         Long targetUserId = requester.getUserType() == UserType.ADMIN ? userId : requester.getId();
 
-        return scheduleRepository.searchSchedules(targetUserId, categoryId);
+        return scheduleCacheQueryService.getSchedules(requesterEmail, targetUserId, categoryId);
     }
 
     // #v3: update/delete 는 매개변수로 스케줄 id 만 받기 때문에, 이전엔 소유자(userId)를 알아내려면
