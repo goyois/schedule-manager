@@ -142,6 +142,35 @@ class ScheduleCacheEvictionTest {
         assertThat(updated.getTitle()).isEqualTo("after-title");
     }
 
+    // evictScheduleCacheForUser() 가 KEYS 에서 SCAN(scanKeys())으로 바뀌면서 새로 생긴 리스크: SCAN 은
+    // COUNT(100) 힌트 단위 배치로 커서를 여러 번 돌려야 하므로, 커서 반복 처리가 잘못되면 첫 배치 이후의
+    // 키를 놓칠 수 있다. 위 evictOnCreate/Update/Delete 는 유저당 캐시 키가 1개뿐이라 이 배치 경계를
+    // 넘는 케이스를 검증하지 못하므로, COUNT(100)보다 많은 키를 직접 채워 넣어 전부 지워지는지 확인한다.
+    @Test
+    @DisplayName("evictScheduleCacheForUser: SCAN COUNT(100) 배치 경계를 넘는 키 개수에서도 대상 유저의 캐시를 전부 지운다")
+    void evictScansAcrossMultipleBatches() {
+        int keyCount = 150;
+        for (int i = 0; i < keyCount; i++) {
+            redisTemplate.opsForValue().set(
+                    SCHEDULE_CACHE_NAME + "::requester-" + i + "@test.com-" + target.getId() + "-null",
+                    "cached-value");
+        }
+        assertThat(cacheKeysFor(target)).hasSize(keyCount);
+        warmUpCache(bystander);
+        assertCachePresent(bystander);
+
+        saveSchedule(target, "trigger-evict");
+        ScheduleRequestDto createRequest = buildRequest(target, "trigger-evict-title");
+        ResponseEntity<ApiResponse<ScheduleResponseDto>> response = restTemplate.exchange(
+                "/api/schedules", HttpMethod.POST,
+                new HttpEntity<>(createRequest, authHeaders(target)),
+                new ParameterizedTypeReference<ApiResponse<ScheduleResponseDto>>() {});
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+
+        assertCacheAbsent(target);
+        assertCachePresent(bystander);
+    }
+
     @Test
     @DisplayName("deleteSchedule: 소유자 유저의 캐시만 지워지고, 무관한 유저의 캐시는 살아남는다")
     void evictOnDelete() {

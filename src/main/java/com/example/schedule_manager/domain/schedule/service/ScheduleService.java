@@ -12,10 +12,15 @@ import com.example.schedule_manager.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -141,13 +146,35 @@ public class ScheduleService {
     private void evictScheduleCacheForUser(Long userId) {
         String pattern = SCHEDULE_CACHE + "::*-" + userId + "-*";
         try {
-            Set<String> keys = redisTemplate.keys(pattern);
-            if (keys != null && !keys.isEmpty()) {
+            Set<String> keys = scanKeys(pattern);
+            if (!keys.isEmpty()) {
                 redisTemplate.delete(keys);
             }
         } catch (DataAccessException e) {
             log.warn("일정 캐시 삭제 실패 - userId={}", userId, e);
         }
+    }
+
+    // 원래는 redisTemplate.keys(pattern) (Redis KEYS 커맨드) 을 썼는데, KEYS 는 매치되는 키를 다 찾을 때까지
+    // 전체 키스페이스를 한 번의 커맨드로 훑고, 그동안 Redis 의 단일 이벤트루프를 통째로 블로킹한다 — 이 메서드가
+    // 일정 생성/수정/삭제마다 호출되므로, 키스페이스가 커지면 그때마다 다른 모든 클라이언트 요청이 지연될 수 있다.
+    // SCAN 은 같은 O(전체 키스페이스) 전수조사를 커서 기반으로 작은 배치(COUNT)씩 나눠서 하기 때문에,
+    // 한 번의 호출이 짧게 끝나 그 사이사이에 다른 명령이 끼어들 수 있다 (논블로킹).
+    // 대신 KEYS 와 달리 실행 시점의 스냅샷이 아니라서, 순회 도중 새로 추가/삭제되는 키는 중복 반환되거나
+    // 누락될 수 있다 — 다만 이건 "캐시 evict가 이번 텀에 안 잡히고 다음 쓰기에 잡히는" 정도의 트레이드오프라
+    // (evict 대상 키는 애초에 이 메서드 호출 시점 이전에 쓰인 것들이라 스캔 도중 사라질 일은 없고, 스캔 도중
+    // 새로 생기는 키는 이번 evict 대상이 아니었으므로 놓쳐도 무해하다) 이 용도에는 안전하다.
+    private Set<String> scanKeys(String pattern) {
+        return redisTemplate.execute((RedisCallback<Set<String>>) connection -> {
+            Set<String> keys = new HashSet<>();
+            ScanOptions options = ScanOptions.scanOptions().match(pattern).count(100).build();
+            try (Cursor<byte[]> cursor = connection.scan(options)) {
+                while (cursor.hasNext()) {
+                    keys.add(new String(cursor.next(), StandardCharsets.UTF_8));
+                }
+            }
+            return keys;
+        });
     }
 
     private Schedule findSchedule(Long id) {
