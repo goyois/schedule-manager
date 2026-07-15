@@ -29,6 +29,11 @@ public class User extends BaseEntity {
     @Column(name = "user_type")
     private UserType userType;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "auth_provider")
+    @Builder.Default
+    private AuthProvider authProvider = AuthProvider.LOCAL;
+
     public void update(String username, String email) {
         this.username = username;
         this.email = email;

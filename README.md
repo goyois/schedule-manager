@@ -75,9 +75,13 @@ spring:
   jwt:
     secret: your-jwt-secret-key-must-be-at-least-256bits-long
     expiration: 3600000
+
+google:
+  oauth:
+    client-id: your_google_oauth_client_id
 ```
 
-> `spring.jwt.secret`은 HMAC-SHA 서명에 쓰이므로 최소 256bit(32자) 이상이어야 합니다. `spring.ai.anthropic.api-key`는 AI 기능이 아직 미구현이라 실제로 호출되진 않지만, 스타터 의존성이 값을 요구하므로 임의의 문자열이라도 채워둬야 부팅됩니다.
+> `spring.jwt.secret`은 HMAC-SHA 서명에 쓰이므로 최소 256bit(32자) 이상이어야 합니다. `spring.ai.anthropic.api-key`는 AI 기능이 아직 미구현이라 실제로 호출되진 않지만, 스타터 의존성이 값을 요구하므로 임의의 문자열이라도 채워둬야 부팅됩니다. `google.oauth.client-id`는 구글 로그인(`POST /api/auth/google`)에서 ID 토큰의 audience 검증에 쓰이며, [Google Cloud Console](https://console.cloud.google.com/)에서 웹 애플리케이션용 OAuth 2.0 클라이언트 ID를 발급받아 채워야 합니다(Client Secret은 필요 없음 — ID 토큰 검증만 하는 방식이라 Client ID만 사용). 값이 없으면 부팅 자체가 실패하므로, 아직 구글 로그인을 안 쓰더라도 임의의 문자열을 채워둬야 합니다.
 
 ### 실행
 
