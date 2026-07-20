@@ -9,6 +9,8 @@ let categories = []; // [{id, name}]
 let schedules = [];  // ScheduleResponseDto[] (전체 일정, 통계 카드용)
 let categorySchedules = null; // 카테고리 선택 시 서버에서 받아온 해당 카테고리 일정, null = 미선택
 let activeCategoryId = ""; // "" = 전체
+const BOARD_COLUMN_VISIBLE_LIMIT = 5;
+const boardColumnVisibleCount = new Map(); // status key -> 현재까지 펼쳐서 보여줄 개수. "더보기"를 누를 때마다 5씩 늘어나고, 재렌더링(상태 변경 등) 후에도 유지된다
 let viewMode = "board"; // "board" | "day" | "week" | "month" | "year"
 let viewDate = new Date(); // 일/주/월/년 뷰의 기준(anchor) 날짜
 // 이번 세션에서 생성/수정한 일정의 categoryId, userId 를 기억해 수정 모달을 정확히 채워준다
@@ -417,7 +419,7 @@ function showClockTooltip(anchorX, anchorY, schedule) {
 function renderTodayClockLegend(usedStatuses) {
   clockLegendEl.textContent = "";
   STATUS_COLUMNS.forEach((col) => {
-    if (!usedStatuses.has(col.key)) return;
+    if (!usedStatuses.has(col.key) || col.key === "COMPLETED") return;
     const item = document.createElement("div");
     item.className = "today-clock-legend-item";
 
@@ -576,6 +578,10 @@ function renderBoard() {
 
   board.innerHTML = STATUS_COLUMNS.map((col) => {
     const items = list.filter((s) => s.status === col.key);
+    const visibleCount = boardColumnVisibleCount.get(col.key) ?? BOARD_COLUMN_VISIBLE_LIMIT;
+    const visibleItems = items.slice(0, visibleCount);
+    const hiddenCount = items.length - visibleItems.length;
+
     return `
       <div class="board-column">
         <div class="board-column-header">
@@ -583,10 +589,24 @@ function renderBoard() {
           <span class="count-badge">${items.length}</span>
         </div>
         <div class="board-column-body">
-          ${items.length ? items.map(scheduleCardHtml).join("") : `<div class="empty-hint">일정이 없습니다</div>`}
+          ${items.length ? visibleItems.map(scheduleCardHtml).join("") : `<div class="empty-hint">일정이 없습니다</div>`}
         </div>
+        ${
+          hiddenCount > 0
+            ? `<button type="button" class="board-more-btn" data-toggle-more="${col.key}">더보기 (${hiddenCount})</button>`
+            : ""
+        }
       </div>`;
   }).join("");
+
+  board.querySelectorAll("[data-toggle-more]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.toggleMore;
+      const current = boardColumnVisibleCount.get(key) ?? BOARD_COLUMN_VISIBLE_LIMIT;
+      boardColumnVisibleCount.set(key, current + BOARD_COLUMN_VISIBLE_LIMIT);
+      renderBoard();
+    });
+  });
 
   board.querySelectorAll("[data-status-for]").forEach((sel) => {
     sel.addEventListener("change", async () => {
