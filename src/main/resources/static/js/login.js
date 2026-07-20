@@ -15,7 +15,7 @@ form.addEventListener("submit", async (e) => {
 
   try {
     const data = await API.post("/api/auth/login", { email, password });
-    API.setToken(data.accessToken);
+    API.setTokens(data.accessToken, data.refreshToken);
     API.setCurrentUser({ email, id: API.lookupUserId(email) });
     window.location.href = "/dashboard";
   } catch (err) {
@@ -48,7 +48,7 @@ async function handleGoogleCredential(response) {
   try {
     const data = await API.post("/api/auth/google", { idToken: response.credential });
     const { email } = decodeJwtPayload(response.credential);
-    API.setToken(data.accessToken);
+    API.setTokens(data.accessToken, data.refreshToken);
     API.setCurrentUser({ email, id: API.lookupUserId(email) });
     window.location.href = "/dashboard";
   } catch (err) {

@@ -39,8 +39,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // 1. 요청 헤더에서 토큰을 추출한다
         String token = resolveToken(request);
 
-        // 2. 토큰이 존재하고, 유효하며, 블랙리스트(로그아웃된 토큰)가 아닐 때만 인증 처리
-        if (token != null && jwtUtil.isTokenValid(token) && !isBlacklisted(token)) {
+        // 2. 토큰이 존재하고, 유효하고, access token 이며(= refresh token 재사용 차단),
+        //    블랙리스트(로그아웃된 토큰)가 아닐 때만 인증 처리
+        if (token != null && jwtUtil.isTokenValid(token) && jwtUtil.isAccessToken(token) && !isBlacklisted(token)) {
 
             // 3. 토큰에서 이메일을 꺼내 DB 에서 유저 정보를 조회한다
             String email = jwtUtil.extractEmail(token);

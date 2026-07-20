@@ -3,6 +3,7 @@ package com.example.schedule_manager.domain.auth.controller;
 import com.example.schedule_manager.domain.auth.dto.GoogleLoginRequestDto;
 import com.example.schedule_manager.domain.auth.dto.LoginRequestDto;
 import com.example.schedule_manager.domain.auth.dto.LoginResponseDto;
+import com.example.schedule_manager.domain.auth.dto.RefreshTokenRequestDto;
 import com.example.schedule_manager.domain.auth.service.AuthService;
 import com.example.schedule_manager.global.response.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
@@ -43,6 +44,11 @@ public class AuthController {
     @PostMapping("/google")
     public ResponseEntity<ApiResponse<LoginResponseDto>> loginWithGoogle(@RequestBody GoogleLoginRequestDto request) {
         return ResponseEntity.ok(ApiResponse.success(authService.loginWithGoogle(request)));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<LoginResponseDto>> refresh(@RequestBody RefreshTokenRequestDto request) {
+        return ResponseEntity.ok(ApiResponse.success(authService.refresh(request)));
     }
 
     @PostMapping("/logout")

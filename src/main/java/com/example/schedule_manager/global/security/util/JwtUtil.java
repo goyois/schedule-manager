@@ -14,20 +14,38 @@ import java.util.Date;
 @Component
 public class JwtUtil {
 
+    private static final String TOKEN_TYPE_CLAIM = "tokenType";
+    private static final String ACCESS_TOKEN_TYPE = "ACCESS";
+    private static final String REFRESH_TOKEN_TYPE = "REFRESH";
+
     // yml 에 설정한 서명용 비밀키 (최소 256bit = 32자 이상)
     @Value("${spring.jwt.secret}")
     private String secret;
 
-    // 토큰 유효 시간 (ms 단위, yml 기본값 = 1시간)
+    // access token 유효 시간 (ms 단위, yml 기본값 = 1시간)
     @Value("${spring.jwt.expiration}")
     private long expiration;
 
-    // 로그인 성공 시 이메일을 subject 로 담아 JWT 를 생성한다
+    // refresh token 유효 시간 (ms 단위)
+    @Value("${spring.jwt.refresh-expiration}")
+    private long refreshExpiration;
+
+    // 로그인 성공 시 이메일을 subject 로 담아 access token 을 생성한다
     public String generateToken(String email) {
+        return buildToken(email, ACCESS_TOKEN_TYPE, expiration);
+    }
+
+    // 이메일을 subject 로 담아 refresh token 을 생성한다 — access token 보다 만료시간이 길다
+    public String generateRefreshToken(String email) {
+        return buildToken(email, REFRESH_TOKEN_TYPE, refreshExpiration);
+    }
+
+    private String buildToken(String email, String tokenType, long tokenExpiration) {
         return Jwts.builder()
                 .subject(email)               // 토큰 소유자 식별값
+                .claim(TOKEN_TYPE_CLAIM, tokenType) // access/refresh 토큰 구분 → refresh token 이 access token 대신 재사용되는 것을 막기 위함
                 .issuedAt(new Date())         // 발급 시각
-                .expiration(new Date(System.currentTimeMillis() + expiration)) // 만료 시각
+                .expiration(new Date(System.currentTimeMillis() + tokenExpiration)) // 만료 시각
                 .signWith(getSigningKey())     // 비밀키로 서명 → 위변조 방지
                 .compact();
     }
@@ -37,7 +55,7 @@ public class JwtUtil {
         return getClaims(token).getSubject();
     }
 
-    // 로그아웃 시 토큰의 남은 유효 시간을 계산한다 → Redis TTL 에 사용
+    // 로그아웃/재발급 시 토큰의 남은 유효 시간을 계산한다 → Redis TTL 에 사용
     public long getRemainingExpiration(String token) {
         return getClaims(token).getExpiration().getTime() - System.currentTimeMillis();
     }
@@ -51,6 +69,18 @@ public class JwtUtil {
         } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
+    }
+
+    // access token 인지 확인한다 (서명/만료는 유효하다는 전제 하에 호출) → JwtAuthenticationFilter 에서
+    // refresh token 이 Authorization 헤더로 재사용되는 것을 막기 위해 사용
+    public boolean isAccessToken(String token) {
+        return ACCESS_TOKEN_TYPE.equals(getClaims(token).get(TOKEN_TYPE_CLAIM, String.class));
+    }
+
+    // refresh token 인지 확인한다 → /api/auth/refresh 에서 access token 이 refresh 용도로
+    // 오용되는 것을 막기 위해 사용
+    public boolean isRefreshToken(String token) {
+        return REFRESH_TOKEN_TYPE.equals(getClaims(token).get(TOKEN_TYPE_CLAIM, String.class));
     }
 
     // 비밀키로 서명을 검증하면서 토큰 내부 데이터(Claims)를 파싱한다

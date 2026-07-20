@@ -123,6 +123,32 @@ Schedule: id, title, description, startAt, endAt, isAllDay,
 
 ---
 
+## Task #9 — JWT 리프레시 토큰 (Redis TTL)
+
+**목표**: 현재 access token(`spring.jwt.expiration`, 1시간) 만료 시 재로그인해야 하는 문제를 refresh token으로 해소.
+
+**설계**
+
+- `JwtUtil`
+  - `generateRefreshToken(String email)` 추가, 만료시간은 별도 프로퍼티 `spring.jwt.refresh-expiration`로 관리
+  - 토큰에 `tokenType` claim(`ACCESS` / `REFRESH`) 추가 — refresh token이 access token 대신 `Authorization: Bearer`로 재사용되는 것을 막기 위함 (`JwtAuthenticationFilter`에서 `tokenType == ACCESS`인 토큰만 인증 처리하도록 검증 추가)
+- **저장 방식**: 단일 세션 — Redis key `refresh:{email}` (value = refresh token, `EX` = refresh 만료시간). 재로그인 시 같은 키를 덮어써 이전 refresh token은 자동 폐기됨 (기존 `blacklist:{token}` 로그아웃 패턴과 구분되는 별도 키 네임스페이스)
+- **로테이션**: `POST /api/auth/refresh` 호출 시 access token과 refresh token을 모두 새로 발급하고 Redis 값을 교체(TTL 갱신). 탈취된 refresh token이 재사용되면 이후 정상 사용자의 재발급 요청이 값 불일치로 실패 → 탈취 감지 가능
+- **로그아웃 연동**: 기존 `AuthService.logout`은 access token 블랙리스트만 처리 → `refresh:{email}` 키 삭제도 함께 수행하도록 확장
+- Redis 접근은 기존 `JwtAuthenticationFilter.isBlacklisted`와 동일하게 `try/catch (DataAccessException)` fail-open 패턴 적용 (신규 `RedisTemplate` Bean 추가 없이 `RedisConfig`의 기존 `RedisTemplate<String, Object>` 재사용)
+
+**API**
+| Method | URI | 설명 |
+|--------|-----|------|
+| POST | `/api/auth/refresh` | refresh token으로 access/refresh token 재발급 (로테이션) |
+
+- `LoginResponseDto`에 `refreshToken` 필드 추가 (로그인/구글 로그인 응답에도 포함)
+- `/api/auth/refresh`는 기존 `SecurityConfig`의 `/api/auth/**` permitAll 범위에 포함되어 별도 설정 불필요
+
+**테스트**: `JwtUtilTest`(신규) — refresh token 생성/검증/타입 구분, `AuthServiceTest` — refresh 성공/실패(불일치·만료·미로그인) 및 logout 시 refresh 키 삭제 케이스 추가
+
+---
+
 ## 진행 순서 권장
 
 ```

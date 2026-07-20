@@ -3,6 +3,7 @@ package com.example.schedule_manager.domain.auth.service;
 import com.example.schedule_manager.domain.auth.dto.GoogleLoginRequestDto;
 import com.example.schedule_manager.domain.auth.dto.LoginRequestDto;
 import com.example.schedule_manager.domain.auth.dto.LoginResponseDto;
+import com.example.schedule_manager.domain.auth.dto.RefreshTokenRequestDto;
 import com.example.schedule_manager.domain.user.entity.AuthProvider;
 import com.example.schedule_manager.domain.user.entity.User;
 import com.example.schedule_manager.domain.user.entity.UserType;
@@ -28,6 +29,10 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class AuthService {
 
+    // 유저당 refresh token 을 하나만 유효하게 둔다(단일 세션) — 재로그인하면 같은 키를 덮어써
+    // 이전 refresh token 은 자동 폐기된다
+    private static final String REFRESH_KEY_PREFIX = "refresh:";
+
     private final AuthenticationManager authenticationManager;
     private final JwtUtil jwtUtil;
     private final RedisTemplate<String, String> redisTemplate;
@@ -40,8 +45,8 @@ public class AuthService {
         //    내부적으로 CustomUserDetailsService.loadUserByUsername() 을 호출해 DB 에서 유저를 조회하고
         //    입력된 비밀번호와 저장된 BCrypt 해시를 비교한다 → 불일치 시 예외 발생
         authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(request.email(), request.password()));
-        // 2. 인증 성공 시 이메일을 subject 로 담은 JWT 액세스 토큰을 발급해 반환한다
-        return new LoginResponseDto(jwtUtil.generateToken(request.email()));
+        // 2. 인증 성공 시 access token 과 refresh token 을 함께 발급한다
+        return issueTokens(request.email());
     }
 
     @Transactional
@@ -69,7 +74,38 @@ public class AuthService {
                         .authProvider(AuthProvider.GOOGLE)
                         .build()));
 
-        return new LoginResponseDto(jwtUtil.generateToken(user.getEmail()));
+        return issueTokens(user.getEmail());
+    }
+
+    // access token 재발급 — refresh token 을 검증하고, Redis 에 저장된 값과 일치할 때만
+    // access/refresh token 을 모두 새로 발급한다(로테이션). 탈취된 refresh token 이 재사용되면
+    // 이후 정상 사용자의 재발급 요청이 값 불일치로 실패하게 되어 탈취를 감지할 수 있다
+    public LoginResponseDto refresh(RefreshTokenRequestDto request) {
+        String refreshToken = request.refreshToken();
+
+        if (!jwtUtil.isTokenValid(refreshToken) || !jwtUtil.isRefreshToken(refreshToken)) {
+            throw new IllegalArgumentException("유효하지 않은 리프레시 토큰입니다.");
+        }
+
+        String email = jwtUtil.extractEmail(refreshToken);
+        String storedToken = redisTemplate.opsForValue().get(REFRESH_KEY_PREFIX + email);
+        if (storedToken == null || !storedToken.equals(refreshToken)) {
+            throw new IllegalArgumentException("만료되었거나 폐기된 리프레시 토큰입니다.");
+        }
+
+        return issueTokens(email);
+    }
+
+    // access token 과 refresh token 을 새로 발급하고, refresh token 은 Redis 에
+    // "refresh:{email}" 키로 저장한다(TTL = 남은 유효시간, 만료되면 자동 삭제)
+    private LoginResponseDto issueTokens(String email) {
+        String accessToken = jwtUtil.generateToken(email);
+        String refreshToken = jwtUtil.generateRefreshToken(email);
+
+        long remainingMs = jwtUtil.getRemainingExpiration(refreshToken);
+        redisTemplate.opsForValue().set(REFRESH_KEY_PREFIX + email, refreshToken, remainingMs, TimeUnit.MILLISECONDS);
+
+        return new LoginResponseDto(accessToken, refreshToken);
     }
 
     private GoogleIdToken verify(String rawIdToken) {
@@ -96,5 +132,8 @@ public class AuthService {
         //    JwtAuthenticationFilter 에서 이 키를 확인해 해당 토큰으로 인증을 거부한다
         if (remainingMs > 0) redisTemplate.opsForValue().set("blacklist:" + token, "logout", remainingMs, TimeUnit.MILLISECONDS);
 
+        // 3. 이 유저의 refresh token 도 함께 폐기한다 — 로그아웃 이후에는 access token 재발급도 불가능해야 한다
+        String email = jwtUtil.extractEmail(token);
+        redisTemplate.delete(REFRESH_KEY_PREFIX + email);
     }
 }
