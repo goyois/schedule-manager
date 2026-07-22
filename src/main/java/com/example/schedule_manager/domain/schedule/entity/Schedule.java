@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
-@Table(name = "schedules")
+@Table(name = "schedules", indexes = @Index(name = "idx_schedule_user_category", columnList = "user_id, category_id"))
 public class Schedule extends BaseEntity {
 
     @Id
