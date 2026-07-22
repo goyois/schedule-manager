@@ -42,6 +42,7 @@ Note: README.md and TASKS.md describe the original task plan (session-based auth
 
 - When adding new logic (new service methods, new endpoints, new business rules), write accompanying test code in the same change — don't leave it for a follow-up ask.
 - Match existing conventions: JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`, `@Mock`/`@InjectMocks`), AssertJ assertions (`assertThat`, `assertThatThrownBy`), Korean `@DisplayName` describing the scenario (see `UserServiceTest`, `AuthServiceTest`). Cover both success and failure/exception paths.
+- Before reporting a change as done, actually run it: at minimum `./gradlew test --tests "<AffectedClass>"` for the touched class(es), or the full `./gradlew test` when the change spans multiple classes/layers. Don't claim success from reading the code alone — if tests can't be run (e.g. missing local MySQL/Redis), say so explicitly instead of asserting it works.
 
 ## Git workflow
 
