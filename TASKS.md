@@ -149,6 +149,31 @@ Schedule: id, title, description, startAt, endAt, isAllDay,
 
 ---
 
+## Task #10 — `schedules` 테이블 (user_id, category_id) 복합 인덱스
+
+**목표**: `ScheduleService.getSchedules(userId, categoryId)` / `ScheduleRepositoryImpl.searchSchedules`가 `user_id`, `category_id` 두 컬럼을 동시에 필터링하는데, 인덱스는 각 컬럼에 (FK 제약으로 InnoDB가 자동 생성한) 단일 컬럼 인덱스만 있어 MySQL이 둘 중 하나만 인덱스로 타고 나머지는 row-by-row `Filter`로 걸러내던 비효율을 개선.
+
+**분석**
+
+- `start_at`은 코드 어디서도 WHERE/ORDER BY에 쓰이지 않아 인덱싱 대상에서 제외(당초 "user_id/category_id/start_at 모두 인덱스 없음"으로 추정했던 전제를 실제 스키마 확인 후 정정).
+- 실사용 패턴: 일반 `USER`는 항상 자기 `user_id`로, 여기에 `categoryId`가 선택적으로 더해짐(둘 다 nullable) → `(user_id, category_id)` 복합 인덱스가 leftmost-prefix로 두 케이스(“user_id만”, “user_id+category_id”)를 모두 커버.
+
+**적용**
+
+- `Schedule` 엔티티에 `@Table(indexes = @Index(name = "idx_schedule_user_category", columnList = "user_id, category_id"))` 추가
+- `ddl-auto: update`이고 별도 마이그레이션 도구(Flyway/Liquibase) 없음 → 엔티티 애노테이션만으로 다음 기동 시 인덱스 반영
+
+**벤치마크 (`ScheduleIndexPerformanceTest`, 신규)**
+
+- 현실적인 컨텐션 재현: 대상 유저는 5개 카테고리에 걸쳐 일정 보유(user_id 단독으로는 카테고리가 안 좁혀짐), 대상 카테고리는 다른 15명 유저와 공유(category_id 단독으로는 유저가 안 좁혀짐) — 총 약 5.7만 건
+- as-is: `EXPLAIN` 상 `user_id` 인덱스로 1만 건 조회 후 `category_id`는 Filter로 제거, optimizer cost 975, 평균 응답 10.85ms(최대 19ms)
+- to-be: 복합 인덱스로 2,000건 정확히 매치, cost 251(-74%), 평균 응답 9.6ms(최대 13ms, 변동폭 감소)
+- 로컬 데이터셋은 InnoDB 버퍼풀에 다 들어가 wall-clock 차이는 크지 않음 — `EXPLAIN`의 cost/rows-examined 감소가 핵심 근거
+
+**테스트**: `ScheduleIndexPerformanceTest`(신규) — `EXPLAIN` 실행계획 로그 + warmup/measure 라운드로 응답시간 측정(기존 `ScheduleServiceTest.apiPerformance` 컨벤션 준용, 캐시 우회하고 `ScheduleRepositoryImpl.searchSchedules` 직접 호출)
+
+---
+
 ## 진행 순서 권장
 
 ```
