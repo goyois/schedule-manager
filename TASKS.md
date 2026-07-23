@@ -93,14 +93,20 @@ Schedule: id, title, content, startAt, endAt, status (PENDING/IN_PROGRESS/COMPLE
 
 ---
 
-## Task #5 [PARTIAL] — Redis 캐싱 적용
+## Task #5 [FIX] — Redis 캐싱 적용
 
 - `@EnableCaching` 활성화 (계획대로, `RedisConfig`)
-- 캐시 대상
-  - **카테고리 목록 캐싱은 구현되지 않음** — `CategoryService`에 `@Cacheable`/`@CacheEvict`가 전혀 없음
-  - 스케줄 목록만 캐싱됨 — 캐시 이름 `schedules`, 키는 `{requesterEmail}-{targetUserId}-{categoryId}`(계획의 `from`/`to` 기반이 아님, Task #4 참고)
-- 생성 시에는 `@CacheEvict` 대신 대상 유저와 관련된 키만 골라 지우는 커스텀 evict(`RedisTemplate` + `SCAN`)를 직접 호출 — `@CacheEvict`의 SpEL로는 와일드카드(유저별 타겟) 삭제가 안 되기 때문. 자세한 배경은 스케줄 캐시 무효화 관련 커밋 참고(`perf-1`/`perf-2`)
-- **TTL 5분 추가**(`RedisConfig.cacheManager()`의 `entryTtl(Duration.ofMinutes(5))`) — evict 로직이 못 걷어내는 경로가 실제로 있어서(ADMIN이 `userId` 없이 전체 조회한 캐시 키는 evict 패턴에 안 걸림, 카테고리 이름을 바꿔도 그 카테고리를 참조하는 스케줄 캐시는 evict 안 됨) 안전망으로 도입. evict가 정상 동작하는 일반적인 경우엔 체감되지 않고, evict를 놓친 경우에만 "영원히 stale" 대신 "최대 5분 후 자연 회복"으로 바뀜
+- 캐시 대상 — 계획은 카테고리/스케줄 목록을 각각 `{userId}` / `{userId}::{from}::{to}` 로 캐싱하는 것이었지만,
+  실제 키는 도메인 특성에 맞게 다르게 구성됨(아래)
+  - 카테고리 목록: 캐시 이름 `categories`, 키는 `{requesterId}` — `CategoryCacheQueryService.getCategories()`
+  - 스케줄 목록: 캐시 이름 `schedules`, 키는 `{requesterEmail}-{targetUserId}-{categoryId}`(계획의 `from`/`to` 기반이 아님 — Task #4 에서 날짜 범위 조회 자체가 구현되지 않아 프론트가 전체 목록을 받아 클라이언트에서 필터링하기 때문)
+- 캐시 무효화 방식이 두 도메인에서 다름
+  - 스케줄: `@CacheEvict` 대신 대상 유저와 관련된 키만 골라 지우는 커스텀 evict(`RedisTemplate` + `SCAN`)를 직접 호출 — `@CacheEvict`의 SpEL로는 와일드카드(유저별 타겟) 삭제가 안 되기 때문(`perf-1`/`perf-2` 참고)
+  - 카테고리: `CategoryService.evictCategoryCache()`가 `CacheManager`를 직접 다뤄 조건부로 무효화 — ADMIN 소유(기본 카테고리)나 소유자 없는 레거시 카테고리는 모든 유저의 목록에 나타나므로 캐시 전체를 비우고(`Cache.clear()`), 특정 USER 전용 카테고리는 그 유저의 캐시 키 하나만 지움(`Cache.evict(key)`)
+  - 둘 다 Redis 장애 시 캐시 삭제가 실패해도 쓰기 자체는 성공하도록 `try/catch (DataAccessException)` fail-open 패턴 적용
+- TTL 5분(`RedisConfig.cacheManager()`의 `entryTtl(Duration.ofMinutes(5))`, 두 캐시 모두에 적용) — evict 로직이 못 걷어내는 경로가 있어도(예: ADMIN이 `userId` 없이 전체 조회한 스케줄 캐시 키는 evict 패턴에 안 걸림) 무한정 stale로 남지 않고 최대 5분 후 자연 회복되도록 하는 안전망
+
+**테스트**: `CategoryServiceTest`에 캐시 무효화 케이스 추가 — ADMIN/레거시 카테고리 생성·수정·삭제 시 캐시 전체 비움, 본인 카테고리는 본인 키만 evict, Redis 장애 시에도 쓰기는 성공(fail-open)
 
 ---
 

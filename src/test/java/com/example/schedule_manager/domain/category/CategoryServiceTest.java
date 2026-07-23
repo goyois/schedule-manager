@@ -18,19 +18,24 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.dao.QueryTimeoutException;
 
-import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class CategoryServiceTest {
+
+    private static final String CATEGORY_CACHE_NAME = "categories";
 
     @Mock
     private CategoryRepository categoryRepository;
@@ -40,6 +45,16 @@ class CategoryServiceTest {
 
     @Mock
     private ScheduleRepository scheduleRepository;
+
+    // CategoryCacheQueryService(패키지 프라이빗)는 CategoryService 와 같은 패키지에 있어 이 테스트
+    // 클래스(domain.category)에서는 참조할 수 없다 — ScheduleServiceTest 도 같은 이유로
+    // ScheduleCacheQueryService 위임 자체는 테스트하지 않는 것과 동일한 제약. getCategories() 는
+    // 그 빈에 위임하는 한 줄짜리 배선이라 여기서는 캐시 무효화 로직(evictCategoryCache)만 검증한다
+    @Mock
+    private CacheManager cacheManager;
+
+    @Mock
+    private Cache cache;
 
     @InjectMocks
     private CategoryService categoryService;
@@ -89,19 +104,6 @@ class CategoryServiceTest {
                 .isEqualTo(ErrorCode.DUPLICATE_CATEGORY);
 
         verify(categoryRepository, never()).save(any());
-    }
-
-    @Test
-    @DisplayName("카테고리 목록 조회 - 레거시/기본(ADMIN)/본인 카테고리만 보여주도록 repository 에 위임한다")
-    void getCategories_delegatesToVisibleQuery() {
-        User requester = user(1L, UserType.USER);
-        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
-        Category visible = Category.builder().id(1L).name("보이는 것").build();
-        when(categoryRepository.findVisibleTo(1L)).thenReturn(List.of(visible));
-
-        List<CategoryResponseDto> result = categoryService.getCategories("tester@example.com");
-
-        assertThat(result).extracting(CategoryResponseDto::name).containsExactly("보이는 것");
     }
 
     @Test
@@ -278,5 +280,118 @@ class CategoryServiceTest {
         CategoryResponseDto response = categoryService.updateCategory("tester@example.com", 10L, new CategoryRequestDto("새 이름"));
 
         assertThat(response.name()).isEqualTo("새 이름");
+    }
+
+    // ---------- 캐시 무효화 ----------
+    // ADMIN 소유(기본 카테고리)나 소유자 없는 레거시 카테고리는 모든 유저의 목록에 나타나므로 캐시 전체를
+    // 비우고(clear), 특정 USER 전용 카테고리는 그 유저의 캐시 키 하나만 지운다(evict) — CategoryService.
+    // evictCategoryCache() 참고
+
+    @Test
+    @DisplayName("캐시 무효화 - ADMIN 이 카테고리를 생성하면(기본 카테고리) 캐시 전체를 비운다")
+    void createCategory_byAdmin_clearsEntireCache() {
+        CategoryRequestDto request = new CategoryRequestDto("공지");
+        User admin = user(50L, UserType.ADMIN);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(admin));
+        when(categoryRepository.existsVisibleDuplicateName("공지", 50L)).thenReturn(false);
+        when(categoryRepository.save(any(Category.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(cacheManager.getCache(CATEGORY_CACHE_NAME)).thenReturn(cache);
+
+        categoryService.createCategory("tester@example.com", request);
+
+        verify(cache).clear();
+        verify(cache, never()).evict(any());
+    }
+
+    @Test
+    @DisplayName("캐시 무효화 - USER 가 본인 카테고리를 생성하면 본인 캐시 키만 지운다")
+    void createCategory_byUser_evictsOwnCacheKeyOnly() {
+        CategoryRequestDto request = new CategoryRequestDto("취미");
+        User requester = user(20L, UserType.USER);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(categoryRepository.existsVisibleDuplicateName("취미", 20L)).thenReturn(false);
+        when(categoryRepository.save(any(Category.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(cacheManager.getCache(CATEGORY_CACHE_NAME)).thenReturn(cache);
+
+        categoryService.createCategory("tester@example.com", request);
+
+        verify(cache).evict("20");
+        verify(cache, never()).clear();
+    }
+
+    @Test
+    @DisplayName("캐시 무효화 - 본인 카테고리 수정 시 본인 캐시 키만 지운다")
+    void updateCategory_ownedByRequester_evictsOwnCacheKeyOnly() {
+        User requester = user(21L, UserType.USER);
+        Category userCategory = Category.builder().id(11L).name("이전 이름").user(requester).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(categoryRepository.findById(11L)).thenReturn(Optional.of(userCategory));
+        when(cacheManager.getCache(CATEGORY_CACHE_NAME)).thenReturn(cache);
+
+        categoryService.updateCategory("tester@example.com", 11L, new CategoryRequestDto("새 이름"));
+
+        verify(cache).evict("21");
+        verify(cache, never()).clear();
+    }
+
+    @Test
+    @DisplayName("캐시 무효화 - 소유자 없는 레거시 카테고리 수정 시 캐시 전체를 비운다")
+    void updateCategory_legacyNullOwner_clearsEntireCache() {
+        User requester = user(1L, UserType.USER);
+        Category legacyCategory = Category.builder().id(12L).name("레거시").build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(categoryRepository.findById(12L)).thenReturn(Optional.of(legacyCategory));
+        when(cacheManager.getCache(CATEGORY_CACHE_NAME)).thenReturn(cache);
+
+        categoryService.updateCategory("tester@example.com", 12L, new CategoryRequestDto("새 이름"));
+
+        verify(cache).clear();
+        verify(cache, never()).evict(any());
+    }
+
+    @Test
+    @DisplayName("캐시 무효화 - 본인 카테고리 삭제 시 본인 캐시 키만 지운다")
+    void deleteCategory_ownedByRequester_evictsOwnCacheKeyOnly() {
+        User requester = user(22L, UserType.USER);
+        Category userCategory = Category.builder().id(13L).name("개인").user(requester).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(categoryRepository.findById(13L)).thenReturn(Optional.of(userCategory));
+        when(cacheManager.getCache(CATEGORY_CACHE_NAME)).thenReturn(cache);
+
+        categoryService.deleteCategory("tester@example.com", 13L);
+
+        verify(cache).evict("22");
+        verify(cache, never()).clear();
+    }
+
+    @Test
+    @DisplayName("캐시 무효화 - 소유자 없는 레거시 카테고리 삭제 시 캐시 전체를 비운다")
+    void deleteCategory_legacyNullOwner_clearsEntireCache() {
+        User requester = user(1L, UserType.USER);
+        Category legacyCategory = Category.builder().id(14L).name("레거시").build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(categoryRepository.findById(14L)).thenReturn(Optional.of(legacyCategory));
+        when(cacheManager.getCache(CATEGORY_CACHE_NAME)).thenReturn(cache);
+
+        categoryService.deleteCategory("tester@example.com", 14L);
+
+        verify(cache).clear();
+        verify(cache, never()).evict(any());
+    }
+
+    @Test
+    @DisplayName("캐시 무효화 - Redis 장애로 캐시 삭제에 실패해도 카테고리 생성 자체는 실패하지 않는다(fail-open)")
+    void createCategory_cacheEvictionFails_stillSucceeds() {
+        CategoryRequestDto request = new CategoryRequestDto("업무");
+        User requester = user(23L, UserType.USER);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(categoryRepository.existsVisibleDuplicateName("업무", 23L)).thenReturn(false);
+        when(categoryRepository.save(any(Category.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(cacheManager.getCache(CATEGORY_CACHE_NAME)).thenReturn(cache);
+        doThrow(new QueryTimeoutException("redis down")).when(cache).evict(any());
+
+        CategoryResponseDto response = categoryService.createCategory("tester@example.com", request);
+
+        assertThat(response.name()).isEqualTo("업무");
     }
 }
