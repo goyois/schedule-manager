@@ -16,6 +16,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.Optional;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -72,5 +74,40 @@ class UserServiceTest {
                 .hasMessage("이미 사용 중인 이메일입니다.")
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.DUPLICATE_EMAIL);
+    }
+
+    @Test
+    @DisplayName("유저 수정 성공 - 새 비밀번호도 암호화되어 저장된다")
+    void updateUser_success_encodesNewPassword() {
+        User existing = User.builder()
+                .id(1L)
+                .username("old-name")
+                .password("old-encoded-password")
+                .email("old@example.com")
+                .userType(UserType.USER)
+                .build();
+        UserRequestDto request = new UserRequestDto("new-name", "new-raw-password", "new@example.com", null);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(passwordEncoder.encode("new-raw-password")).thenReturn("new-encoded-password");
+
+        UserResponseDto response = userService.updateUser(1L, request);
+
+        assertThat(response.username()).isEqualTo("new-name");
+        assertThat(response.email()).isEqualTo("new@example.com");
+        assertThat(existing.getPassword()).isEqualTo("new-encoded-password");
+        verify(passwordEncoder).encode("new-raw-password");
+    }
+
+    @Test
+    @DisplayName("유저 수정 실패 - 존재하지 않는 유저면 예외가 발생한다")
+    void updateUser_notFound_throws() {
+        UserRequestDto request = new UserRequestDto("new-name", "new-raw-password", "new@example.com", null);
+        when(userRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.updateUser(999L, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
     }
 }

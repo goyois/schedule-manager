@@ -40,7 +40,7 @@ public class UserService {
 
     public UserResponseDto updateUser(Long id, UserRequestDto request) {
         User user = userRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        user.update(request.username(), request.email());
+        user.update(request.username(), request.email(), passwordEncoder.encode(request.password()));
         return UserResponseDto.from(user);
     }
 

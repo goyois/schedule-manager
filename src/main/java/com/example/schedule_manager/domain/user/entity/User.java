@@ -34,8 +34,9 @@ public class User extends BaseEntity {
     @Builder.Default
     private AuthProvider authProvider = AuthProvider.LOCAL;
 
-    public void update(String username, String email) {
+    public void update(String username, String email, String encodedPassword) {
         this.username = username;
         this.email = email;
+        this.password = encodedPassword;
     }
 }
