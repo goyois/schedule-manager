@@ -1,10 +1,16 @@
 package com.example.schedule_manager.global.security.config;
 
+import com.example.schedule_manager.global.response.ApiResponse;
 import com.example.schedule_manager.global.security.filter.JwtAuthenticationFilter;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import java.io.IOException;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -13,7 +19,9 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
@@ -22,6 +30,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ObjectMapper objectMapper;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -32,6 +41,14 @@ public class SecurityConfig {
                 // JWT 는 서버가 세션을 저장하지 않는 Stateless 방식 → 세션 생성 안 함
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+                // JwtAuthenticationFilter 를 통과하기 전에 걸리는 인증/인가 실패(토큰 없음·무효 토큰으로
+                // 인증 필요 API 접근)는 컨트롤러/GlobalExceptionHandler 를 거치지 않고 필터 체인에서 바로
+                // 응답이 나가므로, 여기서도 ApiResponse 포맷과 동일한 JSON 을 내려줘야 프론트가 상태코드별로
+                // 일관되게 처리할 수 있다
+                .exceptionHandling(handling -> handling
+                        .authenticationEntryPoint(jsonAuthenticationEntryPoint())
+                        .accessDeniedHandler(jsonAccessDeniedHandler()))
 
                 // 요청별 접근 권한 설정
                 .authorizeHttpRequests(auth -> auth
@@ -69,5 +86,26 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    // 인증 필요 API 에 토큰 없이/무효 토큰으로 접근 → 401
+    private AuthenticationEntryPoint jsonAuthenticationEntryPoint() {
+        return (request, response, authException) ->
+                writeErrorResponse(response, HttpStatus.UNAUTHORIZED, "인증이 필요합니다.");
+    }
+
+    // 인증은 됐지만 권한이 없는 접근 → 403 (현재 앱은 메서드 보안을 쓰지 않아 실제로는 거의 타지 않지만,
+    // 필터 체인 레벨에서도 GlobalExceptionHandler 와 동일한 JSON 포맷을 보장하기 위해 등록해둔다)
+    private AccessDeniedHandler jsonAccessDeniedHandler() {
+        return (request, response, accessDeniedException) ->
+                writeErrorResponse(response, HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
+    }
+
+    private void writeErrorResponse(HttpServletResponse response, HttpStatus status, String message)
+            throws IOException {
+        response.setStatus(status.value());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write(objectMapper.writeValueAsString(ApiResponse.error(status.value(), message)));
     }
 }

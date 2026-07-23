@@ -4,6 +4,7 @@ import com.example.schedule_manager.domain.schedule.dto.ScheduleRequestDto;
 import com.example.schedule_manager.domain.schedule.dto.ScheduleResponseDto;
 import com.example.schedule_manager.domain.schedule.service.ScheduleService;
 import com.example.schedule_manager.global.response.ApiResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,7 +21,7 @@ public class ScheduleController {
     private final ScheduleService scheduleService;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<ScheduleResponseDto>> createSchedule(@RequestBody ScheduleRequestDto request) {
+    public ResponseEntity<ApiResponse<ScheduleResponseDto>> createSchedule(@Valid @RequestBody ScheduleRequestDto request) {
         return ResponseEntity.ok(ApiResponse.success(scheduleService.createSchedule(request)));
     }
 
@@ -41,7 +42,7 @@ public class ScheduleController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<ScheduleResponseDto>> updateSchedule(@PathVariable Long id, @RequestBody ScheduleRequestDto request) {
+    public ResponseEntity<ApiResponse<ScheduleResponseDto>> updateSchedule(@PathVariable Long id, @Valid @RequestBody ScheduleRequestDto request) {
         return ResponseEntity.ok(ApiResponse.success(scheduleService.updateSchedule(id, request)));
     }
 

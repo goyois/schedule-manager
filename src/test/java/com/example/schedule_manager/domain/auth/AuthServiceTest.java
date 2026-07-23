@@ -9,6 +9,8 @@ import com.example.schedule_manager.domain.user.entity.AuthProvider;
 import com.example.schedule_manager.domain.user.entity.User;
 import com.example.schedule_manager.domain.user.entity.UserType;
 import com.example.schedule_manager.domain.user.repository.UserRepository;
+import com.example.schedule_manager.global.exception.BusinessException;
+import com.example.schedule_manager.global.exception.ErrorCode;
 import com.example.schedule_manager.global.security.util.JwtUtil;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
@@ -160,8 +162,10 @@ class AuthServiceTest {
                 .thenReturn(googleIdToken("unverified@example.com", false, "Unverified"));
 
         assertThatThrownBy(() -> authService.loginWithGoogle(request))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("이메일이 인증되지 않은 구글 계정입니다.");
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("이메일이 인증되지 않은 구글 계정입니다.")
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UNVERIFIED_GOOGLE_EMAIL);
 
         verify(userRepository, never()).findByEmail(anyString());
     }
@@ -173,8 +177,10 @@ class AuthServiceTest {
         when(googleIdTokenVerifier.verify("forged-id-token")).thenReturn(null);
 
         assertThatThrownBy(() -> authService.loginWithGoogle(request))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("유효하지 않은 구글 로그인 토큰입니다.");
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("유효하지 않은 구글 로그인 토큰입니다.")
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_GOOGLE_TOKEN);
     }
 
     @Test
@@ -184,8 +190,10 @@ class AuthServiceTest {
         when(googleIdTokenVerifier.verify("garbage")).thenThrow(new IllegalArgumentException("malformed"));
 
         assertThatThrownBy(() -> authService.loginWithGoogle(request))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("유효하지 않은 구글 로그인 토큰입니다.");
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("유효하지 않은 구글 로그인 토큰입니다.")
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_GOOGLE_TOKEN);
     }
 
     @Test
@@ -216,8 +224,10 @@ class AuthServiceTest {
         when(jwtUtil.isTokenValid("invalid-token")).thenReturn(false);
 
         assertThatThrownBy(() -> authService.refresh(request))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("유효하지 않은 리프레시 토큰입니다.");
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("유효하지 않은 리프레시 토큰입니다.")
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REFRESH_TOKEN);
 
         verify(redisTemplate, never()).opsForValue();
     }
@@ -230,8 +240,10 @@ class AuthServiceTest {
         when(jwtUtil.isRefreshToken("access-jwt")).thenReturn(false);
 
         assertThatThrownBy(() -> authService.refresh(request))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("유효하지 않은 리프레시 토큰입니다.");
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("유효하지 않은 리프레시 토큰입니다.")
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REFRESH_TOKEN);
 
         verify(redisTemplate, never()).opsForValue();
     }
@@ -247,8 +259,10 @@ class AuthServiceTest {
         when(valueOperations.get("refresh:tester@example.com")).thenReturn("current-refresh-jwt");
 
         assertThatThrownBy(() -> authService.refresh(request))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("만료되었거나 폐기된 리프레시 토큰입니다.");
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("만료되었거나 폐기된 리프레시 토큰입니다.")
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.EXPIRED_REFRESH_TOKEN);
 
         verify(jwtUtil, never()).generateToken(anyString());
     }

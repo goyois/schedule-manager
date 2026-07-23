@@ -5,8 +5,11 @@ import com.example.schedule_manager.domain.auth.dto.LoginRequestDto;
 import com.example.schedule_manager.domain.auth.dto.LoginResponseDto;
 import com.example.schedule_manager.domain.auth.dto.RefreshTokenRequestDto;
 import com.example.schedule_manager.domain.auth.service.AuthService;
+import com.example.schedule_manager.global.exception.BusinessException;
+import com.example.schedule_manager.global.exception.ErrorCode;
 import com.example.schedule_manager.global.response.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -37,17 +40,17 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse<LoginResponseDto>> login(@RequestBody LoginRequestDto request) {
+    public ResponseEntity<ApiResponse<LoginResponseDto>> login(@Valid @RequestBody LoginRequestDto request) {
         return ResponseEntity.ok(ApiResponse.success(authService.login(request)));
     }
 
     @PostMapping("/google")
-    public ResponseEntity<ApiResponse<LoginResponseDto>> loginWithGoogle(@RequestBody GoogleLoginRequestDto request) {
+    public ResponseEntity<ApiResponse<LoginResponseDto>> loginWithGoogle(@Valid @RequestBody GoogleLoginRequestDto request) {
         return ResponseEntity.ok(ApiResponse.success(authService.loginWithGoogle(request)));
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<ApiResponse<LoginResponseDto>> refresh(@RequestBody RefreshTokenRequestDto request) {
+    public ResponseEntity<ApiResponse<LoginResponseDto>> refresh(@Valid @RequestBody RefreshTokenRequestDto request) {
         return ResponseEntity.ok(ApiResponse.success(authService.refresh(request)));
     }
 
@@ -63,6 +66,6 @@ public class AuthController {
         if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
             return bearer.substring(7);
         }
-        throw new IllegalArgumentException("토큰이 없습니다.");
+        throw new BusinessException(ErrorCode.MISSING_TOKEN);
     }
 }

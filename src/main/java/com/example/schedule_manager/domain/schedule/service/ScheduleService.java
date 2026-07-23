@@ -9,6 +9,8 @@ import com.example.schedule_manager.domain.schedule.repository.ScheduleRepositor
 import com.example.schedule_manager.domain.user.entity.User;
 import com.example.schedule_manager.domain.user.entity.UserType;
 import com.example.schedule_manager.domain.user.repository.UserRepository;
+import com.example.schedule_manager.global.exception.BusinessException;
+import com.example.schedule_manager.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -46,8 +48,8 @@ public class ScheduleService {
     // 그러면 무관한 다른 유저들의 캐시까지 이 한 번의 쓰기로 전부 날아간다.
     // create 시점엔 이미 request.userId() 로 대상 유저를 알고 있으므로, 그 유저와 관련된 키만 지운다
     public ScheduleResponseDto createSchedule(ScheduleRequestDto request) {
-        User user = userRepository.findById(request.userId()).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
-        Category category = categoryRepository.findById(request.categoryId()).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));
+        User user = userRepository.findById(request.userId()).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        Category category = categoryRepository.findById(request.categoryId()).orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
 
         Schedule schedule = Schedule.builder()
                 .title(request.title())
@@ -72,7 +74,7 @@ public class ScheduleService {
         Schedule schedule = findSchedule(id);
 
         if (requester.getUserType() != UserType.ADMIN && !schedule.getUser().getId().equals(requester.getId())) {
-            throw new IllegalArgumentException("본인의 일정만 조회할 수 있습니다.");
+            throw new BusinessException(ErrorCode.SCHEDULE_ACCESS_DENIED);
         }
         return ScheduleResponseDto.from(schedule);
     }
@@ -108,7 +110,7 @@ public class ScheduleService {
     public ScheduleResponseDto updateSchedule(Long id, ScheduleRequestDto request) {
         Schedule schedule = findSchedule(id);
         Category category = categoryRepository.findById(request.categoryId())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
 
         schedule.update(
                 request.title(),
@@ -179,11 +181,11 @@ public class ScheduleService {
 
     private Schedule findSchedule(Long id) {
         return scheduleRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 일정입니다."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.SCHEDULE_NOT_FOUND));
     }
 
     private User findUserByEmail(String email) {
         return userRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     }
 }

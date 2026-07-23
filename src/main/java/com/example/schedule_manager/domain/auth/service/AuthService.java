@@ -8,6 +8,8 @@ import com.example.schedule_manager.domain.user.entity.AuthProvider;
 import com.example.schedule_manager.domain.user.entity.User;
 import com.example.schedule_manager.domain.user.entity.UserType;
 import com.example.schedule_manager.domain.user.repository.UserRepository;
+import com.example.schedule_manager.global.exception.BusinessException;
+import com.example.schedule_manager.global.exception.ErrorCode;
 import com.example.schedule_manager.global.security.util.JwtUtil;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
@@ -57,7 +59,7 @@ public class AuthService {
         GoogleIdToken.Payload payload = idToken.getPayload();
 
         if (!Boolean.TRUE.equals(payload.getEmailVerified())) {
-            throw new IllegalArgumentException("이메일이 인증되지 않은 구글 계정입니다.");
+            throw new BusinessException(ErrorCode.UNVERIFIED_GOOGLE_EMAIL);
         }
         String email = payload.getEmail();
 
@@ -84,13 +86,13 @@ public class AuthService {
         String refreshToken = request.refreshToken();
 
         if (!jwtUtil.isTokenValid(refreshToken) || !jwtUtil.isRefreshToken(refreshToken)) {
-            throw new IllegalArgumentException("유효하지 않은 리프레시 토큰입니다.");
+            throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
 
         String email = jwtUtil.extractEmail(refreshToken);
         String storedToken = redisTemplate.opsForValue().get(REFRESH_KEY_PREFIX + email);
         if (storedToken == null || !storedToken.equals(refreshToken)) {
-            throw new IllegalArgumentException("만료되었거나 폐기된 리프레시 토큰입니다.");
+            throw new BusinessException(ErrorCode.EXPIRED_REFRESH_TOKEN);
         }
 
         return issueTokens(email);
@@ -115,10 +117,10 @@ public class AuthService {
             // 서명 검증까지 가지도 않고 IllegalArgumentException 을 바로 던진다 — 서명/발급자 실패(null 리턴)와 함께 묶어서 처리
             idToken = googleIdTokenVerifier.verify(rawIdToken);
         } catch (GeneralSecurityException | IOException | IllegalArgumentException e) {
-            throw new IllegalArgumentException("유효하지 않은 구글 로그인 토큰입니다.", e);
+            throw new BusinessException(ErrorCode.INVALID_GOOGLE_TOKEN, e);
         }
         if (idToken == null) {
-            throw new IllegalArgumentException("유효하지 않은 구글 로그인 토큰입니다.");
+            throw new BusinessException(ErrorCode.INVALID_GOOGLE_TOKEN);
         }
         return idToken;
     }

@@ -5,6 +5,8 @@ import com.example.schedule_manager.domain.user.dto.UserResponseDto;
 import com.example.schedule_manager.domain.user.entity.User;
 import com.example.schedule_manager.domain.user.entity.UserType;
 import com.example.schedule_manager.domain.user.repository.UserRepository;
+import com.example.schedule_manager.global.exception.BusinessException;
+import com.example.schedule_manager.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -19,7 +21,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
 
     public UserResponseDto createUser(UserRequestDto request) {
-        if (userRepository.existsByEmail(request.email())) throw new IllegalArgumentException("이미 사용 중인 이메일입니다.");
+        if (userRepository.existsByEmail(request.email())) throw new BusinessException(ErrorCode.DUPLICATE_EMAIL);
         User user = User.builder()
                 .username(request.username())
                 .password(passwordEncoder.encode(request.password()))
@@ -32,18 +34,18 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserResponseDto getUser(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         return UserResponseDto.from(user);
     }
 
     public UserResponseDto updateUser(Long id, UserRequestDto request) {
-        User user = userRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
+        User user = userRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         user.update(request.username(), request.email());
         return UserResponseDto.from(user);
     }
 
     public void deleteUser(Long id) {
-        User user = userRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다."));
+        User user = userRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         userRepository.delete(user);
     }
 }
