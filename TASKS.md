@@ -129,6 +129,8 @@ Schedule: id, title, content, startAt, endAt, status (PENDING/IN_PROGRESS/COMPLE
 
 ## Task #7 — AI 일정 추천 기능 구현
 
+> 실행 계획(구현 단계, 사전 조사한 Spring AI 1.0.0-M1 실제 API/설정 경로, 미결정 사항)은 [AI_STRATEGY.md](./AI_STRATEGY.md) 참고.
+
 **API**
 | Method | URI | 설명 |
 |--------|-----|------|
