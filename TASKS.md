@@ -35,7 +35,7 @@ User: id, username, email, password (BCrypt), userType (USER/ADMIN), authProvide
 
 - `/api/auth/me`는 구현되지 않음 (프론트가 로그인 응답의 이메일/토큰만으로 현재 유저 정보를 로컬에 들고 있음)
 - 세션 저장소 대신 Redis에 JWT 블랙리스트(`blacklist:{token}`)/refresh token(`refresh:{email}`)을 저장 — `spring-session-jdbc` 의존성과 `spring.session.store-type: jdbc` 설정은 남아있지만 실제로는 쓰이지 않음(제거 검토 대상)
-- 비밀번호: `BCryptPasswordEncoder` (계획대로)
+- 비밀번호: 회원가입(`createUser`)·구글 신규가입 모두 `BCryptPasswordEncoder`로 암호화 저장(계획대로). 다만 `updateUser`는 한동안 `User.update(username, email)`만 호출해 `request.password()`(그런데도 `@NotBlank`로 필수 입력이었음)를 완전히 무시하던 버그가 있었음 — `User.update()`에 `encodedPassword` 파라미터를 추가해 수정(`fix-5`)
 
 ---
 
