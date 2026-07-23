@@ -98,8 +98,9 @@ Schedule: id, title, content, startAt, endAt, status (PENDING/IN_PROGRESS/COMPLE
 - `@EnableCaching` 활성화 (계획대로, `RedisConfig`)
 - 캐시 대상
   - **카테고리 목록 캐싱은 구현되지 않음** — `CategoryService`에 `@Cacheable`/`@CacheEvict`가 전혀 없음
-  - 스케줄 목록만 캐싱됨 — 캐시 이름 `schedules`, 키는 `{requesterEmail}-{targetUserId}-{categoryId}`(계획의 `from`/`to` 기반이 아님, Task #4 참고). **TTL 설정 없음**(만료 없이 evict 시에만 제거됨) — 계획의 "TTL 5분/10분"과 다름
+  - 스케줄 목록만 캐싱됨 — 캐시 이름 `schedules`, 키는 `{requesterEmail}-{targetUserId}-{categoryId}`(계획의 `from`/`to` 기반이 아님, Task #4 참고)
 - 생성 시에는 `@CacheEvict` 대신 대상 유저와 관련된 키만 골라 지우는 커스텀 evict(`RedisTemplate` + `SCAN`)를 직접 호출 — `@CacheEvict`의 SpEL로는 와일드카드(유저별 타겟) 삭제가 안 되기 때문. 자세한 배경은 스케줄 캐시 무효화 관련 커밋 참고(`perf-1`/`perf-2`)
+- **TTL 5분 추가**(`RedisConfig.cacheManager()`의 `entryTtl(Duration.ofMinutes(5))`) — evict 로직이 못 걷어내는 경로가 실제로 있어서(ADMIN이 `userId` 없이 전체 조회한 캐시 키는 evict 패턴에 안 걸림, 카테고리 이름을 바꿔도 그 카테고리를 참조하는 스케줄 캐시는 evict 안 됨) 안전망으로 도입. evict가 정상 동작하는 일반적인 경우엔 체감되지 않고, evict를 놓친 경우에만 "영원히 stale" 대신 "최대 5분 후 자연 회복"으로 바뀜
 
 ---
 

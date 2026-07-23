@@ -17,6 +17,8 @@ import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSeriali
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
+import java.time.Duration;
+
 // Redis 를 캐시 저장소로 사용하기 위한 설정
 // @EnableCaching 으로 서비스 계층의 @Cacheable/@CacheEvict(예: ScheduleService.getSchedules) 를 활성화하고,
 // 아래 CacheManager 빈이 그 애노테이션들이 실제로 사용할 Redis 연동 방식을 정의한다
@@ -61,6 +63,12 @@ public class RedisConfig implements CachingConfigurer {
     @Bean
     public CacheManager cacheManager(RedisConnectionFactory connectionFactory) {
         RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
+                // ScheduleService.evictScheduleCacheForUser() 의 SCAN 패턴 evict 가 못 걷어내는 경로가 있다
+                // (예: ADMIN 이 userId 없이 전체 조회한 캐시 키, 카테고리 이름 변경 시 그 카테고리를 참조하는
+                // 스케줄 캐시는 evict되지 않음) — 이런 경우에도 무한정 stale 로 남지 않도록 기본 TTL을 건다.
+                // evict 가 정상 동작하는 일반적인 경우엔 그 전에 이미 지워지므로 체감되지 않고, evict 를
+                // 놓친 경우에만 "영원히 stale" 대신 "최대 5분 후 자연 회복"으로 바뀐다
+                .entryTtl(Duration.ofMinutes(5))
                 .serializeKeysWith(RedisSerializationContext.SerializationPair
                         .fromSerializer(new StringRedisSerializer()))
                 .serializeValuesWith(RedisSerializationContext.SerializationPair
