@@ -448,7 +448,7 @@ button {
   align-items: center;
   justify-content: center;
   width: 228px;
-  height: 202px;
+  height: 226px;
   box-sizing: border-box;
   /* 내부 차트가 이 박스보다 크게 그려지므로, 잘리지 않고 카드 밖으로 자연스럽게 넘치도록 둔다 */
   overflow: visible;
