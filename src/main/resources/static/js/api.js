@@ -1,3 +1,32 @@
+// 상태 코드를 들고 다니는 에러 — 호출부가 err.message 뿐 아니라 err.status 로도 분기해
+// UX에 맞는 처리(예: 404면 목록 새로고침, 403이면 권한 안내)를 할 수 있게 한다
+class ApiError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+// 백엔드가 message 를 못 내려준 경우(네트워크 실패 등)를 대비한 상태코드별 기본 문구.
+// 상태 코드나 "요청 실패" 같은 기술적인 표현 대신, 사용자가 다음에 뭘 해야 할지 알 수 있는 문장으로 통일한다
+function defaultMessageForStatus(status) {
+  switch (status) {
+    case 400:
+      return "입력한 내용을 다시 확인해주세요.";
+    case 401:
+      return "로그인이 필요합니다.";
+    case 403:
+      return "이 작업을 수행할 권한이 없습니다.";
+    case 404:
+      return "찾으시는 항목이 이미 삭제되었거나 존재하지 않습니다.";
+    case 409:
+      return "이미 사용 중이거나 존재하는 값입니다.";
+    default:
+      return "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+  }
+}
+
 // 공용 API 헬퍼: 토큰 저장/조회, fetch 래퍼(만료 시 refresh token 으로 자동 재발급), 로그인 유저 정보 보관
 const API = (() => {
   const TOKEN_KEY = "sm_access_token";
@@ -93,17 +122,22 @@ const API = (() => {
     const token = getToken();
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
-    const res = await fetch(path, Object.assign({}, options, { headers }));
+    let res;
+    try {
+      res = await fetch(path, Object.assign({}, options, { headers }));
+    } catch (networkErr) {
+      throw new ApiError(0, "네트워크 연결을 확인해주세요.");
+    }
 
-    // access token 이 만료/무효화된 요청(401/403)이면 refresh token 으로 재발급 후 한 번만 재시도한다.
-    // 이미 재시도한 요청이거나 애초에 로그인 상태가 아니었던 요청(token 없음)은 그대로 실패 처리한다
-    if ((res.status === 401 || res.status === 403) && !isRetry && token) {
+    // access token 이 만료/무효화된 요청(401)만 refresh token 으로 재발급 후 한 번 재시도한다.
+    // 403(권한 없음)은 토큰 자체는 유효한 상태라 재발급해도 소용없으므로 재시도 없이 바로 실패 처리한다
+    if (res.status === 401 && !isRetry && token) {
       try {
         await refreshAccessToken();
       } catch (e) {
         clearSession();
         window.location.href = "/login";
-        throw e;
+        throw new ApiError(401, "세션이 만료되었습니다. 다시 로그인해주세요.");
       }
       return request(path, options, true);
     }
@@ -118,8 +152,8 @@ const API = (() => {
     }
 
     if (!res.ok) {
-      const message = (body && (body.message || body.error)) || `요청 실패 (${res.status})`;
-      throw new Error(message);
+      const message = (body && (body.message || body.error)) || defaultMessageForStatus(res.status);
+      throw new ApiError(res.status, message);
     }
 
     // 백엔드 공통 포맷: { code, message, data }

@@ -79,7 +79,7 @@ async function loadCategories() {
     categories = await API.get("/api/categories");
   } catch (err) {
     categories = [];
-    showToast("카테고리를 불러오지 못했습니다: " + err.message);
+    showToast(`카테고리를 불러오지 못했습니다. ${err.message}`);
   }
   renderCategorySidebar();
   renderCategorySelectOptions();
@@ -128,7 +128,9 @@ function renderCategorySidebar() {
         await loadBoardForActiveCategory();
         showToast("카테고리를 삭제했습니다.");
       } catch (err) {
-        showToast("삭제 실패: " + err.message);
+        // 403(예: 기본 설정 카테고리 삭제 시도)은 서버 메시지 자체가 이미 사용자에게 보여줄 완결된 안내문이라
+        // "삭제하지 못했습니다" 접두어 없이 그대로 보여준다
+        showToast(err.status === 403 ? err.message : `카테고리를 삭제하지 못했습니다. ${err.message}`);
       }
     });
   });
@@ -155,7 +157,7 @@ async function loadSchedules() {
     schedules = await API.get("/api/schedules");
   } catch (err) {
     schedules = [];
-    showToast("일정을 불러오지 못했습니다: " + err.message);
+    showToast(`일정을 불러오지 못했습니다. ${err.message}`);
   }
   renderStats();
   refreshVisibleView();
@@ -173,7 +175,7 @@ async function loadBoardForActiveCategory() {
     categorySchedules = await API.get(`/api/schedules?categoryId=${encodeURIComponent(activeCategoryId)}`);
   } catch (err) {
     categorySchedules = [];
-    showToast("카테고리별 일정을 불러오지 못했습니다: " + err.message);
+    showToast(`카테고리별 일정을 불러오지 못했습니다. ${err.message}`);
   }
   refreshVisibleView();
 }
@@ -182,6 +184,24 @@ async function loadBoardForActiveCategory() {
 async function refreshAll() {
   await loadSchedules();
   await loadBoardForActiveCategory();
+}
+
+// 일정 생성/수정/삭제/상태변경 실패 시 상태코드별로 다른 UX를 보여준다:
+// 404(이미 삭제·존재하지 않는 일정)는 로컬 상태가 서버와 어긋난 것이므로 목록을 새로고침해 맞추고,
+// 403(소유자 아님)은 재시도로 해결되지 않으므로 전용 안내를, 그 외는 서버 메시지를 그대로 보여준다.
+// 목록을 새로고침한 경우 true 를 반환 — 호출부가 모달을 닫거나 로컬 상태를 되돌릴지 판단하는 데 쓴다
+async function notifyScheduleMutationError(err, actionLabel) {
+  if (err.status === 404) {
+    showToast("이미 삭제되었거나 존재하지 않는 일정입니다. 목록을 새로고침합니다.");
+    await refreshAll();
+    return true;
+  }
+  if (err.status === 403) {
+    showToast(`본인의 일정만 ${actionLabel}할 수 있습니다.`);
+    return false;
+  }
+  showToast(`${actionLabel}하지 못했습니다. ${err.message}`);
+  return false;
 }
 
 function visibleSchedules() {
@@ -1029,8 +1049,8 @@ async function updateScheduleStatus(id, status) {
     showToast("상태를 변경했습니다.");
     await refreshAll();
   } catch (err) {
-    showToast("상태 변경 실패: " + err.message);
-    renderBoard();
+    const refreshed = await notifyScheduleMutationError(err, "상태 변경");
+    if (!refreshed) renderBoard();
   }
 }
 
@@ -1042,7 +1062,7 @@ async function deleteSchedule(id) {
     showToast("일정을 삭제했습니다.");
     await refreshAll();
   } catch (err) {
-    showToast("삭제 실패: " + err.message);
+    await notifyScheduleMutationError(err, "삭제");
   }
 }
 
@@ -1129,7 +1149,8 @@ scheduleForm.addEventListener("submit", async (e) => {
     showToast(id ? "일정을 수정했습니다." : "일정을 추가했습니다.");
     await refreshAll();
   } catch (err) {
-    showToast("저장 실패: " + err.message);
+    const refreshed = await notifyScheduleMutationError(err, id ? "수정" : "저장");
+    if (refreshed) closeModal();
   }
 });
 
@@ -1146,7 +1167,7 @@ document.getElementById("add-category-form").addEventListener("submit", async (e
     await loadCategories();
     showToast("카테고리를 추가했습니다.");
   } catch (err) {
-    showToast("추가 실패: " + err.message);
+    showToast(`카테고리를 추가하지 못했습니다. ${err.message}`);
   }
 });
 
