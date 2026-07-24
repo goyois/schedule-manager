@@ -7,15 +7,18 @@
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-  <div id="quote-banner" class="quote-banner"></div>
+  <div class="quote-bar">
+    <div id="quote-banner" class="quote-banner"></div>
+    <button class="btn btn-ghost btn-sm" id="logout-btn">로그아웃</button>
+  </div>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="auth-brand">
+      <a class="auth-brand" href="/dashboard">
         <div class="logo-mark">S</div>
         <div class="logo-text">Schedule Manager</div>
-      </div>
+      </a>
 
-      <div class="sidebar-section">
+      <div class="sidebar-section sidebar-section-scroll">
         <h3>카테고리 <span id="category-count"></span></h3>
         <ul class="category-list" id="category-list">
           <li class="active" data-category-id="">
@@ -40,7 +43,6 @@
             <div class="email" id="user-email">-</div>
           </div>
         </div>
-        <button class="btn btn-ghost btn-sm" style="width: 100%" id="logout-btn">로그아웃</button>
       </div>
     </aside>
 
@@ -71,6 +73,7 @@
           <a class="mandalart-widget" id="mandalart-widget" href="/mandalart" title="만다라트 만들기/수정">
             <div class="mandalart-widget-grid" id="mandalart-widget-grid"></div>
             <div class="mandalart-widget-label">만다라트</div>
+            <div class="mandalart-widget-subtitle" id="mandalart-widget-subtitle"></div>
           </a>
 
           <div class="month-radar" id="month-radar">

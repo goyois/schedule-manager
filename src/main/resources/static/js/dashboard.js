@@ -1203,6 +1203,20 @@ function renderMandalartWidgetPreview() {
   }
 }
 
+// 이미 만들어둔 만다라트가 있으면 가장 최근 것(목록 맨 위)의 제목을 위젯에 작게 보여준다.
+// 실패하거나 하나도 없으면 조용히 비워둔다 - 위젯 자체는 어차피 정적 미리보기라 이 텍스트 없이도 동작한다
+async function loadMandalartWidgetSubtitle() {
+  const subtitleEl = document.getElementById("mandalart-widget-subtitle");
+  if (!subtitleEl) return;
+
+  try {
+    const boards = await API.get("/api/mandalart");
+    subtitleEl.textContent = boards.length > 0 ? boards[0].title : "";
+  } catch (err) {
+    subtitleEl.textContent = "";
+  }
+}
+
 // ---------- 초기화 ----------
 
 (async function init() {
@@ -1210,6 +1224,7 @@ function renderMandalartWidgetPreview() {
   renderUserChip();
   renderToday();
   renderMandalartWidgetPreview();
+  loadMandalartWidgetSubtitle();
   await loadCategories();
   await loadSchedules();
   // "지금" 표시선이 실제 흐르는 시간을 따라가도록 주기적으로 다시 그린다 (데이터 재조회는 없음)

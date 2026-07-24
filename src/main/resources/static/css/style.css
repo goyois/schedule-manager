@@ -34,11 +34,22 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.quote-banner {
-  width: 100%;
-  padding: 10px 24px;
+/* 명언 배너 + 로그아웃 버튼을 한 줄에 배치하는 바 - 배경/구분선은 여기로 옮기고,
+   quote-banner 자체는 텍스트 스타일만 갖는다(quotes.js 가 innerHTML 로 통째로 갈아끼우는 대상은
+   quote-banner 뿐이라, 로그아웃 버튼은 형제 요소로 둬야 정시마다 다시 그릴 때 사라지지 않는다) */
+.quote-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
   background: var(--color-primary-soft);
   border-bottom: 1px solid var(--color-border);
+  padding-right: 20px;
+}
+
+.quote-banner {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 24px;
   text-align: center;
   font-size: 13px;
   line-height: 1.5;
@@ -263,16 +274,29 @@ button {
   min-height: 100vh;
 }
 
+/* 사이드바를 뷰포트에 고정해, 목록이 길어져 페이지가 길어져도(왼쪽 하단) 내 정보가 스크롤 없이
+   항상 보이게 한다. 카테고리/만다라트 목록처럼 길어질 수 있는 영역만 .sidebar-section-scroll 로
+   내부 스크롤을 따로 두고, 그 위아래(브랜드·폼·사용자 정보)는 항상 고정된 크기로 유지된다 */
 .sidebar {
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
   padding: 22px 18px;
   display: flex;
   flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar .auth-brand {
   margin-bottom: 30px;
+}
+
+.sidebar-section-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .sidebar-section {
@@ -369,7 +393,6 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
 }
 
 .user-chip .avatar {
@@ -508,6 +531,20 @@ button {
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text-muted);
+}
+
+/* 이미 만든 만다라트가 있으면(가장 최근 것) 제목을 작은 글씨로 보여준다 - 없으면 비어서 렌더링 안 됨 */
+.mandalart-widget-subtitle {
+  max-width: 140px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mandalart-widget-subtitle:empty {
+  display: none;
 }
 
 @media (max-width: 940px) {
@@ -1553,5 +1590,14 @@ button {
   .sidebar {
     border-right: none;
     border-bottom: 1px solid var(--color-border);
+    /* 모바일에서는 사이드바가 본문 위에 쌓이는 레이아웃이라, 데스크톱용 뷰포트 고정(position: sticky
+       + height: 100vh)을 그대로 두면 사이드바 하나가 화면 전체를 차지해버린다 - 원래의 자연스러운
+       문서 흐름으로 되돌린다 */
+    position: static;
+    height: auto;
+    overflow: visible;
+  }
+  .sidebar-section-scroll {
+    overflow-y: visible;
   }
 }

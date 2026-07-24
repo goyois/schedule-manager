@@ -273,4 +273,8 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
   if (!requireAuth()) return;
   renderUserChip();
   await loadBoards();
+  // 빈 화면 대신 목록 맨 위(가장 최근에 만든) 만다라트를 바로 보여준다
+  if (boards.length > 0) {
+    await loadBoard(boards[0].id);
+  }
 })();

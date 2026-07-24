@@ -7,18 +7,22 @@
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
+  <div class="quote-bar">
+    <div id="quote-banner" class="quote-banner"></div>
+    <button class="btn btn-ghost btn-sm" id="logout-btn">로그아웃</button>
+  </div>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="auth-brand">
+      <a class="auth-brand" href="/dashboard">
         <div class="logo-mark">S</div>
         <div class="logo-text">Schedule Manager</div>
-      </div>
+      </a>
 
       <div class="sidebar-section">
         <a class="btn btn-ghost btn-sm" style="width: 100%; display: block; text-align: center" href="/dashboard">← 대시보드로</a>
       </div>
 
-      <div class="sidebar-section">
+      <div class="sidebar-section sidebar-section-scroll">
         <h3>내 만다라트</h3>
         <ul class="category-list" id="board-list"></ul>
         <form class="add-category-form" id="add-board-form">
@@ -35,7 +39,6 @@
             <div class="email" id="user-email">-</div>
           </div>
         </div>
-        <button class="btn btn-ghost btn-sm" style="width: 100%" id="logout-btn">로그아웃</button>
       </div>
     </aside>
 
@@ -51,6 +54,7 @@
 
   <div class="toast" id="toast"></div>
 
+  <script src="/js/quotes.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/mandalart.js"></script>
 </body>
