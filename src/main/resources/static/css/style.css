@@ -1445,6 +1445,13 @@ button {
   gap: 12px;
 }
 
+/* 그리드 아이템은 기본적으로 min-width: auto 라, 내용(예: 한글 로케일의 "오전/오후"가 붙는
+   datetime-local)이 트랙 폭보다 넓으면 줄어들지 않고 그리드/모달 밖으로 튀어나온다.
+   min-width: 0 으로 그 자동 최소폭을 없애야 1fr 1fr 이 실제로 균등하게 나뉜다 */
+.modal-row .field {
+  min-width: 0;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
