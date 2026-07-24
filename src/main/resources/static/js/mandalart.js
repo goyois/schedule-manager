@@ -138,8 +138,12 @@ function renderGrid() {
       textarea.value = content;
       textarea.addEventListener("input", () => autoResizeTextarea(textarea));
       textarea.addEventListener("blur", () => commitCell(cell, row, col));
+      // 한글 등 조합형 입력(IME) 중에는 Enter 가 "마지막 글자를 조합 확정"하는 용도로도 쓰인다.
+      // isComposing 체크 없이 Enter 를 가로채 바로 blur() 해버리면, 조합이 채 끝나기 전에 값을 읽고
+      // 커밋해버려 마지막 글자(음절)가 중복 입력된 것처럼 보이는 문제가 생긴다. 사파리는 keydown 에서
+      // isComposing 이 정확하지 않을 수 있어 관례적으로 keyCode === 229 도 함께 확인한다
       textarea.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
           e.preventDefault();
           textarea.blur();
         }
