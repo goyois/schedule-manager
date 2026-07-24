@@ -8,7 +8,6 @@ const toast = document.getElementById("toast");
 const boardListEl = document.getElementById("board-list");
 const gridEl = document.getElementById("mandalart-grid");
 const boardTitleEl = document.getElementById("board-title");
-const deleteBoardBtn = document.getElementById("delete-board-btn");
 
 function showToast(message) {
   toast.textContent = message;
@@ -55,12 +54,42 @@ function renderBoardList() {
       (b) => `
       <li data-board-id="${b.id}" class="${String(activeBoardId) === String(b.id) ? "active" : ""}">
         <span><span class="dot"></span>${escapeHtml(b.title)}</span>
+        <span class="remove-cat" data-remove-board="${b.id}">&times;</span>
       </li>`
     )
     .join("");
 
   boardListEl.querySelectorAll("li").forEach((li) => {
-    li.addEventListener("click", () => loadBoard(li.dataset.boardId));
+    li.addEventListener("click", (e) => {
+      if (e.target.dataset.removeBoard) return;
+      loadBoard(li.dataset.boardId);
+    });
+  });
+
+  boardListEl.querySelectorAll("[data-remove-board]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.removeBoard;
+      if (!confirm("이 만다라트를 삭제하시겠습니까?")) return;
+
+      try {
+        await API.del(`/api/mandalart/${id}`);
+        if (String(activeBoardId) === String(id)) {
+          activeBoardId = null;
+          activeCells = null;
+          gridEl.innerHTML = "";
+          boardTitleEl.textContent = "만다라트를 선택하거나 새로 만들어주세요";
+        }
+        await loadBoards();
+        // 지우고 나서도 빈 화면 대신, 남아있다면 목록 맨 위 것을 바로 보여준다(초기 진입과 동일한 원칙)
+        if (!activeBoardId && boards.length > 0) {
+          await loadBoard(boards[0].id);
+        }
+        showToast("만다라트를 삭제했습니다.");
+      } catch (err) {
+        showToast(`만다라트 삭제에 실패했습니다. ${err.message}`);
+      }
+    });
   });
 }
 
@@ -70,7 +99,6 @@ async function loadBoard(id) {
     activeBoardId = board.id;
     activeCells = new Map(board.cells.map((c) => [`${c.row}-${c.col}`, c.content]));
     boardTitleEl.textContent = board.title;
-    deleteBoardBtn.style.display = "";
     renderBoardList();
     renderGrid();
   } catch (err) {
@@ -239,23 +267,6 @@ document.getElementById("add-board-form").addEventListener("submit", async (e) =
     await loadBoard(created.id);
   } catch (err) {
     showToast(`만다라트 생성에 실패했습니다. ${err.message}`);
-  }
-});
-
-deleteBoardBtn.addEventListener("click", async () => {
-  if (!activeBoardId) return;
-  if (!confirm("이 만다라트를 삭제하시겠습니까?")) return;
-
-  try {
-    await API.del(`/api/mandalart/${activeBoardId}`);
-    activeBoardId = null;
-    activeCells = null;
-    boardTitleEl.textContent = "만다라트를 선택하거나 새로 만들어주세요";
-    deleteBoardBtn.style.display = "none";
-    gridEl.innerHTML = "";
-    await loadBoards();
-  } catch (err) {
-    showToast(`만다라트 삭제에 실패했습니다. ${err.message}`);
   }
 });
 

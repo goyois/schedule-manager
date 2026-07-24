@@ -479,6 +479,15 @@ button {
   margin-top: 4px;
 }
 
+/* 만다라트 화면 제목 - main-header 를 공유하던 시절엔 대시보드의 justify-content 변경에 딸려
+   오른쪽으로 밀려나 보였다. 이제는 옆에 다른 요소(삭제 버튼 등)가 없어 굳이 flex 줄일 필요가
+   없으므로 그냥 좌측 정렬 블록 타이틀로 둔다 */
+.mandalart-page-title {
+  font-size: 21px;
+  margin: 0 0 22px;
+  letter-spacing: -0.02em;
+}
+
 /* ---------- Header widgets (month radar + today clock) ---------- */
 
 .header-widgets {
