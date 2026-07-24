@@ -127,6 +127,29 @@
   </div>
 
   <button class="fab" id="open-create-modal" title="새 일정 추가">+</button>
+  <button class="fab fab-secondary" id="open-ai-suggest-modal" title="AI 일정 추천">AI</button>
+
+  <div class="modal-overlay" id="ai-suggest-modal-overlay">
+    <div class="modal">
+      <h2>AI 일정 추천</h2>
+      <form id="ai-suggest-form">
+        <div class="field">
+          <label for="ai-suggest-prompt">무엇을 추천받고 싶으신가요?</label>
+          <textarea id="ai-suggest-prompt" rows="3" placeholder="예: 이번 주에 운동할 시간을 추천해줘" required></textarea>
+        </div>
+
+        <div class="field" id="ai-suggest-result-field" style="display: none">
+          <label>추천 결과</label>
+          <div class="ai-suggest-result" id="ai-suggest-result"></div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="cancel-ai-suggest-modal-btn">닫기</button>
+          <button type="submit" class="btn btn-primary" style="width: auto" id="ai-suggest-submit-btn">추천받기</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <div class="modal-overlay" id="schedule-modal-overlay">
     <div class="modal">

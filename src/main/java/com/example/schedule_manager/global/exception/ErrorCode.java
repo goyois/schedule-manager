@@ -26,7 +26,9 @@ public enum ErrorCode {
     MANDALART_INVALID_POSITION(HttpStatus.BAD_REQUEST, "만다라트 셀 위치는 0~8 범위여야 합니다."),
 
     DUPLICATE_EMAIL(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다."),
-    DUPLICATE_CATEGORY(HttpStatus.CONFLICT, "이미 존재하는 카테고리입니다.");
+    DUPLICATE_CATEGORY(HttpStatus.CONFLICT, "이미 존재하는 카테고리입니다."),
+
+    AI_REQUEST_FAILED(HttpStatus.BAD_GATEWAY, "AI 추천 요청 처리 중 오류가 발생했습니다.");
 
     private final HttpStatus status;
     private final String message;

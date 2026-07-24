@@ -1203,6 +1203,51 @@ scheduleForm.addEventListener("submit", async (e) => {
   }
 });
 
+// ---------- AI 일정 추천 (AI_STRATEGY.md Task #7) ----------
+
+const aiSuggestModalOverlay = document.getElementById("ai-suggest-modal-overlay");
+const aiSuggestForm = document.getElementById("ai-suggest-form");
+const aiSuggestPromptInput = document.getElementById("ai-suggest-prompt");
+const aiSuggestResultField = document.getElementById("ai-suggest-result-field");
+const aiSuggestResultEl = document.getElementById("ai-suggest-result");
+const aiSuggestSubmitBtn = document.getElementById("ai-suggest-submit-btn");
+
+function openAiSuggestModal() {
+  aiSuggestForm.reset();
+  aiSuggestResultField.style.display = "none";
+  aiSuggestResultEl.textContent = "";
+  aiSuggestModalOverlay.classList.add("show");
+}
+
+function closeAiSuggestModal() {
+  aiSuggestModalOverlay.classList.remove("show");
+}
+
+document.getElementById("open-ai-suggest-modal").addEventListener("click", openAiSuggestModal);
+document.getElementById("cancel-ai-suggest-modal-btn").addEventListener("click", closeAiSuggestModal);
+aiSuggestModalOverlay.addEventListener("click", (e) => {
+  if (e.target === aiSuggestModalOverlay) closeAiSuggestModal();
+});
+
+aiSuggestForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const prompt = aiSuggestPromptInput.value.trim();
+  if (!prompt) return;
+
+  aiSuggestSubmitBtn.disabled = true;
+  aiSuggestSubmitBtn.textContent = "추천 받는 중...";
+  try {
+    const { suggestion } = await API.post("/api/ai/suggest", { prompt });
+    aiSuggestResultEl.textContent = suggestion;
+    aiSuggestResultField.style.display = "";
+  } catch (err) {
+    showToast(`AI 추천에 실패했습니다. ${err.message}`);
+  } finally {
+    aiSuggestSubmitBtn.disabled = false;
+    aiSuggestSubmitBtn.textContent = "추천받기";
+  }
+});
+
 // ---------- 카테고리 추가 ----------
 
 document.getElementById("add-category-form").addEventListener("submit", async (e) => {
