@@ -497,7 +497,7 @@ button {
 }
 
 .mandalart-widget-cell.main-goal {
-  background: var(--color-primary);
+  background: #d3d1f9;
 }
 
 .mandalart-widget-cell.sub-goal {
@@ -1477,9 +1477,11 @@ button {
   font-weight: 700;
 }
 
+/* 메인 목표도 다른 칸들처럼 파스텔톤을 쓰되, 유일한 중심 칸이라는 걸 알아볼 수 있도록 8개 블록
+   파스텔(15% 혼합)보다 살짝 더 진한 파스텔(25% 혼합)로 구분한다 - 더 이상 원색(solid) 배경은 쓰지 않는다 */
 .mandalart-cell.main-goal.filled {
-  background: var(--color-primary);
-  color: #fff;
+  background: #d3d1f9;
+  color: var(--color-text);
 }
 
 /* 8개 바깥 블록 색상 - dataviz 스킬의 8색 categorical 팔레트(고정 순서)를 옅은 배경 톤으로 변환해 사용.
