@@ -1446,6 +1446,23 @@ button {
   max-width: 900px;
 }
 
+/* 중앙 블록에서 8개 바깥 블록으로 뻗어나가는 화살표. 칸(.mandalart-cell)과 같은 grid 안에 explicit
+   grid-row/grid-column 으로 경계선에 걸쳐 배치되고(mandalart.js 의 CENTER_ARROWS 참고), 칸들보다
+   나중에 그려 넣어(z-index 로도 보강) 자연스럽게 위에 겹쳐 보인다. 클릭은 그대로 밑 textarea 로
+   전달돼야 하므로 pointer-events: none 필수 */
+.mandalart-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  pointer-events: none;
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--color-primary);
+  opacity: 0.7;
+  text-shadow: 0 0 3px var(--color-surface), 0 0 3px var(--color-surface);
+}
+
 .mandalart-cell {
   display: flex;
   align-items: center;

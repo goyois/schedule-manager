@@ -119,6 +119,11 @@ function renderGrid() {
     for (let col = 0; col < GRID_SIZE; col++) {
       const cell = document.createElement("div");
       cell.className = "mandalart-cell";
+      // 화살표(.mandalart-arrow)가 경계선에 겹치도록 명시적 grid-row/grid-column 을 쓰기 때문에, 칸도
+      // 전부 명시적으로 배치해야 한다 - 칸만 auto-placement 에 맡기면, CSS Grid 가 화살표가 차지한
+      // 트랙을 "이미 예약됨"으로 보고 auto-flow 칸들을 건너뛰어 버려 전체 격자가 밀리는 문제가 있었다
+      cell.style.gridRow = `${row + 1} / ${row + 2}`;
+      cell.style.gridColumn = `${col + 1} / ${col + 2}`;
       if (col % 3 === 2 && col !== GRID_SIZE - 1) cell.classList.add("edge-right");
       if (row % 3 === 2 && row !== GRID_SIZE - 1) cell.classList.add("edge-bottom");
       if (row === 4 && col === 4) cell.classList.add("main-goal");
@@ -148,11 +153,50 @@ function renderGrid() {
           textarea.blur();
         }
       });
+      // textarea 를 내용 높이만큼만 차지하도록 auto-resize 하면서, 내용이 짧거나 없는 칸은 textarea 가
+      // 칸 전체를 채우지 않게 됐다 - 그 주변 여백(칸의 flex 패딩 영역)을 클릭하면 textarea 가 아니라
+      // 이 div 자체가 클릭돼 포커스가 안 잡히는 문제가 생긴다(화살표가 겹친 자리도 pointer-events:none
+      // 이라 결국 이 div 로 클릭이 전달되므로 동일하게 걸린다). 칸 어디를 클릭해도 textarea 로 포커스가
+      // 가도록 칸 자체에도 핸들러를 둔다
+      cell.addEventListener("mousedown", (e) => {
+        if (e.target === textarea) return;
+        e.preventDefault();
+        textarea.focus();
+      });
       cell.appendChild(textarea);
       gridEl.appendChild(cell);
       // scrollHeight 는 실제 렌더링된(그리드에 붙은) 상태라야 폭 기준 줄바꿈이 정확히 반영된다
       autoResizeTextarea(textarea);
     }
+  }
+
+  renderCenterArrows();
+}
+
+// 중앙 블록(3x3)에서 8개 바깥 블록을 향해 뻗어나가는 화살표. 각 화살표는 중앙 블록과 그 블록 사이의
+// 경계선에 걸치도록 grid-row/grid-column 을 셀 좌표(0-indexed) 그대로 두 트랙에 걸쳐 배치한다
+// (0-indexed 트랙 i 는 CSS grid line (i+1)~(i+2)). 81개 칸을 다 그린 "뒤에" 추가해야 같은 grid 안에서
+// 자연스럽게 칸들 위로 그려지고(z-index 도 보험으로 명시), pointer-events: none 이라 클릭은 그대로
+// 밑에 있는 textarea 로 전달된다 - 화살표가 칸 편집을 가로막지 않는다
+const CENTER_ARROWS = [
+  { row: [2, 4], col: [4, 5], glyph: "↑" },
+  { row: [5, 7], col: [4, 5], glyph: "↓" },
+  { row: [4, 5], col: [2, 4], glyph: "←" },
+  { row: [4, 5], col: [5, 7], glyph: "→" },
+  { row: [2, 4], col: [2, 4], glyph: "↖" },
+  { row: [2, 4], col: [5, 7], glyph: "↗" },
+  { row: [5, 7], col: [2, 4], glyph: "↙" },
+  { row: [5, 7], col: [5, 7], glyph: "↘" },
+];
+
+function renderCenterArrows() {
+  for (const { row, col, glyph } of CENTER_ARROWS) {
+    const arrow = document.createElement("div");
+    arrow.className = "mandalart-arrow";
+    arrow.style.gridRow = `${row[0] + 1} / ${row[1] + 1}`;
+    arrow.style.gridColumn = `${col[0] + 1} / ${col[1] + 1}`;
+    arrow.textContent = glyph;
+    gridEl.appendChild(arrow);
   }
 }
 
