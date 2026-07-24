@@ -159,8 +159,7 @@ async function loadSchedules() {
     schedules = [];
     showToast(`일정을 불러오지 못했습니다. ${err.message}`);
   }
-  renderStats();
-  refreshVisibleView();
+  refreshVisibleView(); // 통계 카드/레이더 모두 여기서 함께 갱신된다
 }
 
 // 사이드바에서 카테고리를 선택하면 서버에 categoryId 를 실어 보내 해당 카테고리의 일정만 조회한다
@@ -209,8 +208,11 @@ function visibleSchedules() {
   return categorySchedules ?? [];
 }
 
+// 상단 통계 카드(전체 일정/대기/진행중/완료)도 레이더와 같은 원칙으로, 현재 뷰(보드/일/주/월/년)의
+// 집계 범위에 맞춰 세도록 getViewScopedSchedules() 를 공유한다 - 카테고리 필터와는 무관하게
+// 항상 전체 일정 기준인 것도 레이더와 동일(visibleSchedules() 가 아니라 schedules 를 씀)
 function renderStats() {
-  const list = schedules;
+  const list = getViewScopedSchedules();
   document.getElementById("stat-total").textContent = list.length;
   document.getElementById("stat-pending").textContent = list.filter((s) => s.status === "PENDING").length;
   document.getElementById("stat-progress").textContent = list.filter((s) => s.status === "IN_PROGRESS").length;
@@ -242,7 +244,8 @@ function radarPolarPoint(r, angleDeg) {
 }
 
 // 현재 뷰(보드/일/주/월/년)에 맞는 집계 범위를 돌려준다. 보드는 날짜 개념이 없는 전체 목록이라 null.
-function getRadarScheduleWindow() {
+// 레이더뿐 아니라 상단 통계 카드(renderStats)도 이 범위를 공유한다
+function getViewScheduleWindow() {
   if (viewMode === "day") {
     const start = startOfDay(viewDate);
     return { start, end: addDays(start, 1) };
@@ -263,10 +266,15 @@ function getRadarScheduleWindow() {
   return null; // board
 }
 
+// 카테고리 필터와 무관하게 오늘 시계와 같은 원칙으로 항상 전체 일정(schedules) 기준으로 집계하되,
+// 현재 뷰(보드/일/주/월/년)의 날짜 범위로만 좁힌다
+function getViewScopedSchedules() {
+  const window = getViewScheduleWindow();
+  return window ? schedulesOverlappingRange(schedules, window.start, window.end) : schedules;
+}
+
 function renderScheduleRadar() {
-  const window = getRadarScheduleWindow();
-  // 카테고리 필터와 무관하게 오늘 시계와 같은 원칙으로 항상 전체 일정 기준으로 집계한다
-  const rangeSchedules = window ? schedulesOverlappingRange(schedules, window.start, window.end) : schedules;
+  const rangeSchedules = getViewScopedSchedules();
 
   const counts = {
     total: rangeSchedules.length,
@@ -731,7 +739,9 @@ function navigateView(dir) {
 
 // 현재 활성화된 뷰(보드 또는 캘린더)만 다시 그린다 - 데이터 새로고침 후에도 이 함수를 통해 화면을 갱신한다
 function refreshVisibleView() {
-  renderScheduleRadar(); // 레이더는 뷰/날짜 전환마다 그 시점의 집계 범위로 다시 그려야 한다
+  // 레이더/상단 통계 카드 둘 다 뷰·날짜 전환마다 그 시점의 집계 범위로 다시 그려야 한다
+  renderScheduleRadar();
+  renderStats();
   if (viewMode === "board") {
     renderBoard();
     return;
