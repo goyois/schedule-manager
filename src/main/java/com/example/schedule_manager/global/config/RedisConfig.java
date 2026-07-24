@@ -1,7 +1,9 @@
 package com.example.schedule_manager.global.config;
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CachingConfigurer;
@@ -38,10 +40,26 @@ public class RedisConfig implements CachingConfigurer {
     // 여기에는 JavaTimeModule 이 없어 LocalDateTime 필드(ScheduleResponseDto.startAt 등)를 캐싱하려는 순간
     // InvalidDefinitionException 이 터진다 (캐시 미스 시 응답을 Redis 에 쓰는 과정에서 발생하므로 API 자체가 500 이 된다)
     // → JavaTimeModule 을 등록한 ObjectMapper 를 직접 만들어 넘겨준다
+    //
+    // #v3
+    // GenericJackson2JsonRedisSerializer(ObjectMapper) 생성자는 기본(no-arg) 생성자와 달리
+    // 넘겨받은 ObjectMapper 에 default typing 을 활성화해주지 않는다. 그 결과 캐시에 쓰는 JSON 에
+    // "@class" 타입 정보가 전혀 남지 않아서, 캐시 히트 시 List<ScheduleResponseDto> 같은 값이
+    // record 가 아니라 LinkedHashMap 리스트로 역직렬화된다 — ScheduleController 처럼 그대로
+    // 재직렬화만 하는 코드는 겉으로 문제가 없어 보이지만, AiService 처럼 DTO 필드에 타입으로
+    // 접근하는 코드는 ClassCastException 이 터진다. 이 프로젝트 패키지 하위 타입만 역직렬화
+    // 대상으로 허용하는 PolymorphicTypeValidator 와 함께 EVERYTHING 타이핑(레코드처럼 final 인
+    // 타입까지 포함)을 직접 활성화해 이 프로젝트가 만든 no-arg 생성자와 동일한 동작을 재현한다.
     private GenericJackson2JsonRedisSerializer redisJsonSerializer() {
+        BasicPolymorphicTypeValidator typeValidator = BasicPolymorphicTypeValidator.builder()
+                .allowIfSubType("com.example.schedule_manager.")
+                .allowIfSubType("java.util.")
+                .build();
+
         ObjectMapper objectMapper = new ObjectMapper()
                 .registerModule(new JavaTimeModule())
-                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                .activateDefaultTyping(typeValidator, ObjectMapper.DefaultTyping.EVERYTHING, JsonTypeInfo.As.PROPERTY);
         return new GenericJackson2JsonRedisSerializer(objectMapper);
     }
 
