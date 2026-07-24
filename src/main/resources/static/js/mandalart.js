@@ -78,6 +78,34 @@ async function loadBoard(id) {
   }
 }
 
+// 정중앙(4,4)이 속한 중앙 블록을 제외한 8개 블록의 색 슬롯 - 읽는 순서로 고정(dataviz 색상 배정 규칙:
+// 카테고리 색은 항상 고정 순서로 배정하고, 데이터에 따라 순서를 바꾸지 않는다)
+const BLOCK_HUE_CLASS = {
+  0: "hue-1", 1: "hue-2", 2: "hue-3",
+  3: "hue-4",             5: "hue-5",
+  6: "hue-6", 7: "hue-7", 8: "hue-8",
+};
+
+// 이 칸이 색으로 표시될 때 어느 블록의 색을 따라야 하는지 계산한다.
+// - 메인 목표(정중앙)는 블록 색이 없다(항상 고유하게 강조되는 별도 스타일).
+// - 중앙 블록의 나머지 8칸은 "이 서브골이 어느 바깥 블록의 주제인지"를 나타내는 칸이라, 중심에서 본
+//   같은 방향(오프셋)의 바깥 블록과 같은 색을 그대로 물려받는다 — "중심점을 기준으로" 색이 정해진다.
+// - 바깥 블록의 9칸(자신의 중심 칸 포함)은 모두 그 블록 고유의 색을 쓴다.
+function cellBlockHueClass(row, col) {
+  const blockRow = Math.floor(row / 3);
+  const blockCol = Math.floor(col / 3);
+
+  if (blockRow === 1 && blockCol === 1) {
+    if (row === 4 && col === 4) return null;
+    const offsetRow = row - 3 - 1; // -1, 0, 1
+    const offsetCol = col - 3 - 1;
+    const representedBlockIndex = (1 + offsetRow) * 3 + (1 + offsetCol);
+    return BLOCK_HUE_CLASS[representedBlockIndex];
+  }
+
+  return BLOCK_HUE_CLASS[blockRow * 3 + blockCol];
+}
+
 function renderGrid() {
   gridEl.innerHTML = "";
   if (!activeCells) return;
@@ -91,9 +119,15 @@ function renderGrid() {
       if (row === 4 && col === 4) cell.classList.add("main-goal");
       else if (row % 3 === 1 && col % 3 === 1) cell.classList.add("sub-goal");
 
+      const hueClass = cellBlockHueClass(row, col);
+      if (hueClass) cell.classList.add(hueClass);
+
+      const content = activeCells.get(`${row}-${col}`) || "";
+      if (content.trim()) cell.classList.add("filled");
+
       cell.dataset.row = String(row);
       cell.dataset.col = String(col);
-      cell.textContent = activeCells.get(`${row}-${col}`) || "";
+      cell.textContent = content;
       cell.addEventListener("click", () => beginEditCell(cell));
       gridEl.appendChild(cell);
     }
@@ -127,6 +161,7 @@ async function commitEditCell(cell, row, col, content) {
   const previous = activeCells.get(`${row}-${col}`) || "";
   activeCells.set(`${row}-${col}`, content);
   cell.textContent = content;
+  cell.classList.toggle("filled", content.trim().length > 0);
 
   if (content === previous) return;
   try {
@@ -134,6 +169,7 @@ async function commitEditCell(cell, row, col, content) {
   } catch (err) {
     activeCells.set(`${row}-${col}`, previous);
     cell.textContent = previous;
+    cell.classList.toggle("filled", previous.trim().length > 0);
     showToast(`셀 저장에 실패했습니다. ${err.message}`);
   }
 }

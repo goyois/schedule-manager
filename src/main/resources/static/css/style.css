@@ -1465,16 +1465,35 @@ button {
   border-bottom: 2px solid var(--color-border);
 }
 
+/* sub-goal(각 블록의 중심 칸)은 내용이 비어 있어도 구조를 알아볼 수 있도록 글자 굵기만 항상 강조한다.
+   배경색은 다른 칸과 동일하게 내용이 채워졌을 때만(.filled) 나타난다 */
 .mandalart-cell.sub-goal {
-  background: var(--color-primary-soft);
   font-weight: 600;
 }
 
+/* 정중앙(메인 목표) 칸만 유일하게 항상 특별 취급하는 대신, 다른 칸과 마찬가지로 내용이 채워졌을 때만
+   진하게 칠해진다 — 비어 있으면 구조 힌트로 글자만 굵게 표시한다 */
 .mandalart-cell.main-goal {
-  background: var(--color-primary);
-  color: #fff;
   font-weight: 700;
 }
+
+.mandalart-cell.main-goal.filled {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+/* 8개 바깥 블록 색상 - dataviz 스킬의 8색 categorical 팔레트(고정 순서)를 옅은 배경 톤으로 변환해 사용.
+   중앙 블록의 8칸(각 바깥 블록의 서브골을 그대로 옮겨 적은 칸)도 자신이 대응하는 바깥 블록과 같은
+   색을 물려받는다(mandalart.js 의 cellBlockHueClass 참고) — "중심점을 기준으로" 방향별 색이 배정된다.
+   내용이 없으면(.filled 아님) 색이 나타나지 않아, 채워나갈수록 보드에 색이 퍼지는 효과를 준다 */
+.mandalart-cell.hue-1.filled { background: #dfebf9; } /* blue   - 좌상단 블록 */
+.mandalart-cell.hue-2.filled { background: #fce8e1; } /* orange - 상단 블록 */
+.mandalart-cell.hue-3.filled { background: #ddf3eb; } /* aqua   - 우상단 블록 */
+.mandalart-cell.hue-4.filled { background: #fcf1d9; } /* yellow - 좌측 블록 */
+.mandalart-cell.hue-5.filled { background: #fcebf1; } /* magenta - 우측 블록 */
+.mandalart-cell.hue-6.filled { background: #d9ecd9; } /* green  - 좌하단 블록 */
+.mandalart-cell.hue-7.filled { background: #e4e1f2; } /* violet - 하단 블록 */
+.mandalart-cell.hue-8.filled { background: #fbe4e4; } /* red    - 우하단 블록 */
 
 .mandalart-cell textarea {
   width: 100%;
