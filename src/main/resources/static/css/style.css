@@ -1447,6 +1447,10 @@ button {
 }
 
 .mandalart-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   background: var(--color-surface);
   padding: 6px;
   font-size: 12px;
@@ -1500,6 +1504,7 @@ button {
 .mandalart-cell textarea {
   width: 100%;
   height: 100%;
+  text-align: center;
   border: none;
   outline: none;
   resize: none;
