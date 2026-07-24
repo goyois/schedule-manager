@@ -1359,6 +1359,62 @@ button {
   transform: translateX(-50%) translateY(0);
 }
 
+.mandalart-grid {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  grid-template-rows: repeat(9, minmax(70px, 1fr));
+  gap: 2px;
+  background: var(--color-border);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  max-width: 900px;
+}
+
+.mandalart-cell {
+  background: var(--color-surface);
+  padding: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+  overflow: hidden;
+}
+
+.mandalart-cell.edge-right {
+  border-right: 2px solid var(--color-border);
+}
+
+.mandalart-cell.edge-bottom {
+  border-bottom: 2px solid var(--color-border);
+}
+
+.mandalart-cell.sub-goal {
+  background: var(--color-primary-soft);
+  font-weight: 600;
+}
+
+.mandalart-cell.main-goal {
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 700;
+}
+
+.mandalart-cell textarea {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.35;
+  padding: 0;
+}
+
 @media (max-width: 980px) {
   .board {
     grid-template-columns: 1fr;

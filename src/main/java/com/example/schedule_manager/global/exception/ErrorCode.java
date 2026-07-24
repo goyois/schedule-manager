@@ -20,6 +20,10 @@ public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 유저입니다."),
     CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 카테고리입니다."),
     SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 일정입니다."),
+    MANDALART_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 만다라트입니다."),
+
+    MANDALART_ACCESS_DENIED(HttpStatus.FORBIDDEN, "본인의 만다라트만 접근할 수 있습니다."),
+    MANDALART_INVALID_POSITION(HttpStatus.BAD_REQUEST, "만다라트 셀 위치는 0~8 범위여야 합니다."),
 
     DUPLICATE_EMAIL(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다."),
     DUPLICATE_CATEGORY(HttpStatus.CONFLICT, "이미 존재하는 카테고리입니다.");

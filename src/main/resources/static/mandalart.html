@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>만다라트 · Schedule Manager</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="auth-brand">
+        <div class="logo-mark">S</div>
+        <div class="logo-text">Schedule Manager</div>
+      </div>
+
+      <div class="sidebar-section">
+        <a class="btn btn-ghost btn-sm" style="width: 100%; display: block; text-align: center" href="/dashboard">← 대시보드로</a>
+      </div>
+
+      <div class="sidebar-section">
+        <h3>내 만다라트</h3>
+        <ul class="category-list" id="board-list"></ul>
+        <form class="add-category-form" id="add-board-form">
+          <input type="text" id="new-board-title" placeholder="새 만다라트 제목" required />
+          <button type="submit" class="btn btn-ghost btn-sm">추가</button>
+        </form>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="user-chip">
+          <div class="avatar" id="user-avatar">?</div>
+          <div class="who">
+            <div class="name" id="user-name">사용자</div>
+            <div class="email" id="user-email">-</div>
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="width: 100%" id="logout-btn">로그아웃</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="main-header">
+        <h1 id="board-title">만다라트를 선택하거나 새로 만들어주세요</h1>
+        <button type="button" class="btn btn-ghost btn-sm" id="delete-board-btn" style="display: none">삭제</button>
+      </div>
+
+      <div class="mandalart-grid" id="mandalart-grid"></div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/mandalart.js"></script>
+</body>
+</html>

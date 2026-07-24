@@ -27,4 +27,9 @@ public class ViewController {
     public String dashboard() {
         return "forward:/dashboard.html";
     }
+
+    @GetMapping("/mandalart")
+    public String mandalart() {
+        return "forward:/mandalart.html";
+    }
 }

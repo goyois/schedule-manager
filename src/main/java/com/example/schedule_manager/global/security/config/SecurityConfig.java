@@ -58,8 +58,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
                         // 정적 리소스·화면 라우트는 토큰 없이 접근 허용 (로그인 전 화면 자체는 볼 수 있어야 함)
                         .requestMatchers(
-                                "/", "/login", "/signup", "/dashboard",
-                                "/index.html", "/signup.html", "/dashboard.html",
+                                "/", "/login", "/signup", "/dashboard", "/mandalart",
+                                "/index.html", "/signup.html", "/dashboard.html", "/mandalart.html",
                                 "/css/**", "/js/**"
                         ).permitAll()
                         // 모니터링용 actuator 는 인증 없이 스크레이핑 가능해야 함
