@@ -268,24 +268,38 @@ button {
 
 /* ---------- App shell ---------- */
 
+/* quote-bar + app-shell 를 감싸는 뷰포트 높이 컨테이너 - body 자체에 height:100vh/overflow:hidden 을
+   걸면 로그인/회원가입 페이지(.auth-page, 이 스타일시트를 같이 쓴다)의 세로 중앙 정렬까지 깨지므로,
+   대시보드/만다라트 화면에만 쓰는 이 wrapper 로 범위를 좁힌다. quote-bar 높이가 몇 px인지 몰라도
+   되도록(폰트 로딩·줄바꿈에 따라 달라질 수 있음) position:sticky + 고정 vh 계산 대신, flex 컬럼으로
+   "명언바는 원래 크기, 나머지(app-shell)는 남는 공간 전부"를 자연스럽게 나누는 방식을 쓴다.
+   실제 스크롤은 app-shell 내부의 .main 이 담당한다(main-header/사이드바는 페이지 스크롤과 무관하게
+   항상 보인다) */
+.shell-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 240px 1fr;
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
-/* 사이드바를 뷰포트에 고정해, 목록이 길어져 페이지가 길어져도(왼쪽 하단) 내 정보가 스크롤 없이
-   항상 보이게 한다. 카테고리/만다라트 목록처럼 길어질 수 있는 영역만 .sidebar-section-scroll 로
-   내부 스크롤을 따로 두고, 그 위아래(브랜드·폼·사용자 정보)는 항상 고정된 크기로 유지된다 */
+/* 카테고리/만다라트 목록처럼 길어질 수 있는 영역만 .sidebar-section-scroll 로 내부 스크롤을 따로 두고,
+   그 위아래(브랜드·폼·사용자 정보)는 항상 고정된 크기로 유지된다 - 사이드바 자체는 이제 부모
+   (.app-shell, 뷰포트에 맞게 이미 높이가 고정됨)를 그대로 채우기만 하면 되므로 별도의
+   position/height 계산이 필요 없다 */
 .sidebar {
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
   padding: 22px 18px;
   display: flex;
   flex-direction: column;
-  position: sticky;
-  top: 0;
-  height: 100vh;
   overflow: hidden;
 }
 
@@ -433,6 +447,7 @@ button {
 .main {
   padding: 26px 32px 40px;
   min-width: 0;
+  overflow-y: auto;
 }
 
 .main-header {
@@ -1584,20 +1599,28 @@ button {
 }
 
 @media (max-width: 720px) {
+  /* 모바일에서는 사이드바가 본문 위에 쌓이는 레이아웃이라, 데스크톱용 뷰포트 고정(shell-page/app-shell
+     의 height:100vh + overflow:hidden, main 의 overflow-y:auto)을 그대로 두면 사이드바 하나가 화면
+     전체를 차지하거나 스크롤이 이상해진다 - 원래의 자연스러운 문서 스크롤로 되돌린다 */
+  .shell-page {
+    height: auto;
+    overflow: visible;
+  }
   .app-shell {
     grid-template-columns: 1fr;
+    flex: none;
+    min-height: 0;
+    overflow: visible;
   }
   .sidebar {
     border-right: none;
     border-bottom: 1px solid var(--color-border);
-    /* 모바일에서는 사이드바가 본문 위에 쌓이는 레이아웃이라, 데스크톱용 뷰포트 고정(position: sticky
-       + height: 100vh)을 그대로 두면 사이드바 하나가 화면 전체를 차지해버린다 - 원래의 자연스러운
-       문서 흐름으로 되돌린다 */
-    position: static;
-    height: auto;
     overflow: visible;
   }
   .sidebar-section-scroll {
+    overflow-y: visible;
+  }
+  .main {
     overflow-y: visible;
   }
 }
