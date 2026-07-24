@@ -106,6 +106,11 @@ function cellBlockHueClass(row, col) {
   return BLOCK_HUE_CLASS[blockRow * 3 + blockCol];
 }
 
+// 칸을 "평소엔 텍스트만 보여주다 클릭하면 textarea 로 교체" 방식으로 만들었더니, 아직 textarea 가
+// 아닌 상태에서 마우스로 드래그해 텍스트를 선택하면(mousedown~mouseup) 그 직후에 뒤늦게 click 이벤트가
+// 발생해 칸 전체가 새 textarea 로 통째로 교체돼버렸다 - 방금 만든 선택 영역이 그대로 사라지고, 새로
+// 생긴 textarea 는 커서만 있고 선택 영역이 없는 상태라 이어서 Backspace 를 눌러도 아무 것도 지워지지
+// 않았다. 그래서 처음부터 모든 칸을 textarea 로 렌더링해 이 모드 전환 자체를 없앴다
 function renderGrid() {
   gridEl.innerHTML = "";
   if (!activeCells) return;
@@ -127,40 +132,38 @@ function renderGrid() {
 
       cell.dataset.row = String(row);
       cell.dataset.col = String(col);
-      cell.textContent = content;
-      cell.addEventListener("click", () => beginEditCell(cell));
+
+      const textarea = document.createElement("textarea");
+      textarea.maxLength = 200;
+      textarea.value = content;
+      textarea.addEventListener("input", () => autoResizeTextarea(textarea));
+      textarea.addEventListener("blur", () => commitCell(cell, row, col));
+      textarea.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          textarea.blur();
+        }
+      });
+      cell.appendChild(textarea);
       gridEl.appendChild(cell);
+      // scrollHeight 는 실제 렌더링된(그리드에 붙은) 상태라야 폭 기준 줄바꿈이 정확히 반영된다
+      autoResizeTextarea(textarea);
     }
   }
 }
 
-function beginEditCell(cell) {
-  if (cell.querySelector("textarea")) return;
-
-  const row = Number(cell.dataset.row);
-  const col = Number(cell.dataset.col);
-  const currentContent = activeCells.get(`${row}-${col}`) || "";
-
-  cell.textContent = "";
-  const textarea = document.createElement("textarea");
-  textarea.value = currentContent;
-  textarea.maxLength = 200;
-  cell.appendChild(textarea);
-  textarea.focus();
-
-  textarea.addEventListener("blur", () => commitEditCell(cell, row, col, textarea.value));
-  textarea.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      textarea.blur();
-    }
-  });
+// 내용 길이에 맞춰 textarea 높이를 다시 잰다 - 부모(.mandalart-cell)가 flex 로 세로 중앙 정렬을
+// 하므로, textarea 자체 높이가 내용만큼만 차지해야 짧은 글이 칸 한가운데에 온다
+function autoResizeTextarea(textarea) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${textarea.scrollHeight}px`;
 }
 
-async function commitEditCell(cell, row, col, content) {
+async function commitCell(cell, row, col) {
+  const textarea = cell.querySelector("textarea");
+  const content = textarea.value;
   const previous = activeCells.get(`${row}-${col}`) || "";
   activeCells.set(`${row}-${col}`, content);
-  cell.textContent = content;
   cell.classList.toggle("filled", content.trim().length > 0);
 
   if (content === previous) return;
@@ -168,7 +171,8 @@ async function commitEditCell(cell, row, col, content) {
     await API.put(`/api/mandalart/${activeBoardId}/cells/${row}/${col}`, { content });
   } catch (err) {
     activeCells.set(`${row}-${col}`, previous);
-    cell.textContent = previous;
+    textarea.value = previous;
+    autoResizeTextarea(textarea);
     cell.classList.toggle("filled", previous.trim().length > 0);
     showToast(`셀 저장에 실패했습니다. ${err.message}`);
   }

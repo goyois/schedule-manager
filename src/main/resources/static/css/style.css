@@ -1503,11 +1503,15 @@ button {
 
 .mandalart-cell textarea {
   width: 100%;
-  height: 100%;
+  /* 높이는 JS(autoResizeTextarea)가 내용에 맞춰 매겨준다 - 부모가 flex+align-items:center 라
+     내용이 짧으면 칸 안에서 세로 중앙에 위치하고, 칸보다 길어지면 max-height 로 잘려 기존과 동일하게
+     넘치는 부분은 보이지 않는다(overflow: hidden) */
+  max-height: 100%;
   text-align: center;
   border: none;
   outline: none;
   resize: none;
+  overflow: hidden;
   background: transparent;
   color: inherit;
   font-size: 12px;
