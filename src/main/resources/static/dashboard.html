@@ -147,11 +147,11 @@
         <div class="modal-row">
           <div class="field">
             <label for="startAt">시작</label>
-            <input type="datetime-local" id="startAt" required />
+            <input type="datetime-local" id="startAt" step="900" required />
           </div>
           <div class="field">
             <label for="endAt">종료</label>
-            <input type="datetime-local" id="endAt" required />
+            <input type="datetime-local" id="endAt" step="900" required />
           </div>
         </div>
 
@@ -171,10 +171,7 @@
           </div>
         </div>
 
-        <div class="field">
-          <label for="user-id-input">작성자 User ID</label>
-          <input type="number" id="user-id-input" placeholder="예: 1" required />
-        </div>
+        <input type="hidden" id="user-id-input" />
 
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="cancel-modal-btn">취소</button>

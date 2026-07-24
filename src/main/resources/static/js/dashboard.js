@@ -1071,15 +1071,53 @@ async function deleteSchedule(id) {
 const modalOverlay = document.getElementById("schedule-modal-overlay");
 const scheduleForm = document.getElementById("schedule-form");
 const modalTitle = document.getElementById("modal-title");
+const startAtInput = document.getElementById("startAt");
+const endAtInput = document.getElementById("endAt");
+
+// 시작 시각이 바뀔 때마다 기존 지속시간(종료-시작)을 그대로 유지한 채 종료 시각을 같이 옮겨준다 -
+// 매번 종료 시각까지 따로 맞출 필요 없이 시작 시각만 조정하면 되도록. lastStartValue 는 모달을 열
+// 때마다(생성/수정) 초기 시작값으로 리셋해서, 그 다음 change 부터 상대적인 이동량을 계산한다
+let lastStartValue = null;
+
+function syncEndWithStart() {
+  const newStart = new Date(startAtInput.value);
+  if (!startAtInput.value || Number.isNaN(newStart.getTime())) return;
+
+  const prevStart = lastStartValue ? new Date(lastStartValue) : null;
+  const oldEnd = endAtInput.value ? new Date(endAtInput.value) : null;
+
+  if (prevStart && oldEnd && !Number.isNaN(oldEnd.getTime())) {
+    const durationMs = oldEnd.getTime() - prevStart.getTime();
+    endAtInput.value = toDatetimeLocalValue(new Date(newStart.getTime() + Math.max(durationMs, 0)));
+  } else {
+    endAtInput.value = toDatetimeLocalValue(new Date(newStart.getTime() + 60 * 60 * 1000));
+  }
+  lastStartValue = startAtInput.value;
+}
+
+startAtInput.addEventListener("change", syncEndWithStart);
+
+// 현재 시각을 15분 단위로 올림한다 - datetime-local 의 step="900" 과 맞춰, 기본값부터 깔끔한
+// 시각(예: 10:00, 10:15)으로 시작하게 한다
+function roundUpToQuarterHour(date) {
+  const ms = 15 * 60 * 1000;
+  return new Date(Math.ceil(date.getTime() / ms) * ms);
+}
 
 function openCreateModal() {
   modalTitle.textContent = "새 일정";
   scheduleForm.reset();
   document.getElementById("schedule-id").value = "";
   document.getElementById("status-select").value = "PENDING";
-  const currentUser = API.getCurrentUser();
-  document.getElementById("user-id-input").value = (currentUser && currentUser.id) || "";
+  document.getElementById("user-id-input").value = (API.getCurrentUser() && API.getCurrentUser().id) || "";
   if (categories.length) categorySelect.value = String(categories[0].id);
+
+  const defaultStart = roundUpToQuarterHour(new Date());
+  const defaultEnd = new Date(defaultStart.getTime() + 60 * 60 * 1000);
+  startAtInput.value = toDatetimeLocalValue(defaultStart);
+  endAtInput.value = toDatetimeLocalValue(defaultEnd);
+  lastStartValue = startAtInput.value;
+
   modalOverlay.classList.add("show");
 }
 
@@ -1092,8 +1130,9 @@ function openEditModal(id) {
   document.getElementById("schedule-id").value = s.id;
   document.getElementById("title").value = s.title;
   document.getElementById("content").value = s.content || "";
-  document.getElementById("startAt").value = toDatetimeLocalValue(s.startAt);
-  document.getElementById("endAt").value = toDatetimeLocalValue(s.endAt);
+  startAtInput.value = toDatetimeLocalValue(s.startAt);
+  endAtInput.value = toDatetimeLocalValue(s.endAt);
+  lastStartValue = startAtInput.value;
   document.getElementById("status-select").value = s.status;
 
   const cat = categories.find((c) => c.name === s.categoryName);
@@ -1217,6 +1256,19 @@ async function loadMandalartWidgetSubtitle() {
   }
 }
 
+// 일정 생성 폼에서 "작성자 User ID" 수동 입력칸을 없앴기 때문에, 본인 id 를 항상 신뢰성 있게
+// 알고 있어야 한다. 기존엔 회원가입 시점에만 브라우저 localStorage 에 email→id 를 캐싱해뒀는데
+// (다른 브라우저·캐시 삭제 시 비어있을 수 있음), /api/users/me 로 매번 확실하게 받아온다
+async function syncCurrentUserId() {
+  try {
+    const me = await API.get("/api/users/me");
+    const current = API.getCurrentUser() || {};
+    API.setCurrentUser(Object.assign({}, current, { id: me.id, email: me.email }));
+  } catch (err) {
+    // 실패해도 기존 캐시된 id 로 폴백 - 그마저 없으면 일정 생성 시 저장이 실패하고 토스트로 안내된다
+  }
+}
+
 // ---------- 초기화 ----------
 
 (async function init() {
@@ -1225,6 +1277,7 @@ async function loadMandalartWidgetSubtitle() {
   renderToday();
   renderMandalartWidgetPreview();
   loadMandalartWidgetSubtitle();
+  await syncCurrentUserId();
   await loadCategories();
   await loadSchedules();
   // "지금" 표시선이 실제 흐르는 시간을 따라가도록 주기적으로 다시 그린다 (데이터 재조회는 없음)

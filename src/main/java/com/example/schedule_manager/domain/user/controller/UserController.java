@@ -7,6 +7,8 @@ import com.example.schedule_manager.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -19,6 +21,13 @@ public class UserController {
     @PostMapping
     public ResponseEntity<ApiResponse<UserResponseDto>> createUser(@Valid @RequestBody UserRequestDto request) {
         return ResponseEntity.ok(ApiResponse.success(userService.createUser(request)));
+    }
+
+    // "/{id}" 보다 먼저 선언할 필요는 없다 - Spring 은 리터럴 경로("/me")를 path variable 패턴보다
+    // 더 구체적인 매치로 취급해 순서와 무관하게 올바르게 매핑한다
+    @GetMapping("/me")
+    public ResponseEntity<ApiResponse<UserResponseDto>> getCurrentUser(@AuthenticationPrincipal UserDetails principal) {
+        return ResponseEntity.ok(ApiResponse.success(userService.getCurrentUser(principal.getUsername())));
     }
 
     @GetMapping("/{id}")

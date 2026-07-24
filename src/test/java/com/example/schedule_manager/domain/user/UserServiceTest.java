@@ -110,4 +110,27 @@ class UserServiceTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.USER_NOT_FOUND);
     }
+
+    @Test
+    @DisplayName("본인 정보 조회 성공 - 이메일로 유저를 찾아 반환한다")
+    void getCurrentUser_success() {
+        User user = User.builder().id(7L).username("tester").email("tester@example.com").userType(UserType.USER).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(user));
+
+        UserResponseDto response = userService.getCurrentUser("tester@example.com");
+
+        assertThat(response.id()).isEqualTo(7L);
+        assertThat(response.email()).isEqualTo("tester@example.com");
+    }
+
+    @Test
+    @DisplayName("본인 정보 조회 실패 - 존재하지 않는 이메일이면 예외가 발생한다")
+    void getCurrentUser_notFound_throws() {
+        when(userRepository.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.getCurrentUser("ghost@example.com"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
 }
