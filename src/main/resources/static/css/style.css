@@ -450,22 +450,30 @@ button {
   overflow-y: auto;
 }
 
+/* 제목/날짜가 board-title-center 로 옮겨가고 나니 이 안엔 header-widgets 하나만 남는다 -
+   원래 오른쪽에 있던 위치 그대로 유지되도록 오른쪽 정렬한다 */
 .main-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   margin-bottom: 22px;
   flex-wrap: wrap;
   gap: 12px;
 }
 
-.main-header h1 {
+/* 전체 일정 / 대기 / 진행중 / 완료 통계 카드 바로 위 중앙에 놓이는 제목+날짜 */
+.board-title-center {
+  text-align: center;
+  margin-bottom: 22px;
+}
+
+.board-title-center h1 {
   font-size: 21px;
   margin: 0;
   letter-spacing: -0.02em;
 }
 
-.main-header .today {
+.board-title-center .today {
   color: var(--color-text-muted);
   font-size: 13px;
   margin-top: 4px;
