@@ -1183,12 +1183,33 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
   window.location.href = "/login";
 });
 
+// ---------- 만다라트 위젯(미리보기) ----------
+// 대시보드에는 실제 만다라트 데이터를 불러오지 않고, 항상 비어 있는 9x9 칸만 보여주는 정적 미리보기다.
+// 클릭하면 /mandalart 로 이동해 실제 생성/수정은 그 화면에서 이뤄진다(MandalartController 참고)
+function renderMandalartWidgetPreview() {
+  const gridEl = document.getElementById("mandalart-widget-grid");
+  if (!gridEl) return;
+
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      const cell = document.createElement("div");
+      cell.className = "mandalart-widget-cell";
+      if (col % 3 === 2 && col !== 8) cell.classList.add("edge-right");
+      if (row % 3 === 2 && row !== 8) cell.classList.add("edge-bottom");
+      if (row === 4 && col === 4) cell.classList.add("main-goal");
+      else if (row % 3 === 1 && col % 3 === 1) cell.classList.add("sub-goal");
+      gridEl.appendChild(cell);
+    }
+  }
+}
+
 // ---------- 초기화 ----------
 
 (async function init() {
   if (!requireAuth()) return;
   renderUserChip();
   renderToday();
+  renderMandalartWidgetPreview();
   await loadCategories();
   await loadSchedules();
   // "지금" 표시선이 실제 흐르는 시간을 따라가도록 주기적으로 다시 그린다 (데이터 재조회는 없음)

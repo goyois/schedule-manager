@@ -441,6 +441,81 @@ button {
   gap: 14px;
 }
 
+/* ---------- Mandalart widget (dashboard 미리보기, 클릭 시 /mandalart 이동) ---------- */
+
+.mandalart-widget {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 228px;
+  height: 226px;
+  box-sizing: border-box;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 10px 16px;
+  box-shadow: var(--shadow-card);
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.05s;
+}
+
+.mandalart-widget:hover {
+  border-color: var(--color-primary);
+}
+
+.mandalart-widget:active {
+  transform: scale(0.98);
+}
+
+.mandalart-widget-grid {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  grid-template-rows: repeat(9, minmax(0, 1fr));
+  gap: 1px;
+  width: 150px;
+  height: 150px;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.mandalart-widget-cell {
+  background: var(--color-surface);
+}
+
+.mandalart-widget-cell.edge-right {
+  border-right: 1px solid var(--color-border);
+}
+
+.mandalart-widget-cell.edge-bottom {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mandalart-widget-cell.main-goal {
+  background: var(--color-primary);
+}
+
+.mandalart-widget-cell.sub-goal {
+  background: var(--color-primary-soft);
+}
+
+.mandalart-widget-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 940px) {
+  .mandalart-widget {
+    display: none;
+  }
+}
+
 /* ---------- Month radar (pentagon) ---------- */
 
 .month-radar {
