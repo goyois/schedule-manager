@@ -17,6 +17,10 @@ Local infra required to run the app: MySQL 8.x (db `api`) and Redis 7.x, both on
 
 Monitoring stack (optional, not required for app to run): `docker-compose -f monitoring/docker-compose.yml up` starts Prometheus (`:9090`) and Grafana (`:3000`, admin/admin). The app exposes `/actuator/prometheus` unauthenticated (permitted in `SecurityConfig`) for scraping.
 
+## ⚠️ Temporary: do not trigger live AI calls
+
+`AiService` / `POST /api/ai/suggest` calls the real Anthropic API and spends paid credits. **Do not invoke this endpoint** (curl, manual testing, writing/running a test that hits the real API, etc.) **until the user says the Anthropic refund is resolved.** An Auto-Reload misconfiguration caused an unintended $49.50 charge on the account owner's Anthropic org; a refund is in progress with Anthropic support on the basis that the credits are entirely unused. Spending any of that credit now would undermine the refund claim. Code changes to `domain/ai/*` are fine — just don't make a call that reaches Anthropic while this is pending. Mocked/unit tests (`AiServiceTest`, which mocks `ChatClient`) are unaffected and fine to run. Remove this section once the user confirms the refund is settled.
+
 ## Architecture
 
 Spring Boot 3.4 / Java 17, package-by-domain under `com.example.schedule_manager`:
