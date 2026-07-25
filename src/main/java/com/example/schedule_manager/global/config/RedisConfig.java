@@ -47,13 +47,36 @@ public class RedisConfig implements CachingConfigurer {
     // "@class" 타입 정보가 전혀 남지 않아서, 캐시 히트 시 List<ScheduleResponseDto> 같은 값이
     // record 가 아니라 LinkedHashMap 리스트로 역직렬화된다 — ScheduleController 처럼 그대로
     // 재직렬화만 하는 코드는 겉으로 문제가 없어 보이지만, AiService 처럼 DTO 필드에 타입으로
-    // 접근하는 코드는 ClassCastException 이 터진다. 이 프로젝트 패키지 하위 타입만 역직렬화
-    // 대상으로 허용하는 PolymorphicTypeValidator 와 함께 EVERYTHING 타이핑(레코드처럼 final 인
-    // 타입까지 포함)을 직접 활성화해 이 프로젝트가 만든 no-arg 생성자와 동일한 동작을 재현한다.
+    // 접근하는 코드는 ClassCastException 이 터진다.
+    //
+    // [시행착오 1] 캐시되는 DTO(ScheduleResponseDto 등)에만 @JsonTypeInfo 를 붙여 ObjectMapper 는
+    // 건드리지 않는 방법을 시도했으나 실패했다 — Spring 의 Cache.put(Object, Object) 은 값을 항상
+    // Object 로 저장하므로, 캐시에 실제로 들어가는 값(예: List<ScheduleResponseDto>)의 "정적 타입"은
+    // 소실된 상태다. Jackson 은 리스트처럼 정적 타입이 소실된 컨테이너의 원소를 직렬화할 때, 그
+    // 원소 클래스 자체에 붙은 @JsonTypeInfo 를 참고하지 않는다(원소 클래스에 대한 직렬화 자체는
+    // 문제없이 되지만 타입 태그 없이 됨) — 즉 List 안에 담긴 record 는 여전히 태그가 안 남아
+    // LinkedHashMap 으로 역직렬화된다. @JsonTypeInfo 는 필드/프로퍼티가 "이 타입으로 선언돼 있다"는
+    // 정적 문맥이 있을 때만 활성화되는데, Object 로 소거된 컨테이너 원소에는 그 문맥이 없다.
+    //
+    // [시행착오 2] ObjectMapper 에 activateDefaultTyping(EVERYTHING) 을 걸었더니 컨테이너(List)
+    // 자체와 그 안의 record 원소 모두 태그가 남아 역직렬화가 성공했다 — EVERYTHING 은 유일하게
+    // "정적 타입이 Object 인 값"의 런타임 타입까지 전부 태깅하는 모드라서, 정적 타입 정보가 없는
+    // 캐시 값에도 강제로 타입을 남긴다. 그런데 이 모드는 Long/String 같은 필드 값 하나하나까지도
+    // "@class":"java.lang.Long" 식으로 태깅해버려서, 이 프로젝트 패키지와 java.util 만 허용하던
+    // PolymorphicTypeValidator 가 그 타입들을 전부 거부해 캐시 조회 자체가 항상 실패하는 회귀를
+    // 유발했다(이전 실패의 원인).
+    //
+    // → 최종: EVERYTHING 은 유지하되, PolymorphicTypeValidator 화이트리스트에 이 프로젝트가 실제로
+    // 캐싱하는 DTO 필드 타입인 java.lang(Long/String 등 boxed 타입)과 java.time(LocalDateTime)을
+    // 추가로 허용한다. String 은 Jackson 이 애초에 태깅 대상에서 제외하므로 실제로 태그가 붙는 건
+    // Long 정도지만, 화이트리스트는 이 프로젝트가 캐싱할 만한 다른 boxed 타입(Integer, Boolean 등)도
+    // 함께 커버해둔다.
     private GenericJackson2JsonRedisSerializer redisJsonSerializer() {
         BasicPolymorphicTypeValidator typeValidator = BasicPolymorphicTypeValidator.builder()
                 .allowIfSubType("com.example.schedule_manager.")
                 .allowIfSubType("java.util.")
+                .allowIfSubType("java.lang.")
+                .allowIfSubType("java.time.")
                 .build();
 
         ObjectMapper objectMapper = new ObjectMapper()

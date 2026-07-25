@@ -1,7 +1,49 @@
 # AI 일정 추천 기능 도입 전략
 
 > TASKS.md Task #7(AI 일정 추천 기능 구현)의 실행 계획. Task #7은 API 스펙만 짧게 정의돼 있고, 이 문서는
-> "어떻게 만들 것인가"에 집중한다. 아직 구현 시작 전 — 실제 작업은 이 문서 기준으로 순서대로 진행한다.
+> "어떻게 만들 것인가"에 집중한다.
+
+## 진행 현황 (FIX)
+
+**0~2, 3~5, 7~8단계 적용 완료** — `[feat-26] AI 일정 추천 기능(Task #7) 추가` 커밋으로 반영됨.
+요약/스트리밍(`/api/ai/summary`, `WeeklySummaryResponseDto`)과 6단계의 호출 빈도 제한은 계획대로
+아직 미착수 상태로 남겨둠.
+
+- ✅ 0단계 설정 버그 수정
+- ✅ 1단계 `ChatClient` 빈 구성 (`AiConfig`)
+- ✅ 2단계 `domain/ai` 패키지 신설 (단, `WeeklySummaryResponseDto`는 요약 기능과 함께 미구현)
+- ✅ 3단계 컨텍스트 구성 전략 (최근 2주~향후 2주)
+- ✅ 4단계 `AiService.suggestSchedule` 구현 (요약 메서드는 미구현)
+- ✅ 5단계 `POST /api/ai/suggest` 컨트롤러 (스트리밍 `/summary` 엔드포인트는 미구현)
+- 🔶 6단계 에러 처리 — `AI_REQUEST_FAILED` + `BusinessException` 래핑만 적용, 호출 빈도 제한은 미적용
+- ✅ 7단계 테스트 — `AiServiceTest` 3건(성공/ChatClient 실패/유저 없음), `ChatClient` mock
+- ✅ 8단계 프론트엔드 — 대시보드에 "AI" FAB + 프롬프트 입력 모달
+
+**[FIX] 구현 중 발견해 함께 수정한 버그** (계획엔 없었던 항목): `RedisConfig`의
+`GenericJackson2JsonRedisSerializer(ObjectMapper)` 생성자가 기본(no-arg) 생성자와 달리 넘겨받은
+`ObjectMapper`에 default typing을 활성화하지 않아, 캐시 히트 시 `List<ScheduleResponseDto>`가
+`LinkedHashMap` 리스트로 역직렬화되는 문제가 있었다. `ScheduleController`는 그대로 재직렬화만 해서
+증상이 드러나지 않았지만, DTO 필드에 타입으로 접근하는 `AiService`가 이를 처음 노출시켰다.
+`[fix-10]` 커밋으로 수정 — `DefaultTyping.EVERYTHING` + 이 프로젝트 패키지로 제한한
+`PolymorphicTypeValidator`를 커스텀 `ObjectMapper`에 직접 활성화.
+
+**[FIX 후속] `[fix-10]`의 회귀 → `[fix-11]`로 수정**: `EVERYTHING`은 `Long`/`String` 같은 필드
+값에도 `@class` 태그를 붙이는데, `[fix-10]`의 `PolymorphicTypeValidator`는 이 프로젝트 패키지와
+`java.util`만 허용했다. 그 결과 `id: Long` 필드를 역직렬화할 때마다
+`InvalidTypeIdException: Could not resolve type id 'java.lang.Long'`으로 캐시 조회 자체가 항상
+실패했다(캐시 히트 경로에서만 터지므로 재현하려면 실제로 캐시가 채워진 뒤 다시 조회해야 함).
+중간에 `RedisConfig`의 `ObjectMapper`는 그대로 두고 캐시되는 DTO(`ScheduleResponseDto`/
+`CategoryResponseDto`)에만 `@JsonTypeInfo`를 붙이는 방식도 시도했지만, Spring의
+`Cache.put(Object, Object)`가 값을 항상 `Object`로 저장해 `List<ScheduleResponseDto>`의 정적 타입이
+소거되는 탓에 리스트 원소별 타입 태그가 전혀 남지 않아 동작하지 않았다(회귀 재현: `AI` 질문 시
+`ClassCastException: LinkedHashMap cannot be cast to ScheduleResponseDto`). 최종 수정은
+`EVERYTHING`을 유지한 채 `PolymorphicTypeValidator` 화이트리스트에 `java.lang`/`java.time`을
+추가하는 것 — `RedisConfigTest`(캐시 라운드트립 후 타입 검증)로 회귀 테스트 추가.
+
+**⛔ 실제 동작 미검증 (블로킹)**: `application-local.yml`의 Anthropic API 키가
+`401 authentication_error: API key is invalid.`를 반환해 실제 추천 응답은 아직 확인하지 못함 —
+유효한 키로 교체 필요. 또한 Spring AI의 기본 재시도 정책이 이 401(non-transient)도 최대 10회,
+백오프 상한 180초로 재시도해 요청이 매우 오래 걸리는 현상도 관찰됨(라이브러리 쪽 동작, 앱 코드 이슈 아님).
 
 ## 배경
 
@@ -100,3 +142,6 @@ public ResponseEntity<ApiResponse<ScheduleSuggestResponseDto>> suggest(
 ## 진행 순서
 
 0단계(설정 버그 수정) → 1~2단계(배선) → 4~5단계(추천 기능 먼저, 텍스트 응답) → 7단계(테스트) → 8단계(프론트) → 이후 요약/스트리밍 기능 확장
+
+**(FIX) 현재 위치**: 위 순서 중 8단계까지 코드는 완료. 다음은 유효한 API 키로 실제 응답 검증 →
+6단계 호출 빈도 제한 → 요약/스트리밍 기능(`/api/ai/summary`) 순으로 진행 예정.
