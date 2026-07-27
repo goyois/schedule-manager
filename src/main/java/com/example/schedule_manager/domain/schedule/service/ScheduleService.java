@@ -137,23 +137,30 @@ public class ScheduleService {
     // @CacheEvict SpEL 로는 와일드카드 삭제가 안 되므로 RedisTemplate 을 직접 사용한다
     // (RedisConfig 에 이런 용도로 미리 준비된 redisTemplate 빈을 재사용).
     //
-    // 알려진 한계: ADMIN 이 userId 없이(전체 조회) 캐싱한 키(예: "email-null-3", "email-null-null")는
-    // 이 패턴에 걸리지 않아 무효화되지 않는다 — 이 캐시엔 TTL 도 없어 그대로 stale 상태로 남는다.
-    // ADMIN 전체조회는 드물게 쓰이는 경로라, 그 대가로 훨씬 흔한 "무관한 유저 캐시까지 통째로 날아가는" 문제를
-    // 없애는 쪽을 택한 절충이다. 완전히 없애려면 캐시 키 구조 자체를 바꿔야 해서 이번 스코프 밖으로 둔다.
+    // #v6 [fix] ADMIN 이 userId 없이(전체 조회) 캐싱한 키(예: "email-null-3", "email-null-null")는
+    // "*-{userId}-*" 패턴에 안 걸려 무효화되지 않는 문제가 있었다 - ADMIN 전체조회는 드물게 쓰이는
+    // 경로라고 보고 일부러 남겨뒀던 known limitation인데(이전 커밋 참고), ADMIN 계정이 실제로 즐겨
+    // 쓰는 화면이 되면서 "삭제해도 새로고침해도 계속 떠 있다"로 드러났다. 이 목록에는 어떤 유저의
+    // 일정이든 다 섞여 있을 수 있으므로, 특정 유저 캐시 무효화 시 "-null-" 패턴도 함께 지운다
+    // (RedisConfig 에 entryTtl 5분이 걸려 있어 방치해도 언젠가는 사라지지만, 그동안은 삭제한 일정이
+    // 계속 보이는 게 사용자 입장에서 버그로 느껴지므로 즉시 지운다)
     //
     // Redis 장애 시에도 update/delete 자체가 500 으로 번지지 않도록 fail-open 한다
     // (CacheFailSafeErrorHandler 는 @Cacheable/@CacheEvict 애노테이션 경로에만 적용되고, 이 직접 호출엔
     // 안 걸리므로 여기서 직접 같은 패턴을 적용 — JwtAuthenticationFilter.isBlacklisted() 참고)
     private void evictScheduleCacheForUser(Long userId) {
-        String pattern = SCHEDULE_CACHE + "::*-" + userId + "-*";
+        evictKeysMatching(SCHEDULE_CACHE + "::*-" + userId + "-*");
+        evictKeysMatching(SCHEDULE_CACHE + "::*-null-*");
+    }
+
+    private void evictKeysMatching(String pattern) {
         try {
             Set<String> keys = scanKeys(pattern);
             if (!keys.isEmpty()) {
                 redisTemplate.delete(keys);
             }
         } catch (DataAccessException e) {
-            log.warn("일정 캐시 삭제 실패 - userId={}", userId, e);
+            log.warn("일정 캐시 삭제 실패 - pattern={}", pattern, e);
         }
     }
 

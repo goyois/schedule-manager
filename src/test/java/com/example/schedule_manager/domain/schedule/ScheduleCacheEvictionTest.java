@@ -171,6 +171,50 @@ class ScheduleCacheEvictionTest {
         assertCachePresent(bystander);
     }
 
+    // ADMIN이 userId 파라미터 없이 /api/schedules를 호출하면(프론트가 항상 이렇게 호출한다)
+    // targetUserId가 null이 되어 "{email}-null-null" 키로 캐싱된다. evictScheduleCacheForUser()의
+    // "*-{userId}-*" 패턴은 이 키의 "null" 세그먼트에 매치되지 않아, 다른 유저가 일정을 만들거나
+    // 지워도 ADMIN의 전체 목록 캐시는 그대로 남아 "삭제해도 새로고침해도 계속 보인다"는 증상으로
+    // 이어졌다(fix-16). "-null-" 패턴도 같이 지우게 고친 뒤에는 무관한 다른 유저의 쓰기에도 무효화돼야 한다
+    @Test
+    @DisplayName("createSchedule: 다른 유저가 일정을 추가하면 ADMIN이 userId 없이 캐싱한 전체 목록 캐시도 같이 지워진다")
+    void evictAdminAllViewCacheOnCreate() {
+        User admin = createAdmin();
+        saveSchedule(target, "target-existing");
+        warmUpCache(admin);
+        assertThat(nullPatternCacheKeys()).isNotEmpty();
+
+        ScheduleRequestDto createRequest = buildRequest(target, "new-title");
+        ResponseEntity<ApiResponse<ScheduleResponseDto>> response = restTemplate.exchange(
+                "/api/schedules", HttpMethod.POST,
+                new HttpEntity<>(createRequest, authHeaders(target)),
+                new ParameterizedTypeReference<ApiResponse<ScheduleResponseDto>>() {});
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+
+        assertThat(nullPatternCacheKeys()).as("ADMIN의 전체 목록 캐시(-null- 패턴)가 지워져 있어야 한다").isEmpty();
+
+        userRepository.delete(admin);
+    }
+
+    @Test
+    @DisplayName("deleteSchedule: 다른 유저가 일정을 삭제해도 ADMIN이 userId 없이 캐싱한 전체 목록 캐시가 같이 지워진다")
+    void evictAdminAllViewCacheOnDelete() {
+        User admin = createAdmin();
+        Schedule schedule = saveSchedule(target, "to-be-deleted");
+        warmUpCache(admin);
+        assertThat(nullPatternCacheKeys()).isNotEmpty();
+
+        ResponseEntity<ApiResponse<Void>> response = restTemplate.exchange(
+                "/api/schedules/" + schedule.getId(), HttpMethod.DELETE,
+                authEntity(target),
+                new ParameterizedTypeReference<ApiResponse<Void>>() {});
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+
+        assertThat(nullPatternCacheKeys()).as("ADMIN의 전체 목록 캐시(-null- 패턴)가 지워져 있어야 한다").isEmpty();
+
+        userRepository.delete(admin);
+    }
+
     @Test
     @DisplayName("deleteSchedule: 소유자 유저의 캐시만 지워지고, 무관한 유저의 캐시는 살아남는다")
     void evictOnDelete() {
@@ -200,6 +244,15 @@ class ScheduleCacheEvictionTest {
                 .password("test-password")
                 .email(prefix + "-" + System.nanoTime() + "@test.com")
                 .userType(UserType.USER)
+                .build());
+    }
+
+    private User createAdmin() {
+        return userRepository.save(User.builder()
+                .username("admin-user")
+                .password("test-password")
+                .email("admin-" + System.nanoTime() + "@test.com")
+                .userType(UserType.ADMIN)
                 .build());
     }
 
@@ -244,6 +297,11 @@ class ScheduleCacheEvictionTest {
 
     private Set<String> cacheKeysFor(User user) {
         Set<String> keys = redisTemplate.keys(SCHEDULE_CACHE_NAME + "::*-" + user.getId() + "-*");
+        return keys == null ? Set.of() : keys;
+    }
+
+    private Set<String> nullPatternCacheKeys() {
+        Set<String> keys = redisTemplate.keys(SCHEDULE_CACHE_NAME + "::*-null-*");
         return keys == null ? Set.of() : keys;
     }
 
