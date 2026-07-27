@@ -11,6 +11,7 @@ import com.example.schedule_manager.domain.user.entity.UserType;
 import com.example.schedule_manager.domain.user.repository.UserRepository;
 import com.example.schedule_manager.global.exception.BusinessException;
 import com.example.schedule_manager.global.exception.ErrorCode;
+import com.example.schedule_manager.domain.schedule.entity.ScheduleStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -18,10 +19,12 @@ import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -130,6 +133,44 @@ public class ScheduleService {
         Long ownerId = schedule.getUser().getId();
         scheduleRepository.delete(schedule);
         evictScheduleCacheForUser(ownerId);
+    }
+
+    // 프론트 dashboard.js의 setInterval 기반 체크(checkScheduleTimers)는 그 탭이 열려 있을 때만
+    // 동작한다는 한계가 있었다 - 이 스케줄러는 서버에서 직접 도니까 탭이 닫혀 있어도, 로그아웃
+    // 상태여도 동작한다. 대신 User.autoStatusMode(예전엔 브라우저 localStorage에만 있던 값)를 DB로
+    // 옮겨와야 서버가 "이 유저가 자동 모드를 켰는지"를 알 수 있다.
+    //
+    // 규칙은 프론트에 있던 것과 동일: 시작 시각이 지났고 아직 대기(PENDING) 상태면 진행중으로(종료
+    // 시각이 없는 알림형 일정은 진행중으로 머물 종료 시점이 없으므로 곧바로 완료로), 종료 시각이
+    // 지났고 아직 완료가 아니면 완료로 전환한다.
+    //
+    // @SpringBootTest는 이 스케줄도 그대로 활성화한 채 컨텍스트를 띄우므로, 테스트 실행 중에도 실제로
+    // 한 번 돈다(첫 실행은 fixedRate 특성상 컨텍스트 기동 직후). 기존 테스트들은 autoStatusMode=true인
+    // 유저를 만들지 않으므로 조회 결과가 항상 비어 있어 무해하고, 이 기능을 검증하는 테스트는 타이머가
+    // 자연히 돌기를 기다리지 않고 이 메서드를 직접 호출해 확정적으로 검증한다
+    @Scheduled(fixedRate = 60_000)
+    public void autoTransitionScheduleStatuses() {
+        LocalDateTime now = LocalDateTime.now();
+
+        List<Schedule> justStarted = scheduleRepository
+                .findByStatusAndStartAtLessThanEqualAndUser_AutoStatusModeTrue(ScheduleStatus.PENDING, now);
+        for (Schedule schedule : justStarted) {
+            ScheduleStatus next = schedule.getEndAt() != null ? ScheduleStatus.IN_PROGRESS : ScheduleStatus.COMPLETED;
+            transitionStatus(schedule, next);
+        }
+
+        List<Schedule> justEnded = scheduleRepository
+                .findByStatusInAndEndAtLessThanEqualAndUser_AutoStatusModeTrue(
+                        List.of(ScheduleStatus.PENDING, ScheduleStatus.IN_PROGRESS), now);
+        for (Schedule schedule : justEnded) {
+            transitionStatus(schedule, ScheduleStatus.COMPLETED);
+        }
+    }
+
+    private void transitionStatus(Schedule schedule, ScheduleStatus status) {
+        schedule.update(schedule.getTitle(), schedule.getContent(), schedule.getStartAt(), schedule.getEndAt(),
+                status, schedule.getCategory());
+        evictScheduleCacheForUser(schedule.getUser().getId());
     }
 
     // #v3: getSchedules() 캐시 키는 "requesterEmail-userId-categoryId" 조합이라 특정 키 하나만 정확히

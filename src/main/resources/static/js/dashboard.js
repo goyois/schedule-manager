@@ -1496,7 +1496,7 @@ async function syncCurrentUserId() {
   try {
     const me = await API.get("/api/users/me");
     const current = API.getCurrentUser() || {};
-    API.setCurrentUser(Object.assign({}, current, { id: me.id, email: me.email, userType: me.userType }));
+    API.setCurrentUser(Object.assign({}, current, { id: me.id, email: me.email, userType: me.userType, autoStatusMode: me.autoStatusMode }));
   } catch (err) {
     // 실패해도 기존 캐시된 id 로 폴백 - 그마저 없으면 일정 생성 시 저장이 실패하고 토스트로 안내된다
   }
@@ -1519,47 +1519,23 @@ function applyAdminVisibility() {
 // 수동 모드: 알림이 떠도 상태는 그대로 두고 사용자가 직접 바꾼다(기본값).
 // 자동 모드: 시작 시각이 되면 대기→진행중, 종료 시각이 되면 진행중→완료로 자동 전환한다.
 // 종료 시각이 없는 알림형 일정은 "진행중"으로 머물 종료 시점이 없으므로, 시작 시각에 바로 완료 처리한다.
-// 사용자 이메일별로 localStorage에 저장 - 카테고리 순서와 같은 이유로 서버에는 저장하지 않는다
-function autoStatusModeStorageKey() {
-  const user = API.getCurrentUser();
-  const email = (user && user.email) || "anonymous";
-  return `auto-status-mode:${email}`;
-}
-
-function isAutoStatusModeOn() {
-  return localStorage.getItem(autoStatusModeStorageKey()) === "true";
-}
-
-function setAutoStatusMode(on) {
-  localStorage.setItem(autoStatusModeStorageKey(), String(on));
-}
-
+//
+// 이 값은 브라우저 localStorage가 아니라 서버(User.autoStatusMode)에 저장된다 - 실제 상태 전환은
+// ScheduleService.autoTransitionScheduleStatuses()(@Scheduled)가 서버에서 직접 하기 때문에,
+// 탭이 닫혀 있어도(로그아웃 상태여도) 계속 동작한다. 그래서 이 프론트 코드는 이제 토글 값을
+// 서버와 동기화하는 것과, "지금 시작하는 일정"을 알려주는 팝업(상태를 바꾸진 않는다)만 담당한다
 const autoStatusToggleEl = document.getElementById("auto-status-toggle");
-autoStatusToggleEl.addEventListener("change", () => setAutoStatusMode(autoStatusToggleEl.checked));
-
-// 자동 모드에서 시각에 맞춰 상태를 바꿀 때 쓴다 - updateScheduleStatus()와 달리 토스트/실패 알림 없이
-// 조용히 처리한다(사용자가 직접 누른 조작이 아니라 백그라운드 타이머가 하는 일이라서). 실패해도
-// 다음 체크 주기(15초)에 다시 시도되므로 별도 재시도 로직은 두지 않는다
-async function autoUpdateScheduleStatus(schedule, status) {
-  const meta = scheduleMeta.get(String(schedule.id)) || {};
-  const cat = categories.find((c) => c.name === schedule.categoryName);
+autoStatusToggleEl.addEventListener("change", async () => {
+  const enabled = autoStatusToggleEl.checked;
   try {
-    await API.put(`/api/schedules/${schedule.id}`, {
-      title: schedule.title,
-      content: schedule.content,
-      startAt: schedule.startAt,
-      endAt: schedule.endAt,
-      status,
-      userId: meta.userId ?? null,
-      categoryId: meta.categoryId ?? (cat ? cat.id : null),
-    });
-    await refreshAll();
+    const updated = await API.put("/api/users/me/auto-status-mode", { enabled });
+    const current = API.getCurrentUser() || {};
+    API.setCurrentUser(Object.assign({}, current, { autoStatusMode: updated.autoStatusMode }));
   } catch (err) {
-    // 실패해도 화면에 알리진 않지만(백그라운드 동작), 원인 파악을 위해 콘솔에는 남겨둔다.
-    // 다음 체크 주기(15초)에 다시 시도되므로 별도 재시도 로직은 두지 않는다
-    console.error("일정 자동 상태 변경 실패", schedule.id, err);
+    autoStatusToggleEl.checked = !enabled; // 저장 실패 시 토글을 원래 상태로 되돌린다
+    showToast(`설정을 저장하지 못했습니다. ${err.message}`);
   }
-}
+});
 
 const scheduleReminderContainerEl = document.getElementById("schedule-reminder-container");
 const REMINDER_CHECK_INTERVAL_MS = 15000;
@@ -1616,37 +1592,20 @@ function showScheduleReminder(schedule) {
 }
 
 // schedules 배열은 로그인 시 + 이 세션에서 직접 생성/수정/삭제할 때만 갱신된다(다른 탭/기기에서
-// 만든 일정은 이 탭을 새로고침하기 전까진 알 수 없다) - 그 안에서 시작/종료 시각이 막 지난 일정을 찾아
-// 알림을 띄우고(항상), 자동 모드면 상태도 같이 바꾼다.
-// 같은 틱에서 여러 건이 동시에 바뀌어야 하는 경우, forEach로 PUT을 한꺼번에(await 없이) 쏘지 않고
-// for...of + await로 하나씩 순서대로 처리한다 - accessToken이 만료된 시점에 배경 타이머가 쏜 요청
-// 여러 개가 동시에 401을 맞으면 refresh token 재발급 요청도 동시에 여러 번 나갈 수 있는데,
-// 서버가 refresh token을 재발급마다 새 값으로 회전시키므로 두 요청이 서로 다른(이미 무효화된)
-// refresh token으로 재시도하다 실패해 강제 로그아웃될 위험이 있다(api.js의 refreshInFlight는
-// 같은 함수 내에서 "동시에 시작한" 재발급만 공유하고, 이렇게 서로 다른 요청이 각자 401을 순차적으로
-// 감지하는 경우까지는 막아주지 않는다)
-async function checkScheduleTimers() {
+// 만든 일정은 이 탭을 새로고침하기 전까진 알 수 없다) - 그 안에서 시작 시각이 막 지난 일정을 찾아
+// 알림 팝업을 띄운다. 상태 자동 전환은 더 이상 여기서 하지 않는다 - 서버의
+// ScheduleService.autoTransitionScheduleStatuses()(@Scheduled)가 대신 처리하므로, 이 탭이
+// 닫혀 있거나 로그아웃한 상태에서도 자동 모드가 계속 동작한다
+function checkScheduleTimers() {
   const now = Date.now();
-  const autoMode = isAutoStatusModeOn();
 
-  for (const s of schedules) {
-    if (s.status === "CANCELLED") continue;
-    const startMs = s.startAt ? new Date(s.startAt).getTime() : NaN;
-    const endMs = s.endAt ? new Date(s.endAt).getTime() : NaN;
-
-    if (!notifiedScheduleIds.has(s.id) && !Number.isNaN(startMs) && startMs > lastReminderCheckAt && startMs <= now) {
-      notifiedScheduleIds.add(s.id);
-      showScheduleReminder(s);
-      if (autoMode && s.status === "PENDING") {
-        await autoUpdateScheduleStatus(s, s.endAt ? "IN_PROGRESS" : "COMPLETED");
-      }
-    }
-
-    if (autoMode && s.endAt && !Number.isNaN(endMs) && endMs > lastReminderCheckAt && endMs <= now && s.status !== "COMPLETED") {
-      await autoUpdateScheduleStatus(s, "COMPLETED");
-      showToast(`"${s.title}" 일정이 종료 시각에 맞춰 자동으로 완료 처리되었습니다.`);
-    }
-  }
+  schedules.forEach((s) => {
+    if (!s.startAt || s.status === "CANCELLED" || notifiedScheduleIds.has(s.id)) return;
+    const startMs = new Date(s.startAt).getTime();
+    if (Number.isNaN(startMs) || startMs <= lastReminderCheckAt || startMs > now) return;
+    notifiedScheduleIds.add(s.id);
+    showScheduleReminder(s);
+  });
 
   lastReminderCheckAt = now;
 }
@@ -1661,7 +1620,7 @@ async function checkScheduleTimers() {
   loadMandalartWidgetSubtitle();
   await syncCurrentUserId();
   applyAdminVisibility();
-  autoStatusToggleEl.checked = isAutoStatusModeOn();
+  autoStatusToggleEl.checked = !!(API.getCurrentUser() && API.getCurrentUser().autoStatusMode);
   activeCategoryId = loadStoredActiveCategoryId();
   await loadCategories();
   // 새로고침 사이에 그 카테고리가 삭제됐거나 더 이상 안 보이면(다른 유저 소유 등) 전체 일정으로 되돌린다

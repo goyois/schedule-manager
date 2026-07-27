@@ -1,5 +1,6 @@
 package com.example.schedule_manager.domain.user;
 
+import com.example.schedule_manager.domain.user.dto.AutoStatusModeRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserResponseDto;
 import com.example.schedule_manager.domain.user.entity.User;
@@ -129,6 +130,29 @@ class UserServiceTest {
         when(userRepository.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.getCurrentUser("ghost@example.com"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("자동 상태 변경 모드 설정 성공 - 켜고 끄는 값이 그대로 반영된다")
+    void updateAutoStatusMode_success() {
+        User user = User.builder().id(3L).username("tester").email("tester@example.com").userType(UserType.USER).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(user));
+
+        UserResponseDto response = userService.updateAutoStatusMode("tester@example.com", new AutoStatusModeRequestDto(true));
+
+        assertThat(response.autoStatusMode()).isTrue();
+        assertThat(user.isAutoStatusMode()).isTrue();
+    }
+
+    @Test
+    @DisplayName("자동 상태 변경 모드 설정 실패 - 존재하지 않는 이메일이면 예외가 발생한다")
+    void updateAutoStatusMode_notFound_throws() {
+        when(userRepository.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.updateAutoStatusMode("ghost@example.com", new AutoStatusModeRequestDto(true)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.USER_NOT_FOUND);

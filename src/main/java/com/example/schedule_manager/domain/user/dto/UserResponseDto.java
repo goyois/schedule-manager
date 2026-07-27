@@ -7,14 +7,16 @@ public record UserResponseDto(
         Long id,
         String username,
         String email,
-        UserType userType
+        UserType userType,
+        boolean autoStatusMode
 ) {
     public static UserResponseDto from(User user) {
         return new UserResponseDto(
                 user.getId(),
                 user.getUsername(),
                 user.getEmail(),
-                user.getUserType()
+                user.getUserType(),
+                user.isAutoStatusMode()
         );
     }
 }

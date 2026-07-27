@@ -1,5 +1,6 @@
 package com.example.schedule_manager.domain.user.controller;
 
+import com.example.schedule_manager.domain.user.dto.AutoStatusModeRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserResponseDto;
 import com.example.schedule_manager.domain.user.service.UserService;
@@ -38,6 +39,13 @@ public class UserController {
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<UserResponseDto>> updateUser(@PathVariable Long id, @Valid @RequestBody UserRequestDto request) {
         return ResponseEntity.ok(ApiResponse.success(userService.updateUser(id, request)));
+    }
+
+    @PutMapping("/me/auto-status-mode")
+    public ResponseEntity<ApiResponse<UserResponseDto>> updateAutoStatusMode(
+            @AuthenticationPrincipal UserDetails principal,
+            @RequestBody AutoStatusModeRequestDto request) {
+        return ResponseEntity.ok(ApiResponse.success(userService.updateAutoStatusMode(principal.getUsername(), request)));
     }
 
     @DeleteMapping("/{id}")

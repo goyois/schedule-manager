@@ -1,5 +1,6 @@
 package com.example.schedule_manager.domain.user.service;
 
+import com.example.schedule_manager.domain.user.dto.AutoStatusModeRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserResponseDto;
 import com.example.schedule_manager.domain.user.entity.User;
@@ -53,6 +54,16 @@ public class UserService {
     public UserResponseDto updateUser(Long id, UserRequestDto request) {
         User user = userRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         user.update(request.username(), request.email(), passwordEncoder.encode(request.password()));
+        return UserResponseDto.from(user);
+    }
+
+    // 자동/수동 모드는 브라우저 localStorage가 아니라 여기(DB)에 저장한다 -
+    // ScheduleService.autoTransitionScheduleStatuses()(@Scheduled)가 탭이 닫혀 있어도 동작해야
+    // 하므로, 서버가 유저별로 이 설정을 알고 있어야 한다
+    public UserResponseDto updateAutoStatusMode(String email, AutoStatusModeRequestDto request) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        user.updateAutoStatusMode(request.enabled());
         return UserResponseDto.from(user);
     }
 
