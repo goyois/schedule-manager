@@ -382,8 +382,8 @@ function radarPolarPoint(r, angleDeg) {
   return { x: RADAR_CENTER + r * Math.cos(rad), y: RADAR_CENTER + r * Math.sin(rad) };
 }
 
-// 현재 뷰(보드/일/주/월/년)에 맞는 집계 범위를 돌려준다. 보드는 날짜 개념이 없는 전체 목록이라 null.
-// 레이더뿐 아니라 카테고리별 카운트(renderCategoryCounts)도 이 범위를 공유한다
+// 현재 뷰(보드/일/주/월/년)에 맞는 집계 범위를 돌려준다. 보드는 오늘 하루로 좁힌다(renderBoard와
+// 동일 기준). 레이더뿐 아니라 카테고리별 카운트(renderCategoryCounts)도 이 범위를 공유한다
 function getViewScheduleWindow() {
   if (viewMode === "day") {
     const start = startOfDay(viewDate);
@@ -402,7 +402,10 @@ function getViewScheduleWindow() {
       end: new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1),
     };
   }
-  return null; // board
+  // board: 카드 목록(renderBoard)도 오늘 일정만 보여주도록 바뀌었으니, 레이더/카테고리별 카운트도
+  // 같은 기준(오늘)으로 맞춘다
+  const todayStart = startOfDay(new Date());
+  return { start: todayStart, end: addDays(todayStart, 1) };
 }
 
 // 카테고리 필터와 무관하게 오늘 시계와 같은 원칙으로 항상 전체 일정(schedules) 기준으로 집계하되,
@@ -853,7 +856,12 @@ function scheduleCardHtml(s) {
 }
 
 function renderBoard() {
-  const list = visibleSchedules();
+  // 보드는 원래 날짜 개념 없이 전체 일정을 다 보여줬는데, 오늘 일정만 보이도록 범위를 좁힌다.
+  // "오늘과 겹치는지"는 시계 위젯(getTodaysScheduleWindows)과 같은 기준(schedulesOverlappingRange)을
+  // 써서, 예를 들어 어제 시작해 오늘 새벽에 끝나는 일정처럼 오늘과 걸쳐 있기만 해도 포함시킨다
+  const todayStart = startOfDay(new Date());
+  const todayEnd = addDays(todayStart, 1);
+  const list = schedulesOverlappingRange(visibleSchedules(), todayStart, todayEnd);
 
   board.innerHTML = STATUS_COLUMNS.map((col) => {
     const items = list.filter((s) => s.status === col.key);
