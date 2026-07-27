@@ -11,7 +11,7 @@
 | Language | Java 17 |
 | Framework | Spring Boot 3.4.0 |
 | ORM | Spring Data JPA (Hibernate) |
-| Database | MySQL 8.x |
+| Database | PostgreSQL 16+ |
 | Cache | Redis (일정 목록 캐시, JWT 로그아웃 블랙리스트) |
 | Auth | Spring Security + JWT (jjwt), Stateless |
 | Monitoring | Spring Actuator + Micrometer + Prometheus + Grafana |
@@ -41,13 +41,13 @@
 ### 사전 요구사항
 
 - Java 17+
-- MySQL 8.x
+- PostgreSQL 16+
 - Redis 7.x
 
 ### 데이터베이스 설정
 
 ```sql
-CREATE DATABASE api CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE api;
 ```
 
 ### application-local.yml 설정
@@ -57,9 +57,9 @@ CREATE DATABASE api CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```yaml
 spring:
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/api?serverTimezone=Asia/Seoul
-    username: root
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/api
+    username: your_username
     password: your_password
   jpa:
     hibernate:

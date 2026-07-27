@@ -13,7 +13,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./gradlew test --tests "ScheduleServiceTest.apiPerformance"  # run a single test method
 ```
 
-Local infra required to run the app: MySQL 8.x (db `api`) and Redis 7.x, both on default ports. `src/main/resources/application-local.yml` (gitignored) holds datasource creds, Redis host, the Anthropic API key, the JWT secret, and the Google OAuth client ID (`google.oauth.client-id`) — it must exist locally and is not checked in. `src/main/resources/application.yml` only has profile-independent settings (Redis timeout, actuator exposure).
+Local infra required to run the app: PostgreSQL 16+ (db `api`) and Redis 7.x, both on default ports. `src/main/resources/application-local.yml` (gitignored) holds datasource creds, Redis host, the Anthropic API key, the JWT secret, and the Google OAuth client ID (`google.oauth.client-id`) — it must exist locally and is not checked in. `src/main/resources/application.yml` only has profile-independent settings (Redis timeout, actuator exposure).
+
+> Migrated from MySQL to PostgreSQL — see `TASK.md` for the migration record and the MySQL vs PostgreSQL rationale (driven by future Spring AI + RAG/pgvector work).
 
 Monitoring stack (optional, not required for app to run): `docker-compose -f monitoring/docker-compose.yml up` starts Prometheus (`:9090`) and Grafana (`:3000`, admin/admin). The app exposes `/actuator/prometheus` unauthenticated (permitted in `SecurityConfig`) for scraping.
 
