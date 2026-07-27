@@ -1871,6 +1871,10 @@ document.getElementById("add-default-category-form").addEventListener("submit", 
 // ---------- 로그아웃 ----------
 
 document.getElementById("logout-btn").addEventListener("click", async () => {
+  if (scheduleEventSource) {
+    scheduleEventSource.close();
+    scheduleEventSource = null;
+  }
   try {
     await API.post("/api/auth/logout", {});
   } catch (err) {
@@ -1963,7 +1967,6 @@ autoStatusToggleEl.addEventListener("change", async () => {
 });
 
 const scheduleReminderContainerEl = document.getElementById("schedule-reminder-container");
-const REMINDER_CHECK_INTERVAL_MS = 15000;
 const REMINDER_AUTO_DISMISS_MS = 12000;
 // 일정 id -> 마지막으로 확인한 상태. 알림은 "시작 시각이 지났는지"가 아니라 "방금 진행중으로
 // 바뀌었는지"를 기준으로 띄운다 - 그래야 서버 자동 전환과 알림이 항상 같은 폴링 시점에 함께 반영된다
@@ -2018,9 +2021,9 @@ function showScheduleReminder(schedule) {
   setTimeout(dismiss, REMINDER_AUTO_DISMISS_MS);
 }
 
-// 서버 스케줄러(ScheduleService.autoTransitionScheduleStatuses)가 이 탭과 무관하게 상태를
-// 전환하므로, 매 주기마다 refreshAll()로 최신 상태를 먼저 받아온 뒤 방금 진행중으로 바뀐 일정에만 알림을 띄운다
-async function checkScheduleTimers() {
+// 서버가 이 유저의 일정에 변화가 생길 때(생성/수정/삭제/자동 상태 전환) 보내는 이벤트를 받으면
+// refreshAll()로 최신 상태를 받아온 뒤, 방금 진행중으로 바뀐 일정에만 알림을 띄운다
+async function handleScheduleChangeEvent() {
   await refreshAll();
 
   schedules.forEach((s) => {
@@ -2029,6 +2032,57 @@ async function checkScheduleTimers() {
     if (s.status !== "IN_PROGRESS" || prevStatus === undefined || prevStatus === "IN_PROGRESS") return;
     showScheduleReminder(s);
   });
+}
+
+// ---------- 일정 변경 실시간 반영 (SSE) ----------
+// 예전엔 15초마다 폴링(refreshAll)하며 서버에 매번 물어봤는데, 사용자가 늘면 그만큼 불필요한
+// 요청이 계속 쌓인다. 이제는 서버가 이 유저의 일정이 바뀔 때만(ScheduleService.
+// evictScheduleCacheForUser) SSE로 직접 이벤트를 밀어주고, 프론트는 그 이벤트를 받을 때만
+// 최신 상태를 받아온다.
+//
+// 브라우저 EventSource는 커스텀 헤더를 못 보내 토큰을 쿼리스트링으로 실어 보내는데, 로컬 개발
+// 환경은 access token 수명이 8초로 짧아(application-local.yml) 연결이 끊겨 재연결할 시점엔
+// URL에 실어둔 토큰이 이미 만료돼 있기 쉽다. 그래서 네이티브 EventSource의 자동 재연결(고정
+// URL)에 맡기지 않고, onerror가 뜨면 직접 닫고 토큰을 새로 발급받아 재연결한다
+let scheduleEventSource = null;
+let scheduleStreamReconnectTimer = null;
+const SCHEDULE_STREAM_RECONNECT_DELAY_MS = 3000;
+
+function connectScheduleStream() {
+  if (scheduleEventSource) {
+    scheduleEventSource.close();
+    scheduleEventSource = null;
+  }
+
+  const token = API.getToken();
+  if (!token) return;
+
+  const es = new EventSource(`/api/schedules/stream?token=${encodeURIComponent(token)}`);
+  scheduleEventSource = es;
+
+  es.addEventListener("schedules-changed", () => {
+    handleScheduleChangeEvent();
+  });
+
+  es.onerror = () => {
+    es.close();
+    if (scheduleEventSource === es) scheduleEventSource = null;
+    scheduleStreamReconnect();
+  };
+}
+
+function scheduleStreamReconnect() {
+  if (scheduleStreamReconnectTimer) return;
+  scheduleStreamReconnectTimer = setTimeout(async () => {
+    scheduleStreamReconnectTimer = null;
+    if (!API.getToken()) return; // 로그아웃된 상태면 재연결하지 않는다
+    try {
+      await API.refreshAccessToken();
+    } catch (e) {
+      // 리프레시도 실패 - 다음 일반 API 호출이 세션을 정리하고 로그인 화면으로 보낼 것이다
+    }
+    connectScheduleStream();
+  }, SCHEDULE_STREAM_RECONNECT_DELAY_MS);
 }
 
 // ---------- 초기화 ----------
@@ -2058,5 +2112,5 @@ async function checkScheduleTimers() {
   }
   // "지금" 표시선이 실제 흐르는 시간을 따라가도록 주기적으로 다시 그린다 (데이터 재조회는 없음)
   setInterval(renderTodayClock, 60000);
-  setInterval(checkScheduleTimers, REMINDER_CHECK_INTERVAL_MS);
+  connectScheduleStream();
 })();

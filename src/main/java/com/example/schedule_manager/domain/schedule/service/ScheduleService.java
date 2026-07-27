@@ -22,6 +22,7 @@ import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -45,6 +46,7 @@ public class ScheduleService {
     private final CategoryRepository categoryRepository;
     private final RedisTemplate<String, Object> redisTemplate;
     private final ScheduleCacheQueryService scheduleCacheQueryService;
+    private final ScheduleEventPublisher scheduleEventPublisher;
 
     // #v3: 새 일정이 생기면 해당 유저의 목록 캐시가 최신 상태가 아니게 된다
     // 이전엔 특정 키 하나만 골라 지울 수 없다는 이유로 캐시 전체(allEntries)를 무효화했는데,
@@ -167,6 +169,15 @@ public class ScheduleService {
         }
     }
 
+    // 이 유저의 일정 변경 이벤트를 구독한다(SSE) - 컨트롤러가 이 메서드가 반환한 SseEmitter를
+    // 그대로 응답 바디로 돌려주면, 이후 이 유저의 일정이 바뀔 때마다(evictScheduleCacheForUser 참고)
+    // 서버가 이 연결로 직접 이벤트를 밀어준다
+    @Transactional(readOnly = true)
+    public SseEmitter subscribeToScheduleEvents(String requesterEmail) {
+        User requester = findUserByEmail(requesterEmail);
+        return scheduleEventPublisher.subscribe(requester.getId());
+    }
+
     private void transitionStatus(Schedule schedule, ScheduleStatus status) {
         schedule.update(schedule.getTitle(), schedule.getContent(), schedule.getStartAt(), schedule.getEndAt(),
                 status, schedule.getCategory());
@@ -189,9 +200,12 @@ public class ScheduleService {
     // Redis 장애 시에도 update/delete 자체가 500 으로 번지지 않도록 fail-open 한다
     // (CacheFailSafeErrorHandler 는 @Cacheable/@CacheEvict 애노테이션 경로에만 적용되고, 이 직접 호출엔
     // 안 걸리므로 여기서 직접 같은 패턴을 적용 — JwtAuthenticationFilter.isBlacklisted() 참고)
+    // 캐시 무효화와 함께, 이 유저를 구독 중인 SSE 연결(열려 있는 브라우저 탭)에도 곧바로 알린다 -
+    // 이 메서드가 호출되는 지점이 곧 "이 유저의 일정이 실제로 바뀐 시점"과 정확히 일치하기 때문이다
     private void evictScheduleCacheForUser(Long userId) {
         evictKeysMatching(SCHEDULE_CACHE + "::*-" + userId + "-*");
         evictKeysMatching(SCHEDULE_CACHE + "::*-null-*");
+        scheduleEventPublisher.notifyChanged(userId);
     }
 
     private void evictKeysMatching(String pattern) {

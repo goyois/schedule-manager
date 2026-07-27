@@ -59,11 +59,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    // 일정 변경 SSE 스트림 경로 - 브라우저 EventSource가 커스텀 헤더를 못 보내므로 이 경로에 한해
+    // 쿼리 파라미터로도 토큰을 받는다 (SecurityConfig.jsonAuthenticationEntryPoint() 참고: 이 필터를
+    // 통과하지 못하면 이 경로도 다른 API와 동일하게 401로 막힌다 - 별도로 permitAll 처리하지 않는다)
+    private static final String SSE_STREAM_PATH = "/api/schedules/stream";
+
     // Authorization 헤더에서 "Bearer " 접두사를 제거하고 순수 토큰 문자열만 반환
     private String resolveToken(HttpServletRequest request) {
         String bearer = request.getHeader("Authorization");
         if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
             return bearer.substring(7);
+        }
+        if (SSE_STREAM_PATH.equals(request.getRequestURI())) {
+            return request.getParameter("token");
         }
         return null;
     }

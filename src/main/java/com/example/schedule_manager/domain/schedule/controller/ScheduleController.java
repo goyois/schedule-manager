@@ -6,10 +6,12 @@ import com.example.schedule_manager.domain.schedule.service.ScheduleService;
 import com.example.schedule_manager.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -50,5 +52,13 @@ public class ScheduleController {
     public ResponseEntity<ApiResponse<Void>> deleteSchedule(@PathVariable Long id) {
         scheduleService.deleteSchedule(id);
         return ResponseEntity.ok(ApiResponse.success());
+    }
+
+    // 이 유저의 일정 변경(생성/수정/삭제/자동 상태 전환)을 실시간으로 밀어주는 SSE 스트림.
+    // 브라우저 EventSource는 커스텀 헤더를 못 보내 토큰을 헤더 대신 쿼리 파라미터로 보내는데,
+    // 그 인증은 JwtAuthenticationFilter.resolveToken()이 이 경로에 한해 처리한다
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamScheduleEvents(@AuthenticationPrincipal UserDetails principal) {
+        return scheduleService.subscribeToScheduleEvents(principal.getUsername());
     }
 }

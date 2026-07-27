@@ -169,6 +169,7 @@ const API = (() => {
     getRefreshToken,
     setTokens,
     clearSession,
+    refreshAccessToken,
     getCurrentUser,
     setCurrentUser,
     rememberUserId,
