@@ -375,8 +375,12 @@ button {
   opacity: 0.4;
 }
 
-.category-list li.drag-over {
+.category-list li.drag-over-top {
   box-shadow: inset 0 2px 0 var(--color-primary);
+}
+
+.category-list li.drag-over-bottom {
+  box-shadow: inset 0 -2px 0 var(--color-primary);
 }
 
 .category-list li .drag-handle {

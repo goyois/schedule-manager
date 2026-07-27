@@ -115,19 +115,26 @@ function applyStoredCategoryOrder(list) {
   return ordered;
 }
 
-// 드래그한 카테고리(srcId)를 드롭 대상(targetId) 바로 앞자리로 옮긴다. srcId를 먼저 배열에서 빼낸 뒤
-// targetId의 새 인덱스를 다시 찾아 그 자리에 끼워 넣는 방식이라, 위/아래 어느 방향으로 끌어도 별도
-// 인덱스 보정 없이 항상 올바른 위치에 들어간다
-function reorderCategory(srcId, targetId) {
+// 드래그한 카테고리(srcId)를 드롭 대상(targetId)의 앞 또는 뒤로 옮긴다. placeAfter가 없으면(=항상 앞)
+// 마지막 항목 위에 놓아도 그 앞자리로만 들어가서 "맨 밑으로 내리기"가 불가능했다 - 그래서 드롭 시점의
+// 마우스 위치(대상 항목의 위쪽 절반/아래쪽 절반)로 앞/뒤를 정한다. srcId를 먼저 배열에서 빼낸 뒤
+// targetId의 새 인덱스를 다시 찾아 그 자리(+1)에 끼워 넣는 방식이라 별도 인덱스 보정이 필요 없다
+function reorderCategory(srcId, targetId, placeAfter) {
   if (String(srcId) === String(targetId)) return;
   const srcIdx = categories.findIndex((c) => String(c.id) === String(srcId));
   if (srcIdx === -1) return;
   const [moved] = categories.splice(srcIdx, 1);
   const targetIdx = categories.findIndex((c) => String(c.id) === String(targetId));
-  categories.splice(targetIdx === -1 ? categories.length : targetIdx, 0, moved);
+  const insertAt = targetIdx === -1 ? categories.length : targetIdx + (placeAfter ? 1 : 0);
+  categories.splice(insertAt, 0, moved);
   saveStoredCategoryOrder(categories.map((c) => c.id));
   renderCategorySidebar();
   renderCategorySelectOptions();
+}
+
+function isBelowMidpoint(li, clientY) {
+  const rect = li.getBoundingClientRect();
+  return clientY - rect.top > rect.height / 2;
 }
 
 async function loadCategories() {
@@ -185,14 +192,17 @@ function renderCategorySidebar() {
     li.addEventListener("dragover", (e) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
-      li.classList.add("drag-over");
+      const placeAfter = isBelowMidpoint(li, e.clientY);
+      li.classList.toggle("drag-over-top", !placeAfter);
+      li.classList.toggle("drag-over-bottom", placeAfter);
     });
-    li.addEventListener("dragleave", () => li.classList.remove("drag-over"));
+    li.addEventListener("dragleave", () => li.classList.remove("drag-over-top", "drag-over-bottom"));
     li.addEventListener("drop", (e) => {
       e.preventDefault();
-      li.classList.remove("drag-over");
+      const placeAfter = isBelowMidpoint(li, e.clientY);
+      li.classList.remove("drag-over-top", "drag-over-bottom");
       const srcId = e.dataTransfer.getData("text/plain");
-      reorderCategory(srcId, li.dataset.categoryId);
+      reorderCategory(srcId, li.dataset.categoryId, placeAfter);
     });
   });
 
