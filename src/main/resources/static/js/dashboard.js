@@ -540,8 +540,8 @@ const STATUS_BG_VAR = {
 
 const CLOCK_CENTER = 80;
 const CLOCK_FACE_R = 74;
-// 겹치는 일정은 최대 3개 레인까지 동심원으로 분리하고, 그 이상 겹치면 마지막 레인에 함께 그린다
-const CLOCK_LANE_R = [62, 51, 40];
+// 겹치는 일정은 최대 4개 레인까지 동심원으로 분리하고, 그 이상 겹치면 가장 먼저 비는 레인에 합친다
+const CLOCK_LANE_R = [64, 54, 44, 34];
 const CLOCK_ARC_WIDTH = 8;
 const CLOCK_MIN_ARC_MINUTES = 8; // 아주 짧은 일정도 호가 보이도록 최소 폭을 보장한다
 
@@ -667,14 +667,20 @@ function getTodaysScheduleWindows(list) {
     .sort((a, b) => a.startMin - b.startMin);
 }
 
-// 겹치는 일정을 동심원 레인으로 분리한다 (구간 그래프 그리디 채색)
+// 겹치는 일정을 동심원 레인으로 분리한다 (구간 그래프 그리디 채색). 레인이 다 차면 마지막 레인에
+// 몰아넣지 않고 가장 먼저 비는 레인을 골라 합친다
 function assignClockLanes(events) {
   const laneEndMin = [];
   return events.map((e) => {
     let lane = laneEndMin.findIndex((end) => e.startMin >= end);
-    if (lane === -1) lane = laneEndMin.length;
-    lane = Math.min(lane, CLOCK_LANE_R.length - 1);
-    laneEndMin[lane] = e.endMin;
+    if (lane === -1) {
+      if (laneEndMin.length < CLOCK_LANE_R.length) {
+        lane = laneEndMin.length;
+      } else {
+        lane = laneEndMin.indexOf(Math.min(...laneEndMin));
+      }
+    }
+    laneEndMin[lane] = Math.max(laneEndMin[lane] ?? -Infinity, e.endMin);
     return { ...e, lane };
   });
 }
