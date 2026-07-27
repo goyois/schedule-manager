@@ -851,28 +851,34 @@ const ACHIEVEMENT_SEASONS = [
   { emoji: "❄️", label: "겨울" },
 ];
 
+// 산마다 실제 특징에 맞는 이모지를 따로 둔다(한라산은 화산, 에베레스트/지리산은 만년설 봉우리,
+// 관악산/북한산은 그냥 동네 산 느낌의 일반 산 모양)
 const ACHIEVEMENT_MOUNTAINS = [
-  { name: "관악산", height: 632 },
-  { name: "북한산", height: 836 },
-  { name: "지리산 천왕봉", height: 1915 },
-  { name: "한라산", height: 1947 },
-  { name: "에베레스트", height: 8849 },
+  { name: "관악산", height: 632, emoji: "⛰️" },
+  { name: "북한산", height: 836, emoji: "⛰️" },
+  { name: "지리산 천왕봉", height: 1915, emoji: "🏔️" },
+  { name: "한라산", height: 1947, emoji: "🌋" },
+  { name: "에베레스트", height: 8849, emoji: "🏔️" },
 ];
 
-// 서울 ~ 부산(경부고속도로, 약 400km) 구간을 진행률에 따라 11개 구간으로 나눠 위치를 고른다
+// 1월~12월 각각의 계절감에 맞는 이모지
+const ACHIEVEMENT_MONTH_EMOJIS = ["❄️", "💝", "🌸", "🌷", "🌳", "🌊", "🏖️", "🌻", "🍂", "🎃", "🍁", "🎄"];
+
+// 서울 ~ 부산(경부고속도로, 약 400km) 구간을 진행률에 따라 11개 구간으로 나눠 위치를 고른다.
+// 구간마다 그 지점다운 이모지를 따로 둔다(출발=도시, 최고지점=산, 경주=고도시, 도착=바다·항구)
 const ACHIEVEMENT_BUSAN_ROUTE_TOTAL_KM = 400;
 const ACHIEVEMENT_BUSAN_ROUTE = [
-  { name: "서울 출발", road: "경부고속도로 기점 · 한남IC 인근" },
-  { name: "기흥휴게소", road: "경부고속도로 · 경기 용인" },
-  { name: "안성휴게소", road: "경부고속도로 · 경기 안성" },
-  { name: "천안삼거리휴게소", road: "경부고속도로 · 충남 천안" },
-  { name: "옥산휴게소", road: "경부고속도로 · 충북 청주" },
-  { name: "추풍령휴게소", road: "경부고속도로 최고지점 · 충북·경북 경계" },
-  { name: "김천(구미)휴게소", road: "경부고속도로 · 경북 김천" },
-  { name: "칠곡휴게소", road: "경부고속도로 · 경북 칠곡(대구 인근)" },
-  { name: "경주휴게소", road: "경부고속도로 · 경북 경주" },
-  { name: "양산휴게소", road: "경부고속도로 · 경남 양산" },
-  { name: "부산 도착", road: "경부고속도로 종점 · 부산" },
+  { name: "서울 출발", road: "경부고속도로 기점 · 한남IC 인근", emoji: "🏙️" },
+  { name: "기흥휴게소", road: "경부고속도로 · 경기 용인", emoji: "🚗" },
+  { name: "안성휴게소", road: "경부고속도로 · 경기 안성", emoji: "🚗" },
+  { name: "천안삼거리휴게소", road: "경부고속도로 · 충남 천안", emoji: "🚗" },
+  { name: "옥산휴게소", road: "경부고속도로 · 충북 청주", emoji: "🚗" },
+  { name: "추풍령휴게소", road: "경부고속도로 최고지점 · 충북·경북 경계", emoji: "⛰️" },
+  { name: "김천(구미)휴게소", road: "경부고속도로 · 경북 김천", emoji: "🚗" },
+  { name: "칠곡휴게소", road: "경부고속도로 · 경북 칠곡(대구 인근)", emoji: "🚗" },
+  { name: "경주휴게소", road: "경부고속도로 · 경북 경주", emoji: "🏯" },
+  { name: "양산휴게소", road: "경부고속도로 · 경남 양산", emoji: "🚗" },
+  { name: "부산 도착", road: "경부고속도로 종점 · 부산", emoji: "🌊" },
 ];
 
 // 위젯을 클릭할 때마다 이 중 하나를 새로 뽑는다. 산 비유는 "어떤 산인지"도 이때 같이 새로 뽑아
@@ -881,18 +887,18 @@ const ACHIEVEMENT_BUSAN_ROUTE = [
 function buildAchievementMetaphors() {
   const mountain = ACHIEVEMENT_MOUNTAINS[Math.floor(Math.random() * ACHIEVEMENT_MOUNTAINS.length)];
   return [
-    (percent) => ({ emoji: "🎯", headline: `${percent}%`, detail: "오늘 일정 완료율" }),
+    (percent) => ({ emoji: "🔋", headline: `${percent}%`, detail: "오늘 일정 완료율" }),
     (percent) => {
       const season = ACHIEVEMENT_SEASONS[Math.min(3, Math.floor(percent / 25))];
       return { emoji: season.emoji, headline: season.label, detail: "사계절로 치면 지금 이맘때" };
     },
     (percent) => {
       const month = percent <= 0 ? 1 : Math.min(12, Math.ceil((percent / 100) * 12));
-      return { emoji: "📅", headline: `${month}월`, detail: "1년 12개월로 치면" };
+      return { emoji: ACHIEVEMENT_MONTH_EMOJIS[month - 1], headline: `${month}월`, detail: "1년 12개월로 치면" };
     },
     (percent) => {
       const meters = Math.round((mountain.height * percent) / 100);
-      return { emoji: "⛰️", headline: `${meters}m`, detail: `${mountain.name}(${mountain.height}m) 등반 기준` };
+      return { emoji: mountain.emoji, headline: `${meters}m`, detail: `${mountain.name}(${mountain.height}m) 등반 기준` };
     },
     (percent) => {
       const km = ((42.195 * percent) / 100).toFixed(1);
@@ -902,7 +908,7 @@ function buildAchievementMetaphors() {
       const idx = Math.min(ACHIEVEMENT_BUSAN_ROUTE.length - 1, Math.round((percent / 100) * (ACHIEVEMENT_BUSAN_ROUTE.length - 1)));
       const spot = ACHIEVEMENT_BUSAN_ROUTE[idx];
       const km = Math.round((ACHIEVEMENT_BUSAN_ROUTE_TOTAL_KM * percent) / 100);
-      return { emoji: "🚗", headline: spot.name, detail: `서울→부산 약 ${ACHIEVEMENT_BUSAN_ROUTE_TOTAL_KM}km 중 ${km}km · ${spot.road}` };
+      return { emoji: spot.emoji, headline: spot.name, detail: `서울→부산 약 ${ACHIEVEMENT_BUSAN_ROUTE_TOTAL_KM}km 중 ${km}km · ${spot.road}` };
     },
   ];
 }
