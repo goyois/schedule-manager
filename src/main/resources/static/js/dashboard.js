@@ -1249,7 +1249,15 @@ function openCreateModal() {
   document.getElementById("schedule-id").value = "";
   document.getElementById("status-select").value = "PENDING";
   document.getElementById("user-id-input").value = (API.getCurrentUser() && API.getCurrentUser().id) || "";
-  if (categories.length) categorySelect.value = String(categories[0].id);
+  // 사이드바에서 특정 카테고리로 필터링해둔 채로 "+"를 눌러 새 일정을 만들면, 그 필터와 무관하게
+  // 항상 목록 맨 위 카테고리로 기본 선택돼 있어서 저장 후 필터된 화면엔 안 보이는(전체 일정에서만
+  // 보이는) 문제가 있었다 - 지금 보고 있는 카테고리가 있으면 그걸 기본값으로 쓴다
+  const activeCat = categories.find((c) => String(c.id) === String(activeCategoryId));
+  if (activeCat) {
+    categorySelect.value = String(activeCat.id);
+  } else if (categories.length) {
+    categorySelect.value = String(categories[0].id);
+  }
 
   const defaultStart = roundUpToQuarterHour(new Date());
   const defaultEnd = new Date(defaultStart.getTime() + 60 * 60 * 1000);
