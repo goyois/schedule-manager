@@ -1965,12 +1965,14 @@ autoStatusToggleEl.addEventListener("change", async () => {
 const scheduleReminderContainerEl = document.getElementById("schedule-reminder-container");
 const REMINDER_CHECK_INTERVAL_MS = 15000;
 const REMINDER_AUTO_DISMISS_MS = 12000;
-// 이 세션에서 이미 알림을 띄운 일정 id - 새로고침하면 초기화되지만, 이미 지나간 시작 시각에 대해
-// 다시 알림이 뜨는 것만 막으면 되므로 세션을 넘어 영구히 기억할 필요는 없다
-const notifiedScheduleIds = new Set();
-// 페이지를 처음 연 시점을 기준으로 삼아서, 로드 당시 이미 지난 일정들이 한꺼번에 알림으로 뜨는 것을 막는다.
-// 매 체크마다 (마지막 체크 시각, 지금] 구간에 시작 시각이 걸리는 일정만 알림 대상이 된다
-let lastReminderCheckAt = Date.now();
+// 일정 id -> 마지막으로 확인한 상태. 알림은 "시작 시각이 지났는지"가 아니라 "방금 진행중으로
+// 바뀌었는지"를 기준으로 띄운다 - 그래야 서버 자동 전환과 알림이 항상 같은 폴링 시점에 함께 반영된다
+const knownStatusById = new Map();
+
+// 페이지를 처음 열었을 때 이미 진행중인 일정에는 알림이 뜨지 않도록, 초기 로드 직후 현재 상태를 먼저 기록해둔다
+function seedKnownScheduleStatuses() {
+  schedules.forEach((s) => knownStatusById.set(s.id, s.status));
+}
 
 function showScheduleReminder(schedule) {
   const card = document.createElement("div");
@@ -2017,20 +2019,16 @@ function showScheduleReminder(schedule) {
 }
 
 // 서버 스케줄러(ScheduleService.autoTransitionScheduleStatuses)가 이 탭과 무관하게 상태를
-// 전환하므로, 매 주기마다 refreshAll()로 최신 상태를 먼저 받아온 뒤 알림 여부를 판단한다
+// 전환하므로, 매 주기마다 refreshAll()로 최신 상태를 먼저 받아온 뒤 방금 진행중으로 바뀐 일정에만 알림을 띄운다
 async function checkScheduleTimers() {
   await refreshAll();
-  const now = Date.now();
 
   schedules.forEach((s) => {
-    if (!s.startAt || s.status === "CANCELLED" || notifiedScheduleIds.has(s.id)) return;
-    const startMs = new Date(s.startAt).getTime();
-    if (Number.isNaN(startMs) || startMs <= lastReminderCheckAt || startMs > now) return;
-    notifiedScheduleIds.add(s.id);
+    const prevStatus = knownStatusById.get(s.id);
+    knownStatusById.set(s.id, s.status);
+    if (s.status !== "IN_PROGRESS" || prevStatus === undefined || prevStatus === "IN_PROGRESS") return;
     showScheduleReminder(s);
   });
-
-  lastReminderCheckAt = now;
 }
 
 // ---------- 초기화 ----------
@@ -2054,6 +2052,7 @@ async function checkScheduleTimers() {
   }
   renderBoardTitle();
   await loadSchedules();
+  seedKnownScheduleStatuses();
   if (activeCategoryId !== "") {
     await loadBoardForActiveCategory();
   }
