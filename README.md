@@ -50,6 +50,19 @@
 CREATE DATABASE api;
 ```
 
+앱을 최초 기동해 (`ddl-auto: update`로) 스키마가 생성된 뒤, 이메일/카테고리 이름 조회를
+MySQL 때(`utf8mb4_unicode_ci`)와 동일하게 대소문자 구분 없이 동작시키려면 아래 DDL을 한 번
+실행해야 한다 (`ddl-auto: validate`로 바꾼 뒤에는 스키마를 이런 수동 DDL로 관리한다 — 자세한
+배경은 `TASK.md` 참고):
+
+```sql
+CREATE COLLATION IF NOT EXISTS case_insensitive
+    (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+
+ALTER TABLE users      ALTER COLUMN email TYPE varchar(255) COLLATE case_insensitive;
+ALTER TABLE categories ALTER COLUMN name  TYPE varchar(255) COLLATE case_insensitive;
+```
+
 ### application-local.yml 설정
 
 `src/main/resources/application-local.yml`은 `.gitignore`에 포함되어 있어 저장소에 커밋되지 않습니다. 로컬에서 직접 만들어야 하며, 최소한 아래 값이 필요합니다.

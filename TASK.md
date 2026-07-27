@@ -35,8 +35,9 @@ Spring AI의 `PgVectorStore`를 그대로 쓸 수 있어 구현 난이도도 낮
 - [x] 로컬 PostgreSQL(Homebrew, `postgresql@18`, 이미 실행 중)에 `api` 데이터베이스 생성 (`createdb api`)
 - [x] `build.gradle`: `runtimeOnly 'com.mysql:mysql-connector-j'` → `runtimeOnly 'org.postgresql:postgresql'`
 - [x] `application-local.yml`: `driver-class-name`/`url`/`username`을 PostgreSQL(`org.postgresql.Driver`,
-      `jdbc:postgresql://localhost:5432/api`)로 변경. `spring.jpa.hibernate.ddl-auto: update`는 그대로
-      유지 — Flyway/Liquibase 없이 Hibernate가 PostgreSQL 방언으로 스키마를 새로 만든다.
+      `jdbc:postgresql://localhost:5432/api`)로 변경. 초기 전환 시에는 `ddl-auto: update`로 Hibernate가
+      PostgreSQL 방언으로 스키마를 새로 만들게 했고, 스키마가 안정된 뒤 `ddl-auto: validate`로 전환함
+      (스키마 변경은 이제 수동 DDL로 관리 — 아래 "대소문자 구분 제거" 항목이 그 예시)
 - [x] `README.md`: 기술 스택 표, 사전 요구사항, DB 생성 SQL, `application-local.yml` 예시를
       PostgreSQL 기준으로 갱신
 - [x] `CLAUDE.md`: "Local infra required" 문구를 MySQL → PostgreSQL로 갱신, 이 문서(`TASK.md`) 링크 추가
@@ -46,6 +47,40 @@ Spring AI의 `PgVectorStore`를 그대로 쓸 수 있어 구현 난이도도 낮
 - [x] `spring-session-jdbc`(`initialize-schema: always`)는 스타터가 내장한 `schema-postgresql.sql`을
       자동으로 골라 쓰므로 별도 설정 불필요
 - [x] 빌드/컴파일/테스트/`bootRun` 스모크 테스트로 PostgreSQL 연결 확인 (아래 "검증" 참고)
+
+## MySQL과의 차이로 발생한 문제 — 문자열 대소문자 구분
+
+기존 MySQL(`api` DB, `utf8mb4_unicode_ci` collation)은 문자열 비교가 기본적으로 대소문자를
+구분하지 않았다. PostgreSQL은 기본 collation이 대소문자를 구분해서, 전환 직후 아래 로직들의
+동작이 조용히 바뀌어 있었다(코드 변경 없이 DB만 바꿔서 생긴 회귀):
+
+- `UserRepository.findByEmail` / `existsByEmail` — 로그인 시 가입 때와 다른 대소문자의 이메일을
+  쓰면 더 이상 매칭되지 않고, 가입 시에도 대소문자만 다른 이메일 중복을 막지 못함
+  (`CustomUserDetailsService`가 이 `findByEmail`로 인증하므로 로그인 자체에 영향)
+- `CategoryRepository.findByName` / `existsVisibleDuplicateName` — 카테고리 이름 중복 검사도 동일
+
+**해결**: 애플리케이션 코드(이메일을 저장 전에 `lowercase`로 정규화하는 방식)를 건드리는 대신,
+DB 레벨에서 PostgreSQL의 비결정적(non-deterministic) ICU collation으로 MySQL의 `_ci` collation과
+동등한 효과를 재현했다. 컬럼의 선언 타입(`varchar(255)`)은 그대로 유지되고 collation만 바뀌므로
+Hibernate `ddl-auto: validate`도 영향받지 않고, JPA 엔티티(`User`/`Category`) 코드도 변경 불필요.
+
+```sql
+CREATE COLLATION IF NOT EXISTS case_insensitive
+    (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+
+ALTER TABLE users      ALTER COLUMN email TYPE varchar(255) COLLATE case_insensitive;
+ALTER TABLE categories ALTER COLUMN name  TYPE varchar(255) COLLATE case_insensitive;
+```
+
+- [x] 로컬 `api` DB에 위 DDL 적용 완료, `SELECT count(*) FROM users WHERE email = upper(email)`로
+      대소문자 무시 비교가 실제로 동작하는지 확인
+- [x] `ddl-auto: validate`인 상태로 `bootRun` 재기동해 스키마 검증 통과 확인 (collation은 JDBC
+      컬럼 메타데이터에 노출되지 않아 Hibernate 검증 대상이 아님)
+- [ ] **새 로컬 환경/CI에도 반영 필요** — 이 DDL은 Flyway/Liquibase 없이 로컬 DB에 수동으로만
+      적용했다. 다른 환경에서 처음부터 세팅할 때는 위 SQL을 스키마 생성 직후 함께 실행해야 함
+      (README "데이터베이스 설정" 절에 반영)
+- 범위를 `email`/카테고리 `name`으로 한정함 — `username`은 로그인/중복 검사에 쓰이지 않아
+  (`findByUsername`이 정의만 되어 있고 실제 호출부 없음) 그대로 둠. 필요해지면 같은 방식으로 추가.
 
 ## 검증
 
