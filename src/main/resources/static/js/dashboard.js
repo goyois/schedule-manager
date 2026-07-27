@@ -1817,6 +1817,17 @@ aiSuggestForm.addEventListener("submit", async (e) => {
   }
 });
 
+// ---------- 모달/팝오버 ESC로 닫기 ----------
+// 열려 있는 것만 닫는다 - 보통 한 번에 하나만 열려 있지만, 여러 개가 동시에 열려 있어도 전부 닫히게
+// 순서대로 다 확인한다
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (modalOverlay.classList.contains("show")) closeModal();
+  if (detailModalOverlay.classList.contains("show")) closeDetailModal();
+  if (aiSuggestModalOverlay.classList.contains("show")) closeAiSuggestModal();
+  if (clockFilterPopover.classList.contains("show")) clockFilterPopover.classList.remove("show");
+});
+
 // ---------- 카테고리 추가 ----------
 
 document.getElementById("add-category-form").addEventListener("submit", async (e) => {
