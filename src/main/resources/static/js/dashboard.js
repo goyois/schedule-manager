@@ -115,11 +115,16 @@ function applyStoredCategoryOrder(list) {
   return ordered;
 }
 
-function moveCategory(id, direction) {
-  const idx = categories.findIndex((c) => String(c.id) === String(id));
-  const swapIdx = idx + direction;
-  if (idx === -1 || swapIdx < 0 || swapIdx >= categories.length) return;
-  [categories[idx], categories[swapIdx]] = [categories[swapIdx], categories[idx]];
+// 드래그한 카테고리(srcId)를 드롭 대상(targetId) 바로 앞자리로 옮긴다. srcId를 먼저 배열에서 빼낸 뒤
+// targetId의 새 인덱스를 다시 찾아 그 자리에 끼워 넣는 방식이라, 위/아래 어느 방향으로 끌어도 별도
+// 인덱스 보정 없이 항상 올바른 위치에 들어간다
+function reorderCategory(srcId, targetId) {
+  if (String(srcId) === String(targetId)) return;
+  const srcIdx = categories.findIndex((c) => String(c.id) === String(srcId));
+  if (srcIdx === -1) return;
+  const [moved] = categories.splice(srcIdx, 1);
+  const targetIdx = categories.findIndex((c) => String(c.id) === String(targetId));
+  categories.splice(targetIdx === -1 ? categories.length : targetIdx, 0, moved);
   saveStoredCategoryOrder(categories.map((c) => c.id));
   renderCategorySidebar();
   renderCategorySelectOptions();
@@ -146,12 +151,10 @@ function renderCategorySidebar() {
 
   const items = categories
     .map(
-      (c, idx) => `
-      <li data-category-id="${c.id}" class="${String(activeCategoryId) === String(c.id) ? "active" : ""}">
-        <span><span class="dot"></span>${escapeHtml(c.name)}</span>
+      (c) => `
+      <li draggable="true" data-category-id="${c.id}" class="${String(activeCategoryId) === String(c.id) ? "active" : ""}">
+        <span><span class="drag-handle">&#8942;&#8942;</span><span class="dot"></span>${escapeHtml(c.name)}</span>
         <span class="cat-actions">
-          <button type="button" class="cat-move" data-move-id="${c.id}" data-move-dir="up" title="위로" ${idx === 0 ? "disabled" : ""}>&#9650;</button>
-          <button type="button" class="cat-move" data-move-id="${c.id}" data-move-dir="down" title="아래로" ${idx === categories.length - 1 ? "disabled" : ""}>&#9660;</button>
           <span class="remove-cat" data-remove-category="${c.id}">&times;</span>
         </span>
       </li>`
@@ -162,7 +165,7 @@ function renderCategorySidebar() {
 
   categoryListEl.querySelectorAll("li").forEach((li) => {
     li.addEventListener("click", async (e) => {
-      if (e.target.dataset.removeCategory || e.target.dataset.moveId) return;
+      if (e.target.dataset.removeCategory) return;
       activeCategoryId = li.dataset.categoryId;
       renderCategorySidebar();
       renderBoardTitle();
@@ -170,10 +173,26 @@ function renderCategorySidebar() {
     });
   });
 
-  categoryListEl.querySelectorAll("[data-move-id]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      moveCategory(btn.dataset.moveId, btn.dataset.moveDir === "up" ? -1 : 1);
+  // 카테고리 항목을 마우스로 눌러 끌어서 순서를 바꾼다("전체 일정" 항목은 draggable이 아니라 대상에서
+  // 빠진다). dragover에서 매번 preventDefault를 해줘야 그 요소가 드롭 대상으로 인정된다
+  categoryListEl.querySelectorAll("li[draggable='true']").forEach((li) => {
+    li.addEventListener("dragstart", (e) => {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", li.dataset.categoryId); // Firefox는 setData 없으면 드래그 자체가 시작되지 않는다
+      li.classList.add("dragging");
+    });
+    li.addEventListener("dragend", () => li.classList.remove("dragging"));
+    li.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      li.classList.add("drag-over");
+    });
+    li.addEventListener("dragleave", () => li.classList.remove("drag-over"));
+    li.addEventListener("drop", (e) => {
+      e.preventDefault();
+      li.classList.remove("drag-over");
+      const srcId = e.dataTransfer.getData("text/plain");
+      reorderCategory(srcId, li.dataset.categoryId);
     });
   });
 

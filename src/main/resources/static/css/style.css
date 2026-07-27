@@ -367,6 +367,31 @@ button {
   flex-shrink: 0;
 }
 
+.category-list li[draggable="true"] {
+  cursor: grab;
+}
+
+.category-list li.dragging {
+  opacity: 0.4;
+}
+
+.category-list li.drag-over {
+  box-shadow: inset 0 2px 0 var(--color-primary);
+}
+
+.category-list li .drag-handle {
+  display: inline-block;
+  width: 10px;
+  margin-right: 4px;
+  letter-spacing: -2px;
+  color: var(--color-text-muted);
+  opacity: 0;
+}
+
+.category-list li:hover .drag-handle {
+  opacity: 1;
+}
+
 .category-list li .cat-actions {
   display: flex;
   align-items: center;
@@ -376,26 +401,6 @@ button {
 
 .category-list li:hover .cat-actions {
   opacity: 1;
-}
-
-.category-list li .cat-move {
-  border: none;
-  background: none;
-  padding: 2px 4px;
-  font: inherit;
-  font-size: 10px;
-  line-height: 1;
-  color: var(--color-text-muted);
-  cursor: pointer;
-}
-
-.category-list li .cat-move:hover:not(:disabled) {
-  color: var(--color-primary-dark);
-}
-
-.category-list li .cat-move:disabled {
-  opacity: 0.3;
-  cursor: default;
 }
 
 .category-list li .remove-cat {
