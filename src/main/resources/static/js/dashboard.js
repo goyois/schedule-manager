@@ -827,7 +827,7 @@ function escapeHtml(str) {
 
 function scheduleCardHtml(s) {
   return `
-    <div class="schedule-card ${s.status}" data-id="${s.id}">
+    <div class="schedule-card ${s.status}" data-id="${s.id}" draggable="true">
       <div class="card-top">
         <div class="card-title">${escapeHtml(s.title)}</div>
       </div>
@@ -858,7 +858,7 @@ function renderBoard() {
     const hiddenCount = items.length - visibleItems.length;
 
     return `
-      <div class="board-column ${col.key}">
+      <div class="board-column ${col.key}" data-status-column="${col.key}">
         <div class="board-column-header">
           <div class="title"><span class="status-dot ${col.key}"></span>${col.label}</div>
           <span class="count-badge">${items.length}</span>
@@ -896,6 +896,40 @@ function renderBoard() {
 
   board.querySelectorAll("[data-delete]").forEach((btn) => {
     btn.addEventListener("click", () => deleteSchedule(btn.dataset.delete));
+  });
+
+  // 카드를 마우스로 눌러 다른 상태 컬럼으로 끌어놓으면 상태 select와 같은 updateScheduleStatus()를
+  // 그대로 재사용해 상태를 바꾼다 - 드롭 대상 컬럼은 카드 사이 좁은 틈이 아니라 컬럼 전체(헤더/더보기
+  // 버튼 영역 포함)로 넉넉하게 잡는다
+  board.querySelectorAll(".schedule-card").forEach((card) => {
+    card.addEventListener("dragstart", (e) => {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", card.dataset.id); // Firefox는 setData 없으면 드래그 자체가 시작되지 않는다
+      card.classList.add("dragging");
+    });
+    card.addEventListener("dragend", () => card.classList.remove("dragging"));
+  });
+
+  board.querySelectorAll("[data-status-column]").forEach((columnEl) => {
+    columnEl.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      columnEl.classList.add("drop-target");
+    });
+    columnEl.addEventListener("dragleave", (e) => {
+      // 컬럼 내부 자식 요소 사이를 이동할 때마다 dragleave가 계속 발생해 깜빡이지 않도록,
+      // 실제로 컬럼 바깥으로 나갈 때만 하이라이트를 지운다
+      if (!columnEl.contains(e.relatedTarget)) columnEl.classList.remove("drop-target");
+    });
+    columnEl.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      columnEl.classList.remove("drop-target");
+      const id = e.dataTransfer.getData("text/plain");
+      const targetStatus = columnEl.dataset.statusColumn;
+      const schedule = schedules.find((x) => String(x.id) === String(id));
+      if (!schedule || schedule.status === targetStatus) return;
+      await updateScheduleStatus(id, targetStatus);
+    });
   });
 }
 
