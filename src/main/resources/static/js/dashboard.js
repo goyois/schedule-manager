@@ -1494,7 +1494,52 @@ function applyAdminVisibility() {
   });
 }
 
-// ---------- 일정 시작 알림 ----------
+// ---------- 일정 시작 알림 / 자동 상태 변경 ----------
+
+// 수동 모드: 알림이 떠도 상태는 그대로 두고 사용자가 직접 바꾼다(기본값).
+// 자동 모드: 시작 시각이 되면 대기→진행중, 종료 시각이 되면 진행중→완료로 자동 전환한다.
+// 종료 시각이 없는 알림형 일정은 "진행중"으로 머물 종료 시점이 없으므로, 시작 시각에 바로 완료 처리한다.
+// 사용자 이메일별로 localStorage에 저장 - 카테고리 순서와 같은 이유로 서버에는 저장하지 않는다
+function autoStatusModeStorageKey() {
+  const user = API.getCurrentUser();
+  const email = (user && user.email) || "anonymous";
+  return `auto-status-mode:${email}`;
+}
+
+function isAutoStatusModeOn() {
+  return localStorage.getItem(autoStatusModeStorageKey()) === "true";
+}
+
+function setAutoStatusMode(on) {
+  localStorage.setItem(autoStatusModeStorageKey(), String(on));
+}
+
+const autoStatusToggleEl = document.getElementById("auto-status-toggle");
+autoStatusToggleEl.addEventListener("change", () => setAutoStatusMode(autoStatusToggleEl.checked));
+
+// 자동 모드에서 시각에 맞춰 상태를 바꿀 때 쓴다 - updateScheduleStatus()와 달리 토스트/실패 알림 없이
+// 조용히 처리한다(사용자가 직접 누른 조작이 아니라 백그라운드 타이머가 하는 일이라서). 실패해도
+// 다음 체크 주기(15초)에 다시 시도되므로 별도 재시도 로직은 두지 않는다
+async function autoUpdateScheduleStatus(schedule, status) {
+  const meta = scheduleMeta.get(String(schedule.id)) || {};
+  const cat = categories.find((c) => c.name === schedule.categoryName);
+  try {
+    await API.put(`/api/schedules/${schedule.id}`, {
+      title: schedule.title,
+      content: schedule.content,
+      startAt: schedule.startAt,
+      endAt: schedule.endAt,
+      status,
+      userId: meta.userId ?? null,
+      categoryId: meta.categoryId ?? (cat ? cat.id : null),
+    });
+    await refreshAll();
+  } catch (err) {
+    // 실패해도 화면에 알리진 않지만(백그라운드 동작), 원인 파악을 위해 콘솔에는 남겨둔다.
+    // 다음 체크 주기(15초)에 다시 시도되므로 별도 재시도 로직은 두지 않는다
+    console.error("일정 자동 상태 변경 실패", schedule.id, err);
+  }
+}
 
 const scheduleReminderContainerEl = document.getElementById("schedule-reminder-container");
 const REMINDER_CHECK_INTERVAL_MS = 15000;
@@ -1551,16 +1596,38 @@ function showScheduleReminder(schedule) {
 }
 
 // schedules 배열은 로그인 시 + 이 세션에서 직접 생성/수정/삭제할 때만 갱신된다(다른 탭/기기에서
-// 만든 일정은 이 탭을 새로고침하기 전까진 알 수 없다) - 그 안에서 시작 시각이 막 지난 일정을 찾는다
-function checkStartTimeReminders() {
+// 만든 일정은 이 탭을 새로고침하기 전까진 알 수 없다) - 그 안에서 시작/종료 시각이 막 지난 일정을 찾아
+// 알림을 띄우고(항상), 자동 모드면 상태도 같이 바꾼다.
+// 같은 틱에서 여러 건이 동시에 바뀌어야 하는 경우, forEach로 PUT을 한꺼번에(await 없이) 쏘지 않고
+// for...of + await로 하나씩 순서대로 처리한다 - accessToken이 만료된 시점에 배경 타이머가 쏜 요청
+// 여러 개가 동시에 401을 맞으면 refresh token 재발급 요청도 동시에 여러 번 나갈 수 있는데,
+// 서버가 refresh token을 재발급마다 새 값으로 회전시키므로 두 요청이 서로 다른(이미 무효화된)
+// refresh token으로 재시도하다 실패해 강제 로그아웃될 위험이 있다(api.js의 refreshInFlight는
+// 같은 함수 내에서 "동시에 시작한" 재발급만 공유하고, 이렇게 서로 다른 요청이 각자 401을 순차적으로
+// 감지하는 경우까지는 막아주지 않는다)
+async function checkScheduleTimers() {
   const now = Date.now();
-  schedules.forEach((s) => {
-    if (!s.startAt || s.status === "CANCELLED" || notifiedScheduleIds.has(s.id)) return;
-    const startMs = new Date(s.startAt).getTime();
-    if (Number.isNaN(startMs) || startMs <= lastReminderCheckAt || startMs > now) return;
-    notifiedScheduleIds.add(s.id);
-    showScheduleReminder(s);
-  });
+  const autoMode = isAutoStatusModeOn();
+
+  for (const s of schedules) {
+    if (s.status === "CANCELLED") continue;
+    const startMs = s.startAt ? new Date(s.startAt).getTime() : NaN;
+    const endMs = s.endAt ? new Date(s.endAt).getTime() : NaN;
+
+    if (!notifiedScheduleIds.has(s.id) && !Number.isNaN(startMs) && startMs > lastReminderCheckAt && startMs <= now) {
+      notifiedScheduleIds.add(s.id);
+      showScheduleReminder(s);
+      if (autoMode && s.status === "PENDING") {
+        await autoUpdateScheduleStatus(s, s.endAt ? "IN_PROGRESS" : "COMPLETED");
+      }
+    }
+
+    if (autoMode && s.endAt && !Number.isNaN(endMs) && endMs > lastReminderCheckAt && endMs <= now && s.status !== "COMPLETED") {
+      await autoUpdateScheduleStatus(s, "COMPLETED");
+      showToast(`"${s.title}" 일정이 종료 시각에 맞춰 자동으로 완료 처리되었습니다.`);
+    }
+  }
+
   lastReminderCheckAt = now;
 }
 
@@ -1574,9 +1641,10 @@ function checkStartTimeReminders() {
   loadMandalartWidgetSubtitle();
   await syncCurrentUserId();
   applyAdminVisibility();
+  autoStatusToggleEl.checked = isAutoStatusModeOn();
   await loadCategories();
   await loadSchedules();
   // "지금" 표시선이 실제 흐르는 시간을 따라가도록 주기적으로 다시 그린다 (데이터 재조회는 없음)
   setInterval(renderTodayClock, 60000);
-  setInterval(checkStartTimeReminders, REMINDER_CHECK_INTERVAL_MS);
+  setInterval(checkScheduleTimers, REMINDER_CHECK_INTERVAL_MS);
 })();

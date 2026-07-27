@@ -475,6 +475,21 @@ button {
   border-top: 1px solid var(--color-border);
 }
 
+.auto-status-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.auto-status-toggle input[type="checkbox"] {
+  width: auto;
+  flex-shrink: 0;
+}
+
 .user-chip {
   display: flex;
   align-items: center;
