@@ -913,12 +913,11 @@ function renderBoard() {
     });
     card.addEventListener("dragend", () => card.classList.remove("dragging"));
 
-    // 카드를 클릭하면(상태 select·수정·삭제 버튼이 아닌 부분) 수정 모달을 그대로 띄운다 - 카드에는
-    // 내용이 2줄로 잘려 보이지만, 모달의 제목/내용 입력칸은 잘리지 않은 원본 값을 그대로 채우므로
-    // 이 모달 하나로 "자세히 보기"와 "수정"을 겸한다(월/주/일 캘린더 뷰의 일정 클릭과 동일한 동작)
+    // 카드를 클릭하면(상태 select·수정·삭제 버튼이 아닌 부분) 상세보기 모달을 띄운다 - 수정 폼이
+    // 아니라 읽기 전용 화면이고, 거기서 "수정"을 눌러야 기존 입력 폼(openEditModal)이 열린다
     card.addEventListener("click", (e) => {
       if (e.target.closest("select, button")) return;
-      openEditModal(card.dataset.id);
+      openDetailModal(card.dataset.id);
     });
   });
 
@@ -1120,7 +1119,7 @@ function renderMonthView() {
       chip.style.color = STATUS_COLOR_VAR[s.status] || "var(--color-text-muted)";
       chip.style.borderLeftColor = STATUS_COLOR_VAR[s.status] || "var(--color-text-muted)";
       chip.textContent = `${formatTimeOnly(s.startAt)} ${s.title}`;
-      chip.addEventListener("click", () => openEditModal(s.id));
+      chip.addEventListener("click", () => openDetailModal(s.id));
       cell.appendChild(chip);
     });
 
@@ -1233,7 +1232,7 @@ function renderDayOrWeekView(numDays) {
       block.appendChild(titleEl);
       block.appendChild(timeEl);
 
-      block.addEventListener("click", () => openEditModal(s.id));
+      block.addEventListener("click", () => openDetailModal(s.id));
       col.appendChild(block);
     });
 
@@ -1457,6 +1456,58 @@ function openCreateModal() {
 
   modalOverlay.classList.add("show");
 }
+
+// ---------- 상세보기 모달 ----------
+// 일정을 클릭하면 바로 입력 폼(openEditModal)이 아니라 읽기 전용으로 제목/내용/시간/카테고리/상태를
+// 보여주는 이 모달이 먼저 뜬다. "수정"을 눌러야 기존 입력 폼으로 넘어가고, "삭제"는 바로 이 화면에서
+// 처리한다(기존 deleteSchedule의 confirm()을 그대로 재사용 - 취소하면 상세 모달은 그대로 열려있는다)
+
+const detailModalOverlay = document.getElementById("schedule-detail-modal-overlay");
+const detailTitleEl = document.getElementById("detail-title");
+const detailCategoryEl = document.getElementById("detail-category");
+const detailStatusDotEl = document.getElementById("detail-status-dot");
+const detailStatusLabelEl = document.getElementById("detail-status-label");
+const detailTimeEl = document.getElementById("detail-time");
+const detailContentEl = document.getElementById("detail-content");
+const detailMetaEl = document.getElementById("detail-meta");
+
+function openDetailModal(id) {
+  const s = schedules.find((x) => String(x.id) === String(id));
+  if (!s) return;
+
+  detailModalOverlay.dataset.scheduleId = id;
+  detailTitleEl.textContent = s.title;
+  detailCategoryEl.textContent = s.categoryName || "";
+  detailStatusDotEl.className = `status-dot ${s.status}`;
+  detailStatusLabelEl.textContent = STATUS_LABELS[s.status] || s.status;
+  detailTimeEl.textContent = formatTimeRange(s.startAt, s.endAt);
+  detailContentEl.textContent = s.content || "";
+  detailMetaEl.textContent = s.username ? `작성자: ${s.username}` : "";
+
+  detailModalOverlay.classList.add("show");
+}
+
+function closeDetailModal() {
+  detailModalOverlay.classList.remove("show");
+}
+
+document.getElementById("close-detail-modal-btn").addEventListener("click", closeDetailModal);
+detailModalOverlay.addEventListener("click", (e) => {
+  if (e.target === detailModalOverlay) closeDetailModal();
+});
+
+document.getElementById("detail-edit-btn").addEventListener("click", () => {
+  const id = detailModalOverlay.dataset.scheduleId;
+  closeDetailModal();
+  openEditModal(id);
+});
+
+document.getElementById("detail-delete-btn").addEventListener("click", async () => {
+  const id = detailModalOverlay.dataset.scheduleId;
+  await deleteSchedule(id);
+  // confirm()에서 취소했거나 삭제가 실패했다면 목록에 그대로 남아있으므로 상세 모달을 닫지 않는다
+  if (!schedules.some((s) => String(s.id) === String(id))) closeDetailModal();
+});
 
 function openEditModal(id) {
   const s = schedules.find((x) => String(x.id) === String(id));
@@ -1751,7 +1802,7 @@ function showScheduleReminder(schedule) {
     dismiss();
   });
   card.addEventListener("click", () => {
-    openEditModal(schedule.id);
+    openDetailModal(schedule.id);
     dismiss();
   });
 

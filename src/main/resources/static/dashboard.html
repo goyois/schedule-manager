@@ -149,6 +149,28 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="schedule-detail-modal-overlay">
+    <div class="modal">
+      <div class="detail-top">
+        <span class="tag category-tag" id="detail-category"></span>
+        <span class="detail-status">
+          <span class="status-dot" id="detail-status-dot"></span>
+          <span id="detail-status-label"></span>
+        </span>
+      </div>
+      <h2 id="detail-title"></h2>
+      <div class="detail-time" id="detail-time"></div>
+      <p class="detail-content" id="detail-content"></p>
+      <div class="detail-meta" id="detail-meta"></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="detail-delete-btn">삭제</button>
+        <button type="button" class="btn btn-ghost" id="close-detail-modal-btn">닫기</button>
+        <button type="button" class="btn btn-primary" style="width: auto" id="detail-edit-btn">수정</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="schedule-modal-overlay">
     <div class="modal">
       <h2 id="modal-title">새 일정</h2>
