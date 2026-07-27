@@ -1235,8 +1235,9 @@ startAtInput.addEventListener("change", () => {
   if (!noEndTimeToggle.checked) syncEndWithStart();
 });
 
-// 현재 시각을 15분 단위로 올림한다 - datetime-local 의 step="900" 과 맞춰, 기본값부터 깔끔한
-// 시각(예: 10:00, 10:15)으로 시작하게 한다
+// 현재 시각을 15분 단위로 올림한다 - 모달을 열었을 때 기본값이 10:00, 10:15처럼 깔끔한 시각으로
+// 시작하도록 하기 위한 편의 기본값일 뿐, input의 step은 60(1분 단위)이라 사용자가 임의의 분으로
+// 직접 바꾸는 건 자유롭다
 function roundUpToQuarterHour(date) {
   const ms = 15 * 60 * 1000;
   return new Date(Math.ceil(date.getTime() / ms) * ms);
