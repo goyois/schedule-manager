@@ -87,6 +87,22 @@ function renderToday() {
   });
 }
 
+// 사이드바에서 선택한 카테고리 필터도 새로고침하면 "전체 일정"으로 돌아가지 않도록 로그인
+// 이메일별로 localStorage에 저장해둔다 - 카테고리 순서와 같은 이유로 서버에는 저장하지 않는다
+function activeCategoryStorageKey() {
+  const user = API.getCurrentUser();
+  const email = (user && user.email) || "anonymous";
+  return `active-category:${email}`;
+}
+
+function loadStoredActiveCategoryId() {
+  return localStorage.getItem(activeCategoryStorageKey()) || "";
+}
+
+function saveActiveCategoryId(id) {
+  localStorage.setItem(activeCategoryStorageKey(), id || "");
+}
+
 // 카테고리 순서는 서버에 저장하지 않는다 - 사용자마다(같은 카테고리를 보고 있어도) 자기 화면에서만
 // 순서를 다르게 두고 싶을 수 있어서, 브라우저 localStorage에 로그인 이메일별로 순서(카테고리 id 배열)를
 // 따로 저장해두고 목록을 받아올 때마다 그 순서로 재정렬한다
@@ -187,6 +203,7 @@ function renderCategorySidebar() {
     li.addEventListener("click", async (e) => {
       if (e.target.dataset.removeCategory) return;
       activeCategoryId = li.dataset.categoryId;
+      saveActiveCategoryId(activeCategoryId);
       renderCategorySidebar();
       renderBoardTitle();
       await loadBoardForActiveCategory();
@@ -226,7 +243,10 @@ function renderCategorySidebar() {
       if (!confirm("이 카테고리를 삭제할까요?")) return;
       try {
         await API.del(`/api/categories/${id}`);
-        if (String(activeCategoryId) === String(id)) activeCategoryId = "";
+        if (String(activeCategoryId) === String(id)) {
+          activeCategoryId = "";
+          saveActiveCategoryId("");
+        }
         await loadCategories();
         renderBoardTitle();
         await loadBoardForActiveCategory();
@@ -1642,8 +1662,19 @@ async function checkScheduleTimers() {
   await syncCurrentUserId();
   applyAdminVisibility();
   autoStatusToggleEl.checked = isAutoStatusModeOn();
+  activeCategoryId = loadStoredActiveCategoryId();
   await loadCategories();
+  // 새로고침 사이에 그 카테고리가 삭제됐거나 더 이상 안 보이면(다른 유저 소유 등) 전체 일정으로 되돌린다
+  if (activeCategoryId !== "" && !categories.some((c) => String(c.id) === String(activeCategoryId))) {
+    activeCategoryId = "";
+    saveActiveCategoryId("");
+    renderCategorySidebar();
+  }
+  renderBoardTitle();
   await loadSchedules();
+  if (activeCategoryId !== "") {
+    await loadBoardForActiveCategory();
+  }
   // "지금" 표시선이 실제 흐르는 시간을 따라가도록 주기적으로 다시 그린다 (데이터 재조회는 없음)
   setInterval(renderTodayClock, 60000);
   setInterval(checkScheduleTimers, REMINDER_CHECK_INTERVAL_MS);
