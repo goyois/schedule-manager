@@ -60,6 +60,54 @@ function toDatetimeLocalValue(value) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// 네이티브 datetime-local input의 시:분 표시는 결국 브라우저/OS 로케일을 따라가서(예: 한국어
+// 로케일은 오전/오후 12시간제), lang 속성 같은 트릭으로도 모든 브라우저에서 24시간제를 보장할 수
+// 없었다. 그래서 시작/종료 입력을 date + 시(0~23) + 분(0~59) 숫자 입력 3개로 직접 구성해 완전히
+// 우리가 표시 형식을 통제한다. 기존 로직(제출·유효성 검사·시작 변경 시 종료 자동 이동 등)은 전부
+// "YYYY-MM-DDTHH:MM" 문자열을 담은 hidden input(#startAt/#endAt)을 기준으로 동작하므로 그대로 두고,
+// 이 hidden input과 화면에 보이는 date/시/분 입력 3개 사이를 양방향으로 동기화하는 역할만 추가한다
+function composeDateTimeValue(dateStr, hourStr, minuteStr) {
+  if (!dateStr) return "";
+  const hour = Math.min(23, Math.max(0, parseInt(hourStr, 10) || 0));
+  const minute = Math.min(59, Math.max(0, parseInt(minuteStr, 10) || 0));
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${dateStr}T${pad(hour)}:${pad(minute)}`;
+}
+
+function decomposeDateTimeValue(value) {
+  if (!value) return { date: "", hour: "", minute: "" };
+  const [datePart, timePart] = value.split("T");
+  const [hour, minute] = (timePart || "").split(":");
+  return { date: datePart || "", hour: hour || "", minute: minute || "" };
+}
+
+// hiddenInput(#startAt/#endAt)과 화면에 보이는 date/시/분 입력 3개를 묶어 동기화한다.
+// 사용자가 date/시/분 중 하나라도 바꾸면 hidden input의 값을 다시 계산해 채우고, 기존 코드가
+// hidden input에 걸어둔 change 리스너(예: 시작 시각 변경 시 종료 시각 자동 이동)가 그대로 반응할
+// 수 있도록 change 이벤트를 직접 발생시킨다. 반대로 코드가 hidden input.value를 프로그램적으로
+// 바꿨을 때는(모달 열 때 초기값 채우기 등) syncVisibleFromHidden()을 호출해 화면 쪽을 맞춘다
+function bindDateTimeGroup(hiddenInput, dateInput, hourInput, minuteInput) {
+  function syncHiddenFromVisible() {
+    const next = composeDateTimeValue(dateInput.value, hourInput.value, minuteInput.value);
+    if (hiddenInput.value === next) return;
+    hiddenInput.value = next;
+    hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function syncVisibleFromHidden() {
+    const { date, hour, minute } = decomposeDateTimeValue(hiddenInput.value);
+    dateInput.value = date;
+    hourInput.value = hour;
+    minuteInput.value = minute;
+  }
+
+  [dateInput, hourInput, minuteInput].forEach((el) => {
+    el.addEventListener("input", syncHiddenFromVisible);
+  });
+
+  return { syncVisibleFromHidden };
+}
+
 function requireAuth() {
   if (!API.getToken()) {
     window.location.href = "/login";
@@ -1496,6 +1544,24 @@ const noEndTimeToggle = document.getElementById("no-end-time-toggle");
 const endTimeField = document.getElementById("end-time-field");
 const scheduleTimeRow = document.getElementById("schedule-time-row");
 
+const startAtSync = bindDateTimeGroup(
+  startAtInput,
+  document.getElementById("startAt-date"),
+  document.getElementById("startAt-hour"),
+  document.getElementById("startAt-minute")
+);
+const endAtSync = bindDateTimeGroup(
+  endAtInput,
+  document.getElementById("endAt-date"),
+  document.getElementById("endAt-hour"),
+  document.getElementById("endAt-minute")
+);
+const endAtVisibleInputs = [
+  document.getElementById("endAt-date"),
+  document.getElementById("endAt-hour"),
+  document.getElementById("endAt-minute"),
+];
+
 // 알림형(종료 시간 없음) 토글 상태를 화면에 반영한다: 종료 필드를 숨기고 required를 풀어서
 // "시작 시간만"으로도 제출이 가능하게 한다. 다시 껐을 때 종료 필드가 비어 있으면
 // syncEndWithStart()로 시작+1시간 기본값을 채워준다
@@ -1503,9 +1569,12 @@ function applyEndTimeToggleUI() {
   const noEnd = noEndTimeToggle.checked;
   endTimeField.style.display = noEnd ? "none" : "";
   scheduleTimeRow.classList.toggle("single-col", noEnd);
-  endAtInput.required = !noEnd;
+  // endAtInput은 hidden이라 required가 있어도 브라우저 폼 검증에서 애초에 제외되므로(hidden input은
+  // constraint validation 대상이 아님), 실제 눈에 보이는 date/시/분 입력 쪽에 required를 걸어야 한다
+  endAtVisibleInputs.forEach((el) => { el.required = !noEnd; });
   if (noEnd) {
     endAtInput.value = "";
+    endAtSync.syncVisibleFromHidden();
   } else if (!endAtInput.value) {
     syncEndWithStart();
   }
@@ -1530,6 +1599,7 @@ function syncEndWithStart() {
   } else {
     endAtInput.value = toDatetimeLocalValue(new Date(newStart.getTime() + 60 * 60 * 1000));
   }
+  endAtSync.syncVisibleFromHidden();
   lastStartValue = startAtInput.value;
 }
 
@@ -1565,6 +1635,8 @@ function openCreateModal() {
   const defaultEnd = new Date(defaultStart.getTime() + 60 * 60 * 1000);
   startAtInput.value = toDatetimeLocalValue(defaultStart);
   endAtInput.value = toDatetimeLocalValue(defaultEnd);
+  startAtSync.syncVisibleFromHidden();
+  endAtSync.syncVisibleFromHidden();
   lastStartValue = startAtInput.value;
   noEndTimeToggle.checked = false;
   applyEndTimeToggleUI();
@@ -1635,6 +1707,8 @@ function openEditModal(id) {
   document.getElementById("content").value = s.content || "";
   startAtInput.value = toDatetimeLocalValue(s.startAt);
   endAtInput.value = toDatetimeLocalValue(s.endAt);
+  startAtSync.syncVisibleFromHidden();
+  endAtSync.syncVisibleFromHidden();
   lastStartValue = startAtInput.value;
   noEndTimeToggle.checked = !s.endAt;
   applyEndTimeToggleUI();

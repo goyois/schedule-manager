@@ -180,6 +180,31 @@ button {
   grid-template-columns: 1fr;
 }
 
+.datetime-24h-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.datetime-24h-group input[type="date"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.datetime-24h-group input[type="number"] {
+  width: 48px;
+  flex-shrink: 0;
+  padding-left: 6px;
+  padding-right: 6px;
+  text-align: center;
+}
+
+.datetime-24h-group .dt-colon {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
 .field input:focus,
 .field select:focus,
 .field textarea:focus {

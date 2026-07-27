@@ -203,14 +203,30 @@
           </label>
         </div>
 
+        <!-- datetime-local의 시:분 표시는 브라우저/OS 로케일을 그대로 따라가버려서(한국어 로케일은
+             오전/오후 12시간제) 24시간제를 강제할 수 없었다. date + 시(0~23) + 분(0~59) 숫자 입력으로
+             직접 구성해 표시 형식을 완전히 통제한다 - 실제 값은 hidden input(#startAt/#endAt)에
+             "YYYY-MM-DDTHH:MM"로 유지되고, 나머지 로직은 전부 그 hidden input을 기준으로 그대로 동작한다 -->
         <div class="modal-row" id="schedule-time-row">
           <div class="field">
-            <label for="startAt">시작</label>
-            <input type="datetime-local" id="startAt" step="60" lang="en-GB" required />
+            <label for="startAt-date">시작</label>
+            <div class="datetime-24h-group">
+              <input type="date" id="startAt-date" required />
+              <input type="number" id="startAt-hour" min="0" max="23" placeholder="시" required />
+              <span class="dt-colon">:</span>
+              <input type="number" id="startAt-minute" min="0" max="59" placeholder="분" required />
+            </div>
+            <input type="hidden" id="startAt" />
           </div>
           <div class="field" id="end-time-field">
-            <label for="endAt">종료</label>
-            <input type="datetime-local" id="endAt" step="60" lang="en-GB" required />
+            <label for="endAt-date">종료</label>
+            <div class="datetime-24h-group">
+              <input type="date" id="endAt-date" required />
+              <input type="number" id="endAt-hour" min="0" max="23" placeholder="시" required />
+              <span class="dt-colon">:</span>
+              <input type="number" id="endAt-minute" min="0" max="59" placeholder="분" required />
+            </div>
+            <input type="hidden" id="endAt" />
           </div>
         </div>
 
