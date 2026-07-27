@@ -706,7 +706,7 @@ function escapeHtml(str) {
 
 function scheduleCardHtml(s) {
   return `
-    <div class="schedule-card" data-id="${s.id}">
+    <div class="schedule-card ${s.status}" data-id="${s.id}">
       <div class="card-top">
         <div class="card-title">${escapeHtml(s.title)}</div>
       </div>
@@ -737,7 +737,7 @@ function renderBoard() {
     const hiddenCount = items.length - visibleItems.length;
 
     return `
-      <div class="board-column">
+      <div class="board-column ${col.key}">
         <div class="board-column-header">
           <div class="title"><span class="status-dot ${col.key}"></span>${col.label}</div>
           <span class="count-badge">${items.length}</span>

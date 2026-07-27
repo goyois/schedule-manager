@@ -956,7 +956,14 @@ button {
   justify-content: space-between;
   padding: 14px 14px 10px;
   border-bottom: 1px solid var(--color-border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
+
+/* 컬럼 헤더에 상태별 파스텔 톤을 은은하게 깔아 한눈에 대기/진행중/완료/취소를 구분하게 한다 */
+.board-column.PENDING .board-column-header { background: var(--color-pending-bg); }
+.board-column.IN_PROGRESS .board-column-header { background: var(--color-progress-bg); }
+.board-column.COMPLETED .board-column-header { background: var(--color-completed-bg); }
+.board-column.CANCELLED .board-column-header { background: var(--color-cancelled-bg); }
 
 .board-column-header .title {
   display: flex;
@@ -1022,6 +1029,7 @@ button {
 
 .schedule-card {
   border: 1px solid var(--color-border);
+  border-left: 3px solid transparent;
   border-radius: var(--radius-md);
   padding: 12px 13px;
   background: #fdfdff;
@@ -1032,6 +1040,12 @@ button {
   box-shadow: var(--shadow-card);
   border-color: #d7d9ea;
 }
+
+/* 상태별 파스텔 톤 - 카드 배경은 옅게, 왼쪽 테두리는 살짝 진하게 줘서 한눈에 상태가 구분되게 한다 */
+.schedule-card.PENDING { background: var(--color-pending-bg); border-left-color: var(--color-pending); }
+.schedule-card.IN_PROGRESS { background: var(--color-progress-bg); border-left-color: var(--color-progress); }
+.schedule-card.COMPLETED { background: var(--color-completed-bg); border-left-color: var(--color-completed); }
+.schedule-card.CANCELLED { background: var(--color-cancelled-bg); border-left-color: var(--color-cancelled); }
 
 .schedule-card .card-top {
   display: flex;
