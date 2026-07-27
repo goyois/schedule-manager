@@ -832,6 +832,78 @@ function escapeHtml(str) {
   }[m]));
 }
 
+// ---------- 오늘 성취도 위젯 (진행률/사계절/12개월/산 높이 중 랜덤한 비유로 보여준다) ----------
+// 시계 위젯과 같은 원칙으로 뷰 모드와 무관하게 항상 "오늘" 기준으로 계산한다
+function getTodayCompletionStats() {
+  const todayStart = startOfDay(new Date());
+  const todayEnd = addDays(todayStart, 1);
+  const todays = schedulesOverlappingRange(schedules, todayStart, todayEnd);
+  const total = todays.length;
+  const completed = todays.filter((s) => s.status === "COMPLETED").length;
+  const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+  return { total, completed, percent };
+}
+
+const ACHIEVEMENT_SEASONS = [
+  { emoji: "🌱", label: "봄" },
+  { emoji: "☀️", label: "여름" },
+  { emoji: "🍁", label: "가을" },
+  { emoji: "❄️", label: "겨울" },
+];
+
+const ACHIEVEMENT_MOUNTAINS = [
+  { name: "관악산", height: 632 },
+  { name: "북한산", height: 836 },
+  { name: "지리산 천왕봉", height: 1915 },
+  { name: "한라산", height: 1947 },
+  { name: "에베레스트", height: 8849 },
+];
+
+// 위젯을 클릭할 때마다 이 중 하나를 새로 뽑는다. 산 비유는 "어떤 산인지"도 이때 같이 새로 뽑아
+// 고정해둔다(같은 산을 유지해야 다음 렌더에서도 말이 되므로 - buildAchievementMetaphors()를
+// 매번 새로 호출해 클로저에 새 산을 담아둔다)
+function buildAchievementMetaphors() {
+  const mountain = ACHIEVEMENT_MOUNTAINS[Math.floor(Math.random() * ACHIEVEMENT_MOUNTAINS.length)];
+  return [
+    (percent) => ({ emoji: "🎯", headline: `${percent}%`, detail: "오늘 일정 완료율" }),
+    (percent) => {
+      const season = ACHIEVEMENT_SEASONS[Math.min(3, Math.floor(percent / 25))];
+      return { emoji: season.emoji, headline: season.label, detail: "사계절로 치면 지금 이맘때" };
+    },
+    (percent) => {
+      const month = percent <= 0 ? 1 : Math.min(12, Math.ceil((percent / 100) * 12));
+      return { emoji: "📅", headline: `${month}월`, detail: "1년 12개월로 치면" };
+    },
+    (percent) => {
+      const meters = Math.round((mountain.height * percent) / 100);
+      return { emoji: "⛰️", headline: `${meters}m`, detail: `${mountain.name}(${mountain.height}m) 등반 기준` };
+    },
+  ];
+}
+
+function pickRandomAchievementMetaphor() {
+  const metaphors = buildAchievementMetaphors();
+  return metaphors[Math.floor(Math.random() * metaphors.length)];
+}
+
+let achievementMetaphor = pickRandomAchievementMetaphor();
+
+function renderAchievementWidget() {
+  const { total, percent } = getTodayCompletionStats();
+  const view = achievementMetaphor(percent);
+  document.getElementById("achievement-emoji").textContent = view.emoji;
+  document.getElementById("achievement-headline").textContent = view.headline;
+  document.getElementById("achievement-detail").textContent = total > 0 ? view.detail : "오늘 등록된 일정이 없어요";
+  document.getElementById("achievement-fill").style.height = `${percent}%`;
+  document.getElementById("achievement-emoji").style.bottom = `${percent}%`;
+  document.getElementById("achievement-widget").classList.toggle("complete", total > 0 && percent === 100);
+}
+
+document.getElementById("achievement-widget").addEventListener("click", () => {
+  achievementMetaphor = pickRandomAchievementMetaphor();
+  renderAchievementWidget();
+});
+
 function scheduleCardHtml(s) {
   return `
     <div class="schedule-card ${s.status}" data-id="${s.id}" draggable="true">
@@ -1040,10 +1112,13 @@ function navigateView(dir) {
 
 // 현재 활성화된 뷰(보드 또는 캘린더)만 다시 그린다 - 데이터 새로고침 후에도 이 함수를 통해 화면을 갱신한다
 function refreshVisibleView() {
-  // 레이더/카테고리별 카운트/시계 위젯 모두 뷰·날짜 전환마다 그 시점의 집계 범위로 다시 그려야 한다
+  // 레이더/카테고리별 카운트/시계 위젯 모두 뷰·날짜 전환마다 그 시점의 집계 범위로 다시 그려야 한다.
+  // 성취도 위젯은 뷰 모드와 무관하게 항상 "오늘" 기준이지만, 일정이 새로 생기거나 상태가 바뀔 때(=
+  // refreshVisibleView가 호출될 때)마다 최신 완료율을 반영해야 하므로 여기서 같이 갱신한다
   renderScheduleRadar();
   renderCategoryCounts();
   renderTodayClock();
+  renderAchievementWidget();
   if (viewMode === "board") {
     renderBoard();
     return;
