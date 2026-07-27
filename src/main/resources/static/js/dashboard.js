@@ -40,6 +40,19 @@ function formatDateTime(value) {
   });
 }
 
+// 종료 시각이 없는(알림형) 일정은 시작 시각만 보여준다
+function formatTimeRange(startAt, endAt) {
+  return endAt ? `${formatDateTime(startAt)} → ${formatDateTime(endAt)}` : formatDateTime(startAt);
+}
+
+// 월간 뷰처럼 좁은 칸에 "시:분"만 짧게 보여줄 때 쓴다
+function formatTimeOnly(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function toDatetimeLocalValue(value) {
   if (!value) return "";
   const d = new Date(value);
@@ -476,7 +489,9 @@ function getTodaysScheduleWindows(list) {
   const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
 
   return list
-    .map((s) => ({ ...s, start: new Date(s.startAt), end: new Date(s.endAt) }))
+    // 종료 시각이 없는(알림형) 일정은 시작 시각과 같은 시점으로 취급한다 - new Date(null)은 NaN이 아니라
+    // 1970년으로 해석돼 버려서, endAt이 없으면 항상 오늘 범위 밖으로 걸러져 아예 표시되지 않는 문제가 있었다
+    .map((s) => ({ ...s, start: new Date(s.startAt), end: new Date(s.endAt || s.startAt) }))
     .filter(
       (s) => !Number.isNaN(s.start.getTime()) && !Number.isNaN(s.end.getTime()) && s.end > dayStart && s.start < dayEnd
     )
@@ -517,7 +532,7 @@ function showClockTooltip(anchorX, anchorY, schedule) {
 
   const timeEl = document.createElement("div");
   timeEl.className = "tt-time";
-  timeEl.textContent = `${formatDateTime(schedule.startAt)} → ${formatDateTime(schedule.endAt)}`;
+  timeEl.textContent = formatTimeRange(schedule.startAt, schedule.endAt);
 
   const metaEl = document.createElement("div");
   metaEl.className = "tt-meta";
@@ -656,7 +671,7 @@ function renderTodayClock() {
 }
 
 function scheduleAriaLabel(s) {
-  return `${s.title}, ${formatDateTime(s.startAt)} - ${formatDateTime(s.endAt)}, ${STATUS_LABELS[s.status] || s.status}`;
+  return `${s.title}, ${formatTimeRange(s.startAt, s.endAt)}, ${STATUS_LABELS[s.status] || s.status}`;
 }
 
 function escapeHtml(str) {
@@ -679,7 +694,7 @@ function scheduleCardHtml(s) {
       <div class="card-meta">
         ${s.categoryName ? `<span class="tag category-tag">${escapeHtml(s.categoryName)}</span>` : ""}
       </div>
-      <div class="card-time">${formatDateTime(s.startAt)} → ${formatDateTime(s.endAt)}${s.username ? ` · ${escapeHtml(s.username)}` : ""}</div>
+      <div class="card-time">${formatTimeRange(s.startAt, s.endAt)}${s.username ? ` · ${escapeHtml(s.username)}` : ""}</div>
       <div class="card-actions">
         <select data-status-for="${s.id}">
           ${STATUS_COLUMNS.map(
@@ -791,7 +806,8 @@ function startOfWeek(d) {
 // [rangeStart, rangeEnd) 와 겹치는 일정만 골라 Date 객체를 함께 붙여 반환한다
 function schedulesOverlappingRange(list, rangeStart, rangeEnd) {
   return list
-    .map((s) => ({ ...s, start: new Date(s.startAt), end: new Date(s.endAt) }))
+    // getTodaysScheduleWindows와 같은 이유로 종료 시각이 없으면 시작 시각과 같은 시점으로 취급한다
+    .map((s) => ({ ...s, start: new Date(s.startAt), end: new Date(s.endAt || s.startAt) }))
     .filter(
       (s) => !Number.isNaN(s.start.getTime()) && !Number.isNaN(s.end.getTime()) && s.end > rangeStart && s.start < rangeEnd
     );
@@ -915,7 +931,7 @@ function renderMonthView() {
       chip.style.background = STATUS_BG_VAR[s.status] || "var(--color-bg)";
       chip.style.color = STATUS_COLOR_VAR[s.status] || "var(--color-text-muted)";
       chip.style.borderLeftColor = STATUS_COLOR_VAR[s.status] || "var(--color-text-muted)";
-      chip.textContent = s.title;
+      chip.textContent = `${formatTimeOnly(s.startAt)} ${s.title}`;
       chip.addEventListener("click", () => openEditModal(s.id));
       cell.appendChild(chip);
     });
@@ -1025,7 +1041,7 @@ function renderDayOrWeekView(numDays) {
       titleEl.textContent = s.title;
       const timeEl = document.createElement("span");
       timeEl.className = "cal-event-time";
-      timeEl.textContent = `${formatDateTime(s.startAt)} - ${formatDateTime(s.endAt)}`;
+      timeEl.textContent = formatTimeRange(s.startAt, s.endAt);
       block.appendChild(titleEl);
       block.appendChild(timeEl);
 
@@ -1174,6 +1190,25 @@ const scheduleForm = document.getElementById("schedule-form");
 const modalTitle = document.getElementById("modal-title");
 const startAtInput = document.getElementById("startAt");
 const endAtInput = document.getElementById("endAt");
+const noEndTimeToggle = document.getElementById("no-end-time-toggle");
+const endTimeField = document.getElementById("end-time-field");
+const scheduleTimeRow = document.getElementById("schedule-time-row");
+
+// 알림형(종료 시간 없음) 토글 상태를 화면에 반영한다: 종료 필드를 숨기고 required를 풀어서
+// "시작 시간만"으로도 제출이 가능하게 한다. 다시 껐을 때 종료 필드가 비어 있으면
+// syncEndWithStart()로 시작+1시간 기본값을 채워준다
+function applyEndTimeToggleUI() {
+  const noEnd = noEndTimeToggle.checked;
+  endTimeField.style.display = noEnd ? "none" : "";
+  scheduleTimeRow.classList.toggle("single-col", noEnd);
+  endAtInput.required = !noEnd;
+  if (noEnd) {
+    endAtInput.value = "";
+  } else if (!endAtInput.value) {
+    syncEndWithStart();
+  }
+}
+noEndTimeToggle.addEventListener("change", applyEndTimeToggleUI);
 
 // 시작 시각이 바뀔 때마다 기존 지속시간(종료-시작)을 그대로 유지한 채 종료 시각을 같이 옮겨준다 -
 // 매번 종료 시각까지 따로 맞출 필요 없이 시작 시각만 조정하면 되도록. lastStartValue 는 모달을 열
@@ -1196,7 +1231,9 @@ function syncEndWithStart() {
   lastStartValue = startAtInput.value;
 }
 
-startAtInput.addEventListener("change", syncEndWithStart);
+startAtInput.addEventListener("change", () => {
+  if (!noEndTimeToggle.checked) syncEndWithStart();
+});
 
 // 현재 시각을 15분 단위로 올림한다 - datetime-local 의 step="900" 과 맞춰, 기본값부터 깔끔한
 // 시각(예: 10:00, 10:15)으로 시작하게 한다
@@ -1218,6 +1255,8 @@ function openCreateModal() {
   startAtInput.value = toDatetimeLocalValue(defaultStart);
   endAtInput.value = toDatetimeLocalValue(defaultEnd);
   lastStartValue = startAtInput.value;
+  noEndTimeToggle.checked = false;
+  applyEndTimeToggleUI();
 
   modalOverlay.classList.add("show");
 }
@@ -1234,6 +1273,8 @@ function openEditModal(id) {
   startAtInput.value = toDatetimeLocalValue(s.startAt);
   endAtInput.value = toDatetimeLocalValue(s.endAt);
   lastStartValue = startAtInput.value;
+  noEndTimeToggle.checked = !s.endAt;
+  applyEndTimeToggleUI();
   document.getElementById("status-select").value = s.status;
 
   const cat = categories.find((c) => c.name === s.categoryName);
@@ -1266,7 +1307,7 @@ scheduleForm.addEventListener("submit", async (e) => {
     title: document.getElementById("title").value.trim(),
     content: document.getElementById("content").value.trim(),
     startAt: document.getElementById("startAt").value,
-    endAt: document.getElementById("endAt").value,
+    endAt: noEndTimeToggle.checked ? null : document.getElementById("endAt").value,
     status: document.getElementById("status-select").value,
     userId,
     categoryId,
@@ -1444,6 +1485,76 @@ function applyAdminVisibility() {
   });
 }
 
+// ---------- 일정 시작 알림 ----------
+
+const scheduleReminderContainerEl = document.getElementById("schedule-reminder-container");
+const REMINDER_CHECK_INTERVAL_MS = 15000;
+const REMINDER_AUTO_DISMISS_MS = 12000;
+// 이 세션에서 이미 알림을 띄운 일정 id - 새로고침하면 초기화되지만, 이미 지나간 시작 시각에 대해
+// 다시 알림이 뜨는 것만 막으면 되므로 세션을 넘어 영구히 기억할 필요는 없다
+const notifiedScheduleIds = new Set();
+// 페이지를 처음 연 시점을 기준으로 삼아서, 로드 당시 이미 지난 일정들이 한꺼번에 알림으로 뜨는 것을 막는다.
+// 매 체크마다 (마지막 체크 시각, 지금] 구간에 시작 시각이 걸리는 일정만 알림 대상이 된다
+let lastReminderCheckAt = Date.now();
+
+function showScheduleReminder(schedule) {
+  const card = document.createElement("div");
+  card.className = "schedule-reminder";
+  card.setAttribute("role", "alert");
+
+  const badge = document.createElement("div");
+  badge.className = "schedule-reminder-badge";
+  badge.textContent = "지금 시작하는 일정";
+
+  const titleEl = document.createElement("div");
+  titleEl.className = "schedule-reminder-title";
+  titleEl.textContent = schedule.title;
+
+  const metaEl = document.createElement("div");
+  metaEl.className = "schedule-reminder-meta";
+  const metaParts = [formatTimeOnly(schedule.startAt)];
+  if (schedule.categoryName) metaParts.push(schedule.categoryName);
+  metaEl.textContent = metaParts.join(" · ");
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "schedule-reminder-close";
+  closeBtn.setAttribute("aria-label", "닫기");
+  closeBtn.textContent = "×";
+
+  card.appendChild(badge);
+  card.appendChild(titleEl);
+  card.appendChild(metaEl);
+  card.appendChild(closeBtn);
+
+  const dismiss = () => card.remove();
+  closeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dismiss();
+  });
+  card.addEventListener("click", () => {
+    openEditModal(schedule.id);
+    dismiss();
+  });
+
+  scheduleReminderContainerEl.appendChild(card);
+  setTimeout(dismiss, REMINDER_AUTO_DISMISS_MS);
+}
+
+// schedules 배열은 로그인 시 + 이 세션에서 직접 생성/수정/삭제할 때만 갱신된다(다른 탭/기기에서
+// 만든 일정은 이 탭을 새로고침하기 전까진 알 수 없다) - 그 안에서 시작 시각이 막 지난 일정을 찾는다
+function checkStartTimeReminders() {
+  const now = Date.now();
+  schedules.forEach((s) => {
+    if (!s.startAt || s.status === "CANCELLED" || notifiedScheduleIds.has(s.id)) return;
+    const startMs = new Date(s.startAt).getTime();
+    if (Number.isNaN(startMs) || startMs <= lastReminderCheckAt || startMs > now) return;
+    notifiedScheduleIds.add(s.id);
+    showScheduleReminder(s);
+  });
+  lastReminderCheckAt = now;
+}
+
 // ---------- 초기화 ----------
 
 (async function init() {
@@ -1458,4 +1569,5 @@ function applyAdminVisibility() {
   await loadSchedules();
   // "지금" 표시선이 실제 흐르는 시간을 따라가도록 주기적으로 다시 그린다 (데이터 재조회는 없음)
   setInterval(renderTodayClock, 60000);
+  setInterval(checkStartTimeReminders, REMINDER_CHECK_INTERVAL_MS);
 })();

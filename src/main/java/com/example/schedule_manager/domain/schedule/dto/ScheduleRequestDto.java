@@ -15,7 +15,7 @@ public record ScheduleRequestDto(
         @NotNull(message = "시작 시각을 입력해주세요.")
         LocalDateTime startAt,
 
-        @NotNull(message = "종료 시각을 입력해주세요.")
+        // 알림형(시작 시각만 있는) 일정은 종료 시각을 null로 보낼 수 있어 필수로 강제하지 않는다
         LocalDateTime endAt,
 
         @NotNull(message = "상태를 선택해주세요.")

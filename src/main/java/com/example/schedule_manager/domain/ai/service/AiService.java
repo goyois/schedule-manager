@@ -56,8 +56,12 @@ public class AiService {
         LocalDateTime windowStart = now.minusWeeks(CONTEXT_WINDOW_WEEKS);
         LocalDateTime windowEnd = now.plusWeeks(CONTEXT_WINDOW_WEEKS);
 
+        // 알림형(종료 시각 없음) 일정은 시작 시각을 종료 시각 대신 써서 윈도우 필터를 통과시킨다
         List<ScheduleResponseDto> windowed = schedules.stream()
-                .filter(s -> !s.endAt().isBefore(windowStart) && !s.startAt().isAfter(windowEnd))
+                .filter(s -> {
+                    LocalDateTime effectiveEnd = s.endAt() != null ? s.endAt() : s.startAt();
+                    return !effectiveEnd.isBefore(windowStart) && !s.startAt().isAfter(windowEnd);
+                })
                 .sorted(Comparator.comparing(ScheduleResponseDto::startAt))
                 .toList();
 
@@ -66,8 +70,11 @@ public class AiService {
         }
 
         return windowed.stream()
-                .map(s -> "- [%s] %s (%s ~ %s, 카테고리: %s)".formatted(
-                        s.status(), s.title(), s.startAt(), s.endAt(), s.categoryName()))
+                .map(s -> s.endAt() != null
+                        ? "- [%s] %s (%s ~ %s, 카테고리: %s)".formatted(
+                                s.status(), s.title(), s.startAt(), s.endAt(), s.categoryName())
+                        : "- [%s] %s (%s, 카테고리: %s)".formatted(
+                                s.status(), s.title(), s.startAt(), s.categoryName()))
                 .collect(Collectors.joining("\n"));
     }
 

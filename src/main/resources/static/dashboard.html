@@ -175,12 +175,19 @@
           <textarea id="content" rows="3" placeholder="상세 내용"></textarea>
         </div>
 
-        <div class="modal-row">
+        <div class="field checkbox-field">
+          <label>
+            <input type="checkbox" id="no-end-time-toggle" />
+            알림처럼 시작 시간만 설정 (종료 시간 없음)
+          </label>
+        </div>
+
+        <div class="modal-row" id="schedule-time-row">
           <div class="field">
             <label for="startAt">시작</label>
             <input type="datetime-local" id="startAt" step="900" required />
           </div>
-          <div class="field">
+          <div class="field" id="end-time-field">
             <label for="endAt">종료</label>
             <input type="datetime-local" id="endAt" step="900" required />
           </div>
@@ -213,6 +220,9 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- 일정 시작 시각 알림. 여러 일정이 동시에 시작하면 카드가 세로로 쌓인다 -->
+  <div class="schedule-reminder-container" id="schedule-reminder-container"></div>
 
   <script src="/js/quotes.js"></script>
   <script src="/js/api.js"></script>
