@@ -859,6 +859,22 @@ const ACHIEVEMENT_MOUNTAINS = [
   { name: "에베레스트", height: 8849 },
 ];
 
+// 서울 ~ 부산(경부고속도로, 약 400km) 구간을 진행률에 따라 11개 구간으로 나눠 위치를 고른다
+const ACHIEVEMENT_BUSAN_ROUTE_TOTAL_KM = 400;
+const ACHIEVEMENT_BUSAN_ROUTE = [
+  { name: "서울 출발", road: "경부고속도로 기점 · 한남IC 인근" },
+  { name: "기흥휴게소", road: "경부고속도로 · 경기 용인" },
+  { name: "안성휴게소", road: "경부고속도로 · 경기 안성" },
+  { name: "천안삼거리휴게소", road: "경부고속도로 · 충남 천안" },
+  { name: "옥산휴게소", road: "경부고속도로 · 충북 청주" },
+  { name: "추풍령휴게소", road: "경부고속도로 최고지점 · 충북·경북 경계" },
+  { name: "김천(구미)휴게소", road: "경부고속도로 · 경북 김천" },
+  { name: "칠곡휴게소", road: "경부고속도로 · 경북 칠곡(대구 인근)" },
+  { name: "경주휴게소", road: "경부고속도로 · 경북 경주" },
+  { name: "양산휴게소", road: "경부고속도로 · 경남 양산" },
+  { name: "부산 도착", road: "경부고속도로 종점 · 부산" },
+];
+
 // 위젯을 클릭할 때마다 이 중 하나를 새로 뽑는다. 산 비유는 "어떤 산인지"도 이때 같이 새로 뽑아
 // 고정해둔다(같은 산을 유지해야 다음 렌더에서도 말이 되므로 - buildAchievementMetaphors()를
 // 매번 새로 호출해 클로저에 새 산을 담아둔다)
@@ -877,6 +893,16 @@ function buildAchievementMetaphors() {
     (percent) => {
       const meters = Math.round((mountain.height * percent) / 100);
       return { emoji: "⛰️", headline: `${meters}m`, detail: `${mountain.name}(${mountain.height}m) 등반 기준` };
+    },
+    (percent) => {
+      const km = ((42.195 * percent) / 100).toFixed(1);
+      return { emoji: "🏃", headline: `${km}km`, detail: "풀코스 마라톤(42.195km) 기준" };
+    },
+    (percent) => {
+      const idx = Math.min(ACHIEVEMENT_BUSAN_ROUTE.length - 1, Math.round((percent / 100) * (ACHIEVEMENT_BUSAN_ROUTE.length - 1)));
+      const spot = ACHIEVEMENT_BUSAN_ROUTE[idx];
+      const km = Math.round((ACHIEVEMENT_BUSAN_ROUTE_TOTAL_KM * percent) / 100);
+      return { emoji: "🚗", headline: spot.name, detail: `서울→부산 약 ${ACHIEVEMENT_BUSAN_ROUTE_TOTAL_KM}km 중 ${km}km · ${spot.road}` };
     },
   ];
 }
