@@ -912,6 +912,14 @@ function renderBoard() {
       card.classList.add("dragging");
     });
     card.addEventListener("dragend", () => card.classList.remove("dragging"));
+
+    // 카드를 클릭하면(상태 select·수정·삭제 버튼이 아닌 부분) 수정 모달을 그대로 띄운다 - 카드에는
+    // 내용이 2줄로 잘려 보이지만, 모달의 제목/내용 입력칸은 잘리지 않은 원본 값을 그대로 채우므로
+    // 이 모달 하나로 "자세히 보기"와 "수정"을 겸한다(월/주/일 캘린더 뷰의 일정 클릭과 동일한 동작)
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("select, button")) return;
+      openEditModal(card.dataset.id);
+    });
   });
 
   board.querySelectorAll("[data-status-column]").forEach((columnEl) => {
