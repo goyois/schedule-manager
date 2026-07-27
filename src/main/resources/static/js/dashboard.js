@@ -182,14 +182,14 @@ function renderCategorySidebar() {
 
   const allItem = `
     <li data-category-id="" class="${activeCategoryId === "" ? "active" : ""}">
-      <span><span class="dot"></span>전체 일정</span>
+      <span><span class="dot"></span>전체 일정<span class="cat-count" data-count-for="">0</span></span>
     </li>`;
 
   const items = categories
     .map(
       (c) => `
       <li draggable="true" data-category-id="${c.id}" class="${String(activeCategoryId) === String(c.id) ? "active" : ""}">
-        <span><span class="drag-handle">&#8942;&#8942;</span><span class="dot"></span>${escapeHtml(c.name)}</span>
+        <span><span class="drag-handle">&#8942;&#8942;</span><span class="dot"></span>${escapeHtml(c.name)}<span class="cat-count" data-count-for="${c.id}">0</span></span>
         <span class="cat-actions">
           <span class="remove-cat" data-remove-category="${c.id}">&times;</span>
         </span>
@@ -257,6 +257,21 @@ function renderCategorySidebar() {
         showToast(err.status === 403 ? err.message : `카테고리를 삭제하지 못했습니다. ${err.message}`);
       }
     });
+  });
+
+  renderCategoryCounts();
+}
+
+// 카테고리 목록 각 항목 옆에 보여줄 일정 개수 - 상단에 따로 있던 통계 카드(전체 일정/대기/진행중/완료)를
+// 없애고 이 숫자로 대체했다. getViewScopedSchedules() 를 써서 레이더·시계 위젯과 같은 원칙으로
+// 현재 뷰(보드/일/주/월/년)의 집계 범위에 맞춰 센다 - 카테고리 필터와는 무관하게 항상 전체 일정 기준
+function renderCategoryCounts() {
+  const list = getViewScopedSchedules();
+  const totalEl = categoryListEl.querySelector('[data-count-for=""]');
+  if (totalEl) totalEl.textContent = list.length;
+  categories.forEach((c) => {
+    const el = categoryListEl.querySelector(`[data-count-for="${c.id}"]`);
+    if (el) el.textContent = list.filter((s) => s.categoryName === c.name).length;
   });
 }
 
@@ -332,18 +347,6 @@ function visibleSchedules() {
   return categorySchedules ?? [];
 }
 
-// 상단 통계 카드(전체 일정/대기/진행중/완료)도 레이더와 같은 원칙으로, 현재 뷰(보드/일/주/월/년)의
-// 집계 범위에 맞춰 세도록 getViewScopedSchedules() 를 공유한다 - 카테고리 필터와는 무관하게
-// 항상 전체 일정 기준인 것도 레이더와 동일(visibleSchedules() 가 아니라 schedules 를 씀)
-function renderStats() {
-  const list = getViewScopedSchedules();
-  document.getElementById("stat-total").textContent = list.length;
-  document.getElementById("stat-pending").textContent = list.filter((s) => s.status === "PENDING").length;
-  document.getElementById("stat-progress").textContent = list.filter((s) => s.status === "IN_PROGRESS").length;
-  document.getElementById("stat-completed").textContent = list.filter((s) => s.status === "COMPLETED").length;
-  renderTodayClock();
-}
-
 // ---------- 일정 통계 레이더(오각형) - 보드/일/주/월/년 뷰에 맞춰 집계 범위가 바뀐다 ----------
 
 const RADAR_CENTER = 124;
@@ -368,7 +371,7 @@ function radarPolarPoint(r, angleDeg) {
 }
 
 // 현재 뷰(보드/일/주/월/년)에 맞는 집계 범위를 돌려준다. 보드는 날짜 개념이 없는 전체 목록이라 null.
-// 레이더뿐 아니라 상단 통계 카드(renderStats)도 이 범위를 공유한다
+// 레이더뿐 아니라 카테고리별 카운트(renderCategoryCounts)도 이 범위를 공유한다
 function getViewScheduleWindow() {
   if (viewMode === "day") {
     const start = startOfDay(viewDate);
@@ -866,9 +869,10 @@ function navigateView(dir) {
 
 // 현재 활성화된 뷰(보드 또는 캘린더)만 다시 그린다 - 데이터 새로고침 후에도 이 함수를 통해 화면을 갱신한다
 function refreshVisibleView() {
-  // 레이더/상단 통계 카드 둘 다 뷰·날짜 전환마다 그 시점의 집계 범위로 다시 그려야 한다
+  // 레이더/카테고리별 카운트/시계 위젯 모두 뷰·날짜 전환마다 그 시점의 집계 범위로 다시 그려야 한다
   renderScheduleRadar();
-  renderStats();
+  renderCategoryCounts();
+  renderTodayClock();
   if (viewMode === "board") {
     renderBoard();
     return;
