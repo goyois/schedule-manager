@@ -385,14 +385,21 @@ button {
 }
 
 .category-list li .cat-count {
-  margin-left: 6px;
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-muted);
+  flex-shrink: 0;
 }
 
 .category-list li.active .cat-count {
   color: var(--color-primary-dark);
+}
+
+.category-list li .cat-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .category-list li[draggable="true"] {

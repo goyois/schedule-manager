@@ -190,16 +190,20 @@ function renderCategorySidebar() {
 
   const allItem = `
     <li data-category-id="" class="${activeCategoryId === "" ? "active" : ""}">
-      <span><span class="dot"></span>전체 일정<span class="cat-count" data-count-for="">0</span></span>
+      <span><span class="dot"></span>전체 일정</span>
+      <span class="cat-count" data-count-for="">0</span>
     </li>`;
 
   const items = categories
     .map(
       (c) => `
       <li draggable="true" data-category-id="${c.id}" class="${String(activeCategoryId) === String(c.id) ? "active" : ""}">
-        <span><span class="drag-handle">&#8942;&#8942;</span><span class="dot"></span>${escapeHtml(c.name)}<span class="cat-count" data-count-for="${c.id}">0</span></span>
-        <span class="cat-actions">
-          <span class="remove-cat" data-remove-category="${c.id}">&times;</span>
+        <span><span class="drag-handle">&#8942;&#8942;</span><span class="dot"></span>${escapeHtml(c.name)}</span>
+        <span class="cat-right">
+          <span class="cat-actions">
+            <span class="remove-cat" data-remove-category="${c.id}">&times;</span>
+          </span>
+          <span class="cat-count" data-count-for="${c.id}">0</span>
         </span>
       </li>`
     )
