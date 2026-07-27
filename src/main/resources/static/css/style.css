@@ -757,6 +757,7 @@ button {
 /* ---------- Today 24h clock ---------- */
 
 .today-clock {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -770,6 +771,85 @@ button {
   border-radius: var(--radius-lg);
   padding: 10px 16px;
   box-shadow: var(--shadow-card);
+}
+
+.clock-filter-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.clock-filter-btn:hover,
+.clock-filter-btn.active {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
+  border-color: var(--color-primary-soft);
+}
+
+.clock-filter-popover {
+  display: none;
+  position: absolute;
+  top: 32px;
+  right: 8px;
+  z-index: 3;
+  width: 168px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 10px 12px;
+}
+
+.clock-filter-popover.show {
+  display: block;
+}
+
+.clock-filter-popover-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+.clock-filter-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.clock-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.clock-filter-option input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.clock-filter-option .swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .today-clock-face {

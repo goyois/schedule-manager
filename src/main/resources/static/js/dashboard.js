@@ -173,6 +173,14 @@ async function loadCategories() {
     categories = [];
     showToast(`카테고리를 불러오지 못했습니다. ${err.message}`);
   }
+  // 시계 필터에 저장돼 있던 카테고리 id 중 삭제되어 더 이상 없는 건 걸러낸다
+  const validIds = clockCategoryFilter.filter((id) => categories.some((c) => String(c.id) === id));
+  if (validIds.length !== clockCategoryFilter.length) {
+    clockCategoryFilter = validIds;
+    saveClockCategoryFilter(clockCategoryFilter);
+  }
+  clockFilterBtn.classList.toggle("active", clockCategoryFilter.length > 0);
+  renderClockFilterOptions();
   renderCategorySidebar();
   renderCategorySelectOptions();
 }
@@ -485,6 +493,81 @@ const CLOCK_MIN_ARC_MINUTES = 8; // 아주 짧은 일정도 호가 보이도록 
 const clockSvgEl = document.getElementById("today-clock-svg");
 const clockTooltipEl = document.getElementById("clock-tooltip");
 const clockLegendEl = document.getElementById("today-clock-legend");
+const clockFilterBtn = document.getElementById("clock-filter-btn");
+const clockFilterPopover = document.getElementById("clock-filter-popover");
+const clockFilterOptionsEl = document.getElementById("clock-filter-options");
+
+// 카테고리별로 선택해서 보기 모드에서 쓰는 고정 순서 팔레트(색맹 안전성 검증된 8색, 밝은 배경 기준).
+// 카테고리 id 오름차순으로 슬롯을 배정해, 사이드바에서 드래그로 순서를 바꿔도 색은 그대로 유지된다
+const CATEGORY_COLOR_PALETTE = [
+  "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948",
+];
+
+function categoryColorFor(categoryName) {
+  const sorted = [...categories].sort((a, b) => a.id - b.id);
+  const idx = sorted.findIndex((c) => c.name === categoryName);
+  if (idx === -1) return "var(--color-text-muted)";
+  return CATEGORY_COLOR_PALETTE[idx % CATEGORY_COLOR_PALETTE.length];
+}
+
+// 시계 위젯의 카테고리 필터는 사용자 이메일별로 localStorage에 저장한다(카테고리 순서와 같은 이유로
+// 서버에는 저장하지 않는다) - 선택된 카테고리 id 배열이며, 비어 있으면 "전체 보기 + 상태별 색상"
+// (기존 동작), 하나 이상 선택되면 "그 카테고리만 표시 + 카테고리별 색상"으로 바뀐다
+function clockCategoryFilterStorageKey() {
+  const user = API.getCurrentUser();
+  const email = (user && user.email) || "anonymous";
+  return `clock-category-filter:${email}`;
+}
+
+function loadStoredClockCategoryFilter() {
+  try {
+    return JSON.parse(localStorage.getItem(clockCategoryFilterStorageKey())) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveClockCategoryFilter(ids) {
+  localStorage.setItem(clockCategoryFilterStorageKey(), JSON.stringify(ids));
+}
+
+let clockCategoryFilter = loadStoredClockCategoryFilter();
+
+function renderClockFilterOptions() {
+  clockFilterOptionsEl.innerHTML = categories
+    .map(
+      (c) => `
+      <label class="clock-filter-option">
+        <input type="checkbox" data-clock-filter-id="${c.id}" ${clockCategoryFilter.includes(String(c.id)) ? "checked" : ""} />
+        <span class="swatch" style="background:${categoryColorFor(c.name)}"></span>
+        ${escapeHtml(c.name)}
+      </label>`
+    )
+    .join("");
+
+  clockFilterOptionsEl.querySelectorAll("[data-clock-filter-id]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const id = input.dataset.clockFilterId;
+      clockCategoryFilter = input.checked
+        ? [...clockCategoryFilter, id]
+        : clockCategoryFilter.filter((existing) => existing !== id);
+      saveClockCategoryFilter(clockCategoryFilter);
+      clockFilterBtn.classList.toggle("active", clockCategoryFilter.length > 0);
+      renderTodayClock();
+    });
+  });
+}
+
+clockFilterBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  clockFilterPopover.classList.toggle("show");
+});
+
+document.addEventListener("click", (e) => {
+  if (!clockFilterPopover.contains(e.target) && e.target !== clockFilterBtn) {
+    clockFilterPopover.classList.remove("show");
+  }
+});
 
 function svgEl(tag, attrs) {
   const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -592,8 +675,37 @@ function renderTodayClockLegend(usedStatuses) {
   });
 }
 
+// 카테고리 필터가 하나 이상 선택돼 있으면 그 카테고리만 표시한다 (usedNames만 범례에 남긴다)
+function renderTodayClockCategoryLegend(usedNames) {
+  clockLegendEl.textContent = "";
+  categories
+    .filter((c) => usedNames.has(c.name))
+    .forEach((c) => {
+      const item = document.createElement("div");
+      item.className = "today-clock-legend-item";
+
+      const dot = document.createElement("span");
+      dot.className = "today-clock-legend-dot";
+      dot.style.background = categoryColorFor(c.name);
+
+      const label = document.createElement("span");
+      label.textContent = c.name;
+
+      item.appendChild(dot);
+      item.appendChild(label);
+      clockLegendEl.appendChild(item);
+    });
+}
+
 function renderTodayClock() {
-  const todays = assignClockLanes(getTodaysScheduleWindows(schedules));
+  // 카테고리 필터가 켜져 있으면(하나 이상 선택) 그 카테고리의 일정만 골라 카테고리별 색으로,
+  // 꺼져 있으면(기본) 전체 일정을 상태별 색으로 보여준다
+  const filterActive = clockCategoryFilter.length > 0;
+  const selectedNames = new Set(
+    categories.filter((c) => clockCategoryFilter.includes(String(c.id))).map((c) => c.name)
+  );
+  const sourceList = filterActive ? schedules.filter((s) => selectedNames.has(s.categoryName)) : schedules;
+  const todays = assignClockLanes(getTodaysScheduleWindows(sourceList));
 
   clockSvgEl.textContent = "";
   hideClockTooltip();
@@ -625,6 +737,7 @@ function renderTodayClock() {
   }
 
   const usedStatuses = new Set();
+  const usedCategoryNames = new Set();
 
   todays.forEach((s) => {
     const r = CLOCK_LANE_R[s.lane];
@@ -632,6 +745,7 @@ function renderTodayClock() {
     const endAngle = (s.endMin / 1440) * 360;
     const d = describeClockArc(r, startAngle, endAngle);
     usedStatuses.add(s.status);
+    if (s.categoryName) usedCategoryNames.add(s.categoryName);
 
     // 실제 마크보다 넓은 투명 stroke 를 히트 영역으로 써서 hover/focus 를 받는다
     const hit = svgEl("path", {
@@ -645,7 +759,7 @@ function renderTodayClock() {
     const arc = svgEl("path", {
       class: "clock-arc",
       d,
-      stroke: STATUS_COLOR_VAR[s.status] || "var(--color-text-muted)",
+      stroke: filterActive ? categoryColorFor(s.categoryName) : (STATUS_COLOR_VAR[s.status] || "var(--color-text-muted)"),
       "stroke-width": CLOCK_ARC_WIDTH,
     });
 
@@ -662,7 +776,11 @@ function renderTodayClock() {
     clockSvgEl.appendChild(arc);
   });
 
-  renderTodayClockLegend(usedStatuses);
+  if (filterActive) {
+    renderTodayClockCategoryLegend(usedCategoryNames);
+  } else {
+    renderTodayClockLegend(usedStatuses);
+  }
 
   // 중앙: 오늘 일정 개수 (데이터가 없어도 "0"으로 자연스럽게 빈 상태를 표현)
   const centerValue = svgEl("text", {
