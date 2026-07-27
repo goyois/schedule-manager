@@ -30,6 +30,14 @@
           <input type="text" id="new-category-name" placeholder="새 카테고리" required />
           <button type="submit" class="btn btn-ghost btn-sm">추가</button>
         </form>
+
+        <!-- ADMIN 전용: 모든 유저에게 공개되는 기본 카테고리 생성. USER 는 볼 수 없어야 하므로
+             기본값을 숨김으로 두고, dashboard.js 가 /api/users/me 로 userType 을 확인한 뒤에만 보여준다 -->
+        <form class="add-category-form admin-add-category-form admin-only" id="add-default-category-form" style="display:none">
+          <div class="admin-caption">관리자 전용 · 기본 카테고리</div>
+          <input type="text" id="new-default-category-name" placeholder="기본 카테고리 이름" required />
+          <button type="submit" class="btn btn-primary btn-sm">생성</button>
+        </form>
       </div>
 
       <div class="sidebar-footer">

@@ -74,9 +74,60 @@ function renderToday() {
   });
 }
 
+// 카테고리 순서는 서버에 저장하지 않는다 - 사용자마다(같은 카테고리를 보고 있어도) 자기 화면에서만
+// 순서를 다르게 두고 싶을 수 있어서, 브라우저 localStorage에 로그인 이메일별로 순서(카테고리 id 배열)를
+// 따로 저장해두고 목록을 받아올 때마다 그 순서로 재정렬한다
+function categoryOrderStorageKey() {
+  const user = API.getCurrentUser();
+  const email = (user && user.email) || "anonymous";
+  return `category-order:${email}`;
+}
+
+function loadStoredCategoryOrder() {
+  try {
+    return JSON.parse(localStorage.getItem(categoryOrderStorageKey())) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveStoredCategoryOrder(orderIds) {
+  localStorage.setItem(categoryOrderStorageKey(), JSON.stringify(orderIds));
+}
+
+// 저장된 순서를 우선 적용하고, 저장된 순서에 없는 카테고리(새로 생겼거나 처음 로그인)는 서버가 내려준
+// 순서 그대로 뒤에 붙인다. 이미 삭제된 카테고리 id는 목록에 없으니 자연히 걸러진다
+function applyStoredCategoryOrder(list) {
+  const order = loadStoredCategoryOrder();
+  if (!order.length) return list;
+  const byId = new Map(list.map((c) => [String(c.id), c]));
+  const ordered = [];
+  order.forEach((id) => {
+    const c = byId.get(String(id));
+    if (c) {
+      ordered.push(c);
+      byId.delete(String(id));
+    }
+  });
+  list.forEach((c) => {
+    if (byId.has(String(c.id))) ordered.push(c);
+  });
+  return ordered;
+}
+
+function moveCategory(id, direction) {
+  const idx = categories.findIndex((c) => String(c.id) === String(id));
+  const swapIdx = idx + direction;
+  if (idx === -1 || swapIdx < 0 || swapIdx >= categories.length) return;
+  [categories[idx], categories[swapIdx]] = [categories[swapIdx], categories[idx]];
+  saveStoredCategoryOrder(categories.map((c) => c.id));
+  renderCategorySidebar();
+  renderCategorySelectOptions();
+}
+
 async function loadCategories() {
   try {
-    categories = await API.get("/api/categories");
+    categories = applyStoredCategoryOrder(await API.get("/api/categories"));
   } catch (err) {
     categories = [];
     showToast(`카테고리를 불러오지 못했습니다. ${err.message}`);
@@ -95,10 +146,14 @@ function renderCategorySidebar() {
 
   const items = categories
     .map(
-      (c) => `
+      (c, idx) => `
       <li data-category-id="${c.id}" class="${String(activeCategoryId) === String(c.id) ? "active" : ""}">
         <span><span class="dot"></span>${escapeHtml(c.name)}</span>
-        <span class="remove-cat" data-remove-category="${c.id}">&times;</span>
+        <span class="cat-actions">
+          <button type="button" class="cat-move" data-move-id="${c.id}" data-move-dir="up" title="위로" ${idx === 0 ? "disabled" : ""}>&#9650;</button>
+          <button type="button" class="cat-move" data-move-id="${c.id}" data-move-dir="down" title="아래로" ${idx === categories.length - 1 ? "disabled" : ""}>&#9660;</button>
+          <span class="remove-cat" data-remove-category="${c.id}">&times;</span>
+        </span>
       </li>`
     )
     .join("");
@@ -107,11 +162,18 @@ function renderCategorySidebar() {
 
   categoryListEl.querySelectorAll("li").forEach((li) => {
     li.addEventListener("click", async (e) => {
-      if (e.target.dataset.removeCategory) return;
+      if (e.target.dataset.removeCategory || e.target.dataset.moveId) return;
       activeCategoryId = li.dataset.categoryId;
       renderCategorySidebar();
       renderBoardTitle();
       await loadBoardForActiveCategory();
+    });
+  });
+
+  categoryListEl.querySelectorAll("[data-move-id]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      moveCategory(btn.dataset.moveId, btn.dataset.moveDir === "up" ? -1 : 1);
     });
   });
 
@@ -1265,6 +1327,23 @@ document.getElementById("add-category-form").addEventListener("submit", async (e
   }
 });
 
+// ADMIN이 만드는 카테고리는 CategoryService.createCategory 가 소유자의 userType 만 보고 자동으로
+// 전체 공개(기본) 카테고리로 저장하므로, 여기서도 동일한 POST /api/categories 를 그대로 쓴다
+document.getElementById("add-default-category-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = document.getElementById("new-default-category-name");
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    await API.post("/api/categories", { name });
+    input.value = "";
+    await loadCategories();
+    showToast("기본 카테고리를 생성했습니다.");
+  } catch (err) {
+    showToast(`기본 카테고리를 생성하지 못했습니다. ${err.message}`);
+  }
+});
+
 // ---------- 로그아웃 ----------
 
 document.getElementById("logout-btn").addEventListener("click", async () => {
@@ -1318,10 +1397,22 @@ async function syncCurrentUserId() {
   try {
     const me = await API.get("/api/users/me");
     const current = API.getCurrentUser() || {};
-    API.setCurrentUser(Object.assign({}, current, { id: me.id, email: me.email }));
+    API.setCurrentUser(Object.assign({}, current, { id: me.id, email: me.email, userType: me.userType }));
   } catch (err) {
     // 실패해도 기존 캐시된 id 로 폴백 - 그마저 없으면 일정 생성 시 저장이 실패하고 토스트로 안내된다
   }
+}
+
+// ADMIN 전용 UI(기본 카테고리 생성 버튼)를 보여줄지 결정한다. 기본 카테고리는 CategoryService 가
+// "생성자가 ADMIN이면 자동으로 전체 공개 카테고리로 취급"하는 규칙에 기대는 것이라 별도 API는 없고,
+// 여기서는 USER 에게 이 버튼 자체가 보이지 않게만 막는다(서버는 어차피 ADMIN 요청만 그렇게 취급하므로
+// 이중 방어이긴 하지만, "USER 는 볼 수 없어야 한다"는 요건은 화면 노출 여부의 문제다)
+function applyAdminVisibility() {
+  const user = API.getCurrentUser();
+  const isAdmin = !!user && user.userType === "ADMIN";
+  document.querySelectorAll(".admin-only").forEach((el) => {
+    el.style.display = isAdmin ? "" : "none";
+  });
 }
 
 // ---------- 초기화 ----------
@@ -1333,6 +1424,7 @@ async function syncCurrentUserId() {
   renderMandalartWidgetPreview();
   loadMandalartWidgetSubtitle();
   await syncCurrentUserId();
+  applyAdminVisibility();
   await loadCategories();
   await loadSchedules();
   // "지금" 표시선이 실제 흐르는 시간을 따라가도록 주기적으로 다시 그린다 (데이터 재조회는 없음)
