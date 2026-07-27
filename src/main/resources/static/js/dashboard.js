@@ -2016,12 +2016,10 @@ function showScheduleReminder(schedule) {
   setTimeout(dismiss, REMINDER_AUTO_DISMISS_MS);
 }
 
-// schedules 배열은 로그인 시 + 이 세션에서 직접 생성/수정/삭제할 때만 갱신된다(다른 탭/기기에서
-// 만든 일정은 이 탭을 새로고침하기 전까진 알 수 없다) - 그 안에서 시작 시각이 막 지난 일정을 찾아
-// 알림 팝업을 띄운다. 상태 자동 전환은 더 이상 여기서 하지 않는다 - 서버의
-// ScheduleService.autoTransitionScheduleStatuses()(@Scheduled)가 대신 처리하므로, 이 탭이
-// 닫혀 있거나 로그아웃한 상태에서도 자동 모드가 계속 동작한다
-function checkScheduleTimers() {
+// 서버 스케줄러(ScheduleService.autoTransitionScheduleStatuses)가 이 탭과 무관하게 상태를
+// 전환하므로, 매 주기마다 refreshAll()로 최신 상태를 먼저 받아온 뒤 알림 여부를 판단한다
+async function checkScheduleTimers() {
+  await refreshAll();
   const now = Date.now();
 
   schedules.forEach((s) => {
