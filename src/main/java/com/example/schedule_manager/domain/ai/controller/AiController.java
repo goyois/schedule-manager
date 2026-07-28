@@ -1,7 +1,9 @@
 package com.example.schedule_manager.domain.ai.controller;
 
-import com.example.schedule_manager.domain.ai.dto.ScheduleSuggestRequestDto;
-import com.example.schedule_manager.domain.ai.dto.ScheduleSuggestResponseDto;
+import com.example.schedule_manager.domain.ai.dto.AiChatExchangeDto;
+import com.example.schedule_manager.domain.ai.dto.AiChatMessageDto;
+import com.example.schedule_manager.domain.ai.dto.AiChatMessageRequestDto;
+import com.example.schedule_manager.domain.ai.dto.AiChatRegisterRequestDto;
 import com.example.schedule_manager.domain.ai.service.AiService;
 import com.example.schedule_manager.global.response.ApiResponse;
 import jakarta.validation.Valid;
@@ -9,22 +11,41 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/ai")
+@RequestMapping("/api/ai/chat")
 public class AiController {
 
     private final AiService aiService;
 
-    @PostMapping("/suggest")
-    public ResponseEntity<ApiResponse<ScheduleSuggestResponseDto>> suggest(
+    @GetMapping("/messages")
+    public ResponseEntity<ApiResponse<List<AiChatMessageDto>>> getConversation(
+            @AuthenticationPrincipal UserDetails principal) {
+        return ResponseEntity.ok(ApiResponse.success(aiService.getConversation(principal.getUsername())));
+    }
+
+    @PostMapping("/messages")
+    public ResponseEntity<ApiResponse<AiChatExchangeDto>> sendMessage(
             @AuthenticationPrincipal UserDetails principal,
-            @Valid @RequestBody ScheduleSuggestRequestDto request) {
-        return ResponseEntity.ok(ApiResponse.success(aiService.suggestSchedule(principal.getUsername(), request.prompt())));
+            @Valid @RequestBody AiChatMessageRequestDto request) {
+        return ResponseEntity.ok(ApiResponse.success(aiService.sendMessage(principal.getUsername(), request.message())));
+    }
+
+    @PatchMapping("/messages/{id}/register")
+    public ResponseEntity<ApiResponse<AiChatMessageDto>> markRegistered(
+            @AuthenticationPrincipal UserDetails principal,
+            @PathVariable Long id,
+            @Valid @RequestBody AiChatRegisterRequestDto request) {
+        return ResponseEntity.ok(ApiResponse.success(aiService.markRegistered(principal.getUsername(), id, request.scheduleId())));
+    }
+
+    @DeleteMapping("/messages")
+    public ResponseEntity<ApiResponse<Void>> clearConversation(@AuthenticationPrincipal UserDetails principal) {
+        aiService.clearConversation(principal.getUsername());
+        return ResponseEntity.ok(ApiResponse.success());
     }
 }

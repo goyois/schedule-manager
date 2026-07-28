@@ -1,7 +1,14 @@
 package com.example.schedule_manager.domain.ai;
 
-import com.example.schedule_manager.domain.ai.dto.ScheduleSuggestResponseDto;
+import com.example.schedule_manager.domain.ai.dto.AiChatExchangeDto;
+import com.example.schedule_manager.domain.ai.dto.AiChatMessageDto;
+import com.example.schedule_manager.domain.ai.dto.AiScheduleSuggestion;
+import com.example.schedule_manager.domain.ai.entity.AiChatMessage;
+import com.example.schedule_manager.domain.ai.entity.AiChatRole;
+import com.example.schedule_manager.domain.ai.repository.AiChatMessageRepository;
 import com.example.schedule_manager.domain.ai.service.AiService;
+import com.example.schedule_manager.domain.category.dto.CategoryResponseDto;
+import com.example.schedule_manager.domain.category.service.CategoryService;
 import com.example.schedule_manager.domain.schedule.dto.ScheduleResponseDto;
 import com.example.schedule_manager.domain.schedule.entity.ScheduleStatus;
 import com.example.schedule_manager.domain.schedule.service.ScheduleService;
@@ -18,16 +25,21 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.data.domain.Pageable;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class AiServiceTest {
@@ -45,7 +57,13 @@ class AiServiceTest {
     private ScheduleService scheduleService;
 
     @Mock
+    private CategoryService categoryService;
+
+    @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private AiChatMessageRepository aiChatMessageRepository;
 
     @InjectMocks
     private AiService aiService;
@@ -54,19 +72,32 @@ class AiServiceTest {
         return User.builder().id(id).username("tester").email("tester@example.com").userType(UserType.USER).build();
     }
 
-    private void stubChatClient(String responseText) {
+    private AiChatMessage savedMessage(Long id, User user, AiChatRole role) {
+        return AiChatMessage.builder().id(id).user(user).role(role).messageText("x").build();
+    }
+
+    private void stubChatClient(AiScheduleSuggestion suggestion) {
         when(chatClient.prompt()).thenReturn(chatClientRequest);
         when(chatClientRequest.system(anyString())).thenReturn(chatClientRequest);
+        when(chatClientRequest.messages(org.mockito.ArgumentMatchers.<List<Message>>any())).thenReturn(chatClientRequest);
         when(chatClientRequest.user(anyString())).thenReturn(chatClientRequest);
         when(chatClientRequest.call()).thenReturn(callResponseSpec);
-        when(callResponseSpec.content()).thenReturn(responseText);
+        when(callResponseSpec.entity(eq(AiScheduleSuggestion.class))).thenReturn(suggestion);
+    }
+
+    private void stubEmptyHistoryAndSave(User requester) {
+        when(aiChatMessageRepository.findByUserIdOrderByCreatedAtDesc(eq(requester.getId()), any(Pageable.class)))
+                .thenReturn(List.of());
+        when(aiChatMessageRepository.save(any(AiChatMessage.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
-    @DisplayName("일정 추천 성공 - 최근 2주~향후 2주 밖의 일정은 프롬프트 컨텍스트에서 제외된다")
-    void suggestSchedule_success_buildsContextFromRecentSchedulesOnly() {
+    @DisplayName("메시지 전송 성공 - 최근 2주~향후 2주 밖의 일정은 프롬프트 컨텍스트에서 제외되고, 구조화된 필드가 그대로 저장/응답된다")
+    void sendMessage_success_buildsContextFromRecentSchedulesOnly() {
         User requester = user(1L);
         when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
 
         LocalDateTime now = LocalDateTime.now();
         ScheduleResponseDto inWindow = new ScheduleResponseDto(
@@ -77,46 +108,214 @@ class AiServiceTest {
                 ScheduleStatus.PENDING, "tester", "업무");
         when(scheduleService.getSchedules("tester@example.com", 1L, null))
                 .thenReturn(List.of(inWindow, outOfWindow));
+        when(categoryService.getCategories("tester@example.com"))
+                .thenReturn(List.of(new CategoryResponseDto(10L, "운동")));
 
-        stubChatClient("추천 결과 텍스트");
+        // 모델이 다른 날짜(2026-07-29)를 추천해도, 실제 등록되는 startAt/endAt은 항상 오늘 날짜여야 한다
+        stubChatClient(new AiScheduleSuggestion(
+                "저녁 러닝", "30분 조깅", "2026-07-29T19:00:00", "2026-07-29T19:30:00", 10L, "추천 이유"));
 
-        ScheduleSuggestResponseDto response = aiService.suggestSchedule("tester@example.com", "이번 주 운동 일정 추천해줘");
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "이번 주 운동 일정 추천해줘");
 
-        assertThat(response.suggestion()).isEqualTo("추천 결과 텍스트");
+        assertThat(exchange.userMessage().role()).isEqualTo("USER");
+        assertThat(exchange.userMessage().message()).isEqualTo("이번 주 운동 일정 추천해줘");
+        assertThat(exchange.assistantMessage().role()).isEqualTo("ASSISTANT");
+        assertThat(exchange.assistantMessage().message()).isEqualTo("추천 이유");
+        assertThat(exchange.assistantMessage().suggestedTitle()).isEqualTo("저녁 러닝");
+        assertThat(exchange.assistantMessage().suggestedContent()).isEqualTo("30분 조깅");
+        assertThat(exchange.assistantMessage().suggestedStartAt()).isEqualTo(LocalDate.now().atTime(19, 0));
+        assertThat(exchange.assistantMessage().suggestedEndAt()).isEqualTo(LocalDate.now().atTime(19, 30));
+        assertThat(exchange.assistantMessage().suggestedCategoryId()).isEqualTo(10L);
 
         ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
         verify(chatClientRequest).user(userPromptCaptor.capture());
         assertThat(userPromptCaptor.getValue())
                 .contains("팀 회의")
-                .doesNotContain("먼 미래 일정");
+                .doesNotContain("먼 미래 일정")
+                .contains("운동");
     }
 
     @Test
-    @DisplayName("일정 추천 실패 - ChatClient 호출이 실패하면 AI_REQUEST_FAILED 로 감싼다")
-    void suggestSchedule_chatClientThrows_wrapsAsBusinessException() {
+    @DisplayName("메시지 전송 성공 - 이전 대화가 있으면 요약된 형태로 함께 실어 보낸다")
+    void sendMessage_success_includesRecentHistory() {
         User requester = user(1L);
         when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
         when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+
+        AiChatMessage priorUser = AiChatMessage.builder().id(1L).user(requester).role(AiChatRole.USER)
+                .messageText("어제 뭐 추천했었지?").build();
+        AiChatMessage priorAssistant = AiChatMessage.builder().id(2L).user(requester).role(AiChatRole.ASSISTANT)
+                .messageText("가벼운 산책을 추천드려요").suggestedTitle("저녁 산책")
+                .suggestedStartAt(LocalDateTime.of(2026, 7, 28, 19, 0)).build();
+        // 서비스가 Collections.reverse()로 뒤집으므로 List.of()의 불변 리스트가 아닌 가변 리스트를 넘겨야 한다
+        // (실제 JpaRepository 조회 결과는 가변 리스트라 프로덕션 코드 자체엔 문제가 없다)
+        when(aiChatMessageRepository.findByUserIdOrderByCreatedAtDesc(eq(1L), any(Pageable.class)))
+                .thenReturn(new java.util.ArrayList<>(List.of(priorAssistant, priorUser))); // 최신순으로 반환 - 서비스가 뒤집어야 함
+        when(aiChatMessageRepository.save(any(AiChatMessage.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        stubChatClient(new AiScheduleSuggestion("제목", "내용", null, null, null, "이유"));
+
+        aiService.sendMessage("tester@example.com", "그거 말고 다른 거 추천해줘");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Message>> historyCaptor = ArgumentCaptor.forClass(List.class);
+        verify(chatClientRequest).messages(historyCaptor.capture());
+        List<Message> passedHistory = historyCaptor.getValue();
+        assertThat(passedHistory).hasSize(2);
+        assertThat(passedHistory.get(0).getContent()).contains("어제 뭐 추천했었지?");
+        assertThat(passedHistory.get(1).getContent()).contains("저녁 산책").contains("가벼운 산책을 추천드려요");
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - 자정을 걸치는 시간대(종료 시각이 시작 시각보다 이름)는 종료를 다음날로 하루 밀어 순서를 유지한다")
+    void sendMessage_success_pushesEndToNextDayWhenCrossingMidnight() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com"))
+                .thenReturn(List.of(new CategoryResponseDto(10L, "일상")));
+
+        stubChatClient(new AiScheduleSuggestion(
+                "야간 근무", "당직", "2026-07-29T23:00:00", "2026-07-30T00:30:00", 10L, "추천 이유"));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "추천해줘");
+
+        assertThat(exchange.assistantMessage().suggestedStartAt()).isEqualTo(LocalDate.now().atTime(23, 0));
+        assertThat(exchange.assistantMessage().suggestedEndAt()).isEqualTo(LocalDate.now().plusDays(1).atTime(0, 30));
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - 존재하지 않는 categoryId나 형식이 깨진 시각은 비워서 응답한다")
+    void sendMessage_success_dropsInvalidCategoryAndUnparsableDates() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com"))
+                .thenReturn(List.of(new CategoryResponseDto(10L, "운동")));
+
+        stubChatClient(new AiScheduleSuggestion(
+                "제목", "내용", "이상한 형식", null, 999L, "추천 이유"));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "추천해줘");
+
+        assertThat(exchange.assistantMessage().suggestedStartAt()).isNull();
+        assertThat(exchange.assistantMessage().suggestedEndAt()).isNull();
+        assertThat(exchange.assistantMessage().suggestedCategoryId()).isNull();
+    }
+
+    @Test
+    @DisplayName("메시지 전송 실패 - ChatClient 호출이 실패하면 AI_REQUEST_FAILED 로 감싼다")
+    void sendMessage_chatClientThrows_wrapsAsBusinessException() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+        when(aiChatMessageRepository.findByUserIdOrderByCreatedAtDesc(eq(1L), any(Pageable.class)))
+                .thenReturn(List.of());
 
         when(chatClient.prompt()).thenReturn(chatClientRequest);
         when(chatClientRequest.system(anyString())).thenReturn(chatClientRequest);
+        when(chatClientRequest.messages(org.mockito.ArgumentMatchers.<List<Message>>any())).thenReturn(chatClientRequest);
         when(chatClientRequest.user(anyString())).thenReturn(chatClientRequest);
         when(chatClientRequest.call()).thenThrow(new RuntimeException("timeout"));
 
-        assertThatThrownBy(() -> aiService.suggestSchedule("tester@example.com", "추천해줘"))
+        assertThatThrownBy(() -> aiService.sendMessage("tester@example.com", "추천해줘"))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.AI_REQUEST_FAILED);
     }
 
     @Test
-    @DisplayName("일정 추천 실패 - 존재하지 않는 유저면 예외가 발생한다")
-    void suggestSchedule_userNotFound_throws() {
+    @DisplayName("메시지 전송 실패 - 존재하지 않는 유저면 예외가 발생한다")
+    void sendMessage_userNotFound_throws() {
         when(userRepository.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> aiService.suggestSchedule("ghost@example.com", "추천해줘"))
+        assertThatThrownBy(() -> aiService.sendMessage("ghost@example.com", "추천해줘"))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("대화 조회 성공 - 오래된 순서 그대로 DTO로 변환한다")
+    void getConversation_success() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        AiChatMessage m1 = savedMessage(1L, requester, AiChatRole.USER);
+        AiChatMessage m2 = savedMessage(2L, requester, AiChatRole.ASSISTANT);
+        when(aiChatMessageRepository.findByUserIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(m1, m2));
+
+        List<AiChatMessageDto> result = aiService.getConversation("tester@example.com");
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).id()).isEqualTo(1L);
+        assertThat(result.get(1).id()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("대화 조회 실패 - 존재하지 않는 유저면 예외가 발생한다")
+    void getConversation_userNotFound_throws() {
+        when(userRepository.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> aiService.getConversation("ghost@example.com"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("등록 표시 성공 - 본인 메시지에 등록된 일정 id를 남긴다")
+    void markRegistered_success() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        AiChatMessage message = savedMessage(5L, requester, AiChatRole.ASSISTANT);
+        when(aiChatMessageRepository.findById(5L)).thenReturn(Optional.of(message));
+
+        AiChatMessageDto result = aiService.markRegistered("tester@example.com", 5L, 100L);
+
+        assertThat(result.registeredScheduleId()).isEqualTo(100L);
+        assertThat(message.getRegisteredScheduleId()).isEqualTo(100L);
+    }
+
+    @Test
+    @DisplayName("등록 표시 실패 - 다른 유저 소유 메시지면 존재하지 않는 것처럼 예외가 발생한다")
+    void markRegistered_otherUsersMessage_throwsNotFound() {
+        User requester = user(1L);
+        User owner = user(2L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        AiChatMessage message = savedMessage(5L, owner, AiChatRole.ASSISTANT);
+        when(aiChatMessageRepository.findById(5L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> aiService.markRegistered("tester@example.com", 5L, 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AI_CHAT_MESSAGE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("등록 표시 실패 - 존재하지 않는 메시지면 예외가 발생한다")
+    void markRegistered_messageNotFound_throws() {
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(user(1L)));
+        when(aiChatMessageRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> aiService.markRegistered("tester@example.com", 999L, 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AI_CHAT_MESSAGE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("대화 초기화 성공 - 본인 유저 id로 전체 삭제를 위임한다")
+    void clearConversation_success() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+
+        aiService.clearConversation("tester@example.com");
+
+        verify(aiChatMessageRepository).deleteByUserId(1L);
     }
 }
