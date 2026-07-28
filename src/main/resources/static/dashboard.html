@@ -10,6 +10,7 @@
   <div class="shell-page">
   <div class="quote-bar">
     <div id="quote-banner" class="quote-banner"></div>
+    <a class="btn btn-ghost btn-sm" href="/settings" title="자동화 설정">설정</a>
     <button class="btn btn-ghost btn-sm" id="logout-btn">로그아웃</button>
   </div>
   <div class="app-shell">
@@ -41,10 +42,6 @@
       </div>
 
       <div class="sidebar-footer">
-        <label class="auto-status-toggle" title="켜면 일정 시작/종료 시각에 맞춰 상태가 진행중/완료로 자동 변경됩니다. 끄면 시각이 지나도 상태는 직접 바꿔야 합니다.">
-          <input type="checkbox" id="auto-status-toggle" />
-          시작/종료 시각에 맞춰 상태 자동 변경
-        </label>
         <div class="user-chip">
           <div class="avatar" id="user-avatar">?</div>
           <div class="who">
@@ -90,8 +87,13 @@
           </button>
 
           <div class="month-radar" id="month-radar">
+            <button type="button" class="clock-filter-btn" id="radar-filter-btn" title="표시할 카테고리 선택">⚙</button>
+            <div class="clock-filter-popover" id="radar-filter-popover">
+              <div class="clock-filter-popover-title">표시할 카테고리 선택</div>
+              <div class="clock-filter-options" id="radar-filter-options"></div>
+            </div>
             <div class="month-radar-face">
-              <svg id="month-radar-svg" viewBox="0 0 247 247" width="247" height="247" role="img" aria-label="현재 뷰 일정 통계 레이더"></svg>
+              <svg id="month-radar-svg" viewBox="0 0 247 247" width="247" height="247" role="img" aria-label="현재 뷰 카테고리별 일정 통계 레이더"></svg>
             </div>
           </div>
 
@@ -111,8 +113,14 @@
       </div>
 
       <div class="board-title-center">
-        <h1 id="board-title">전체 일정</h1>
-        <div class="today" id="today-label"></div>
+        <div class="board-title-text">
+          <h1 id="board-title">전체 일정</h1>
+          <div class="today" id="today-label"></div>
+        </div>
+        <div class="board-title-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="open-recurring-modal" title="반복 일정 추가">🔁 반복 일정</button>
+          <button type="button" class="btn btn-primary btn-sm" id="open-create-modal" title="새 일정 추가">+ 새 일정</button>
+        </div>
       </div>
 
       <div class="board" id="board">
@@ -133,29 +141,38 @@
   </div>
   </div>
 
-  <button class="fab" id="open-create-modal" title="새 일정 추가">+</button>
-  <button class="fab fab-secondary" id="open-ai-suggest-modal" title="AI 일정 추천">AI</button>
-
-  <div class="modal-overlay" id="ai-suggest-modal-overlay">
-    <div class="modal">
-      <h2>AI 일정 추천</h2>
-      <form id="ai-suggest-form">
-        <div class="field">
-          <label for="ai-suggest-prompt">무엇을 추천받고 싶으신가요?</label>
-          <textarea id="ai-suggest-prompt" rows="3" placeholder="예: 이번 주에 운동할 시간을 추천해줘" required></textarea>
-        </div>
-
-        <div class="field" id="ai-suggest-result-field" style="display: none">
-          <label>추천 결과</label>
-          <div class="ai-suggest-result" id="ai-suggest-result"></div>
-        </div>
-
-        <div class="modal-actions">
-          <button type="button" class="btn btn-ghost" id="cancel-ai-suggest-modal-btn">닫기</button>
-          <button type="submit" class="btn btn-primary" style="width: auto" id="ai-suggest-submit-btn">추천받기</button>
-        </div>
-      </form>
+  <!-- 오른쪽 상단에 고정된 챗봇 캐릭터 - 말풍선으로 "AI에게 추천받을 수 있다"는 걸 먼저 알려주고,
+       캐릭터를 누르면 기존과 동일하게 AI 추천 모달이 열린다(id는 그대로 유지) -->
+  <div class="ai-chatbot-widget" id="ai-chatbot-widget">
+    <div class="ai-chatbot-bubble" id="ai-chatbot-bubble">
+      안녕하세요! 제가 일정을 추천해드릴게요 🗓️
+      <span class="ai-chatbot-bubble-tail"></span>
     </div>
+    <button type="button" class="ai-chatbot-avatar" id="open-ai-suggest-modal" title="AI 일정 추천받기">🤖</button>
+  </div>
+
+  <!-- 전체 화면을 덮는 모달이 아니라, 로봇 아이콘 위에서 펼쳐지는 작은 채팅창 - 배경을 가리지 않으므로
+       열어둔 채로 보드/사이드바 등 페이지의 다른 부분을 그대로 조작할 수 있다 -->
+  <div class="ai-chat-panel" id="ai-chat-panel">
+    <div class="ai-chat-header">
+      <h2>AI 일정 추천</h2>
+      <div class="ai-chat-header-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="ai-chat-clear-btn" title="대화 내용을 모두 지웁니다">대화 초기화</button>
+        <button type="button" class="ai-chat-close-btn" id="ai-chat-close-btn" title="닫기" aria-label="닫기">×</button>
+      </div>
+    </div>
+
+    <div class="ai-chat-messages" id="ai-chat-messages"></div>
+
+    <div class="ai-suggest-loading" id="ai-suggest-loading" style="display: none">
+      <div class="ai-suggest-progress"><div class="ai-suggest-progress-bar"></div></div>
+      <div class="ai-suggest-loading-text">AI가 답변을 생각하는 중이에요...</div>
+    </div>
+
+    <form id="ai-suggest-form" class="ai-chat-input-row">
+      <textarea id="ai-suggest-prompt" rows="1" placeholder="무엇을 추천받고 싶으신가요?" required></textarea>
+      <button type="submit" class="btn btn-primary" style="width: auto" id="ai-suggest-submit-btn">전송</button>
+    </form>
   </div>
 
   <div class="modal-overlay" id="schedule-detail-modal-overlay">
@@ -251,6 +268,73 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="cancel-modal-btn">취소</button>
           <button type="submit" class="btn btn-primary" style="width: auto">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 영양제 먹기/운동/식단처럼 매번 손으로 입력하기 귀찮은 반복 일정 - 이 폼에서 규칙(요일/시간/기간)만
+       한 번 만들어두면 서버가 실제 일정을 미리 여러 개 만들어둔다(RecurringScheduleService).
+       각 occurrence는 그냥 평범한 일정이라 만든 뒤엔 기존 상세보기/수정/삭제를 그대로 쓸 수 있고,
+       반복 자체를 그만두려면 /settings 페이지에서 중단할 수 있다 -->
+  <div class="modal-overlay" id="recurring-modal-overlay">
+    <div class="modal">
+      <h2>반복 일정 추가</h2>
+      <form id="recurring-form">
+        <div class="field">
+          <label for="recurring-title">제목</label>
+          <input type="text" id="recurring-title" placeholder="예: 영양제 먹기" required />
+        </div>
+
+        <div class="field">
+          <label for="recurring-content">내용</label>
+          <textarea id="recurring-content" rows="2" placeholder="상세 내용"></textarea>
+        </div>
+
+        <div class="field">
+          <label>반복 요일</label>
+          <div class="weekday-picker" id="recurring-weekday-picker">
+            <button type="button" class="weekday-btn" data-day="MONDAY">월</button>
+            <button type="button" class="weekday-btn" data-day="TUESDAY">화</button>
+            <button type="button" class="weekday-btn" data-day="WEDNESDAY">수</button>
+            <button type="button" class="weekday-btn" data-day="THURSDAY">목</button>
+            <button type="button" class="weekday-btn" data-day="FRIDAY">금</button>
+            <button type="button" class="weekday-btn" data-day="SATURDAY">토</button>
+            <button type="button" class="weekday-btn" data-day="SUNDAY">일</button>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" style="width: auto; margin-top: 8px" id="recurring-select-daily">매일 선택</button>
+        </div>
+
+        <div class="modal-row">
+          <div class="field">
+            <label for="recurring-start-time">시작 시각</label>
+            <input type="time" id="recurring-start-time" required />
+          </div>
+          <div class="field">
+            <label for="recurring-end-time">종료 시각 (선택)</label>
+            <input type="time" id="recurring-end-time" />
+          </div>
+        </div>
+
+        <div class="modal-row">
+          <div class="field">
+            <label for="recurring-start-date">시작일</label>
+            <input type="date" id="recurring-start-date" required />
+          </div>
+          <div class="field">
+            <label for="recurring-end-date">종료일 (선택, 없으면 무기한)</label>
+            <input type="date" id="recurring-end-date" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="recurring-category-select">카테고리</label>
+          <select id="recurring-category-select"></select>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="cancel-recurring-modal-btn">취소</button>
+          <button type="submit" class="btn btn-primary" style="width: auto" id="recurring-submit-btn">추가</button>
         </div>
       </form>
     </div>

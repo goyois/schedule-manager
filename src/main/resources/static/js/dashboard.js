@@ -221,7 +221,7 @@ async function loadCategories() {
     categories = [];
     showToast(`카테고리를 불러오지 못했습니다. ${err.message}`);
   }
-  // 시계 필터에 저장돼 있던 카테고리 id 중 삭제되어 더 이상 없는 건 걸러낸다
+  // 시계/레이더 필터에 저장돼 있던 카테고리 id 중 삭제되어 더 이상 없는 건 걸러낸다
   const validIds = clockCategoryFilter.filter((id) => categories.some((c) => String(c.id) === id));
   if (validIds.length !== clockCategoryFilter.length) {
     clockCategoryFilter = validIds;
@@ -229,6 +229,15 @@ async function loadCategories() {
   }
   clockFilterBtn.classList.toggle("active", clockCategoryFilter.length > 0);
   renderClockFilterOptions();
+
+  const validRadarIds = radarCategoryFilter.filter((id) => categories.some((c) => String(c.id) === id));
+  if (validRadarIds.length !== radarCategoryFilter.length) {
+    radarCategoryFilter = validRadarIds;
+    saveRadarCategoryFilter(radarCategoryFilter);
+  }
+  radarFilterBtn.classList.toggle("active", radarCategoryFilter.length > 0);
+  renderRadarFilterOptions();
+
   renderCategorySidebar();
   renderCategorySelectOptions();
 }
@@ -407,20 +416,21 @@ function visibleSchedules() {
   return categorySchedules ?? [];
 }
 
-// ---------- 일정 통계 레이더(오각형) - 보드/일/주/월/년 뷰에 맞춰 집계 범위가 바뀐다 ----------
+// ---------- 일정 통계 레이더 - 보드/일/주/월/년 뷰에 맞춰 집계 범위가 바뀐다.
+// 축은 상태(대기/진행중/완료/취소) 고정이 아니라 카테고리 기반이고, 오른쪽 위 ⚙ 버튼으로 어떤
+// 카테고리를 축으로 보여줄지 고를 수 있다(today-clock의 카테고리 필터 팝오버와 동일한 패턴) ----------
 
 const RADAR_CENTER = 124;
 const RADAR_MAX_R = 69;
-// labelDy: 글자가 baseline 기준으로 그려지다 보니, 축이 위/아래/옆 중 어디를 향하느냐에 따라
-// 같은 +y 값이어도 꼭짓점과의 시각적 간격이 달라진다. 다섯 축의 실제 위치(위/옆/아래)에 맞춰
-// 각각 다르게 보정해야 "전체"(맨 위)만 유독 위로 붙어 보이는 문제 없이 간격이 고르게 맞는다
-const RADAR_AXES = [
-  { key: "total", label: "전체", labelDy: 9 },
-  { key: "PENDING", label: "대기", labelDy: 4 },
-  { key: "IN_PROGRESS", label: "진행중", labelDy: 10 },
-  { key: "COMPLETED", label: "완료", labelDy: 10 },
-  { key: "CANCELLED", label: "취소", labelDy: 4 },
-];
+
+// 축 개수가 선택한 카테고리 수만큼 매번 달라지므로(고정 5축이 아님), 각도별로 라벨의 세로 위치를
+// 일반화된 규칙으로 보정한다 - 글자가 baseline 기준으로 그려지다 보니 축이 거의 정확히 위/아래를
+// 향할 때는 dy를 크게, 옆(수평에 가까울수록)을 향할 때는 작게 줘야 꼭짓점과의 시각적 간격이 고르게
+// 맞는다. |sin(angle)|이 1에 가까울수록(=옆쪽) dy를 줄이는 식으로 근사한다
+function radarLabelDy(angleDeg) {
+  const rad = (angleDeg * Math.PI) / 180;
+  return 10 - 6 * Math.abs(Math.sin(rad));
+}
 
 const radarSvgEl = document.getElementById("month-radar-svg");
 
@@ -463,33 +473,59 @@ function getViewScopedSchedules() {
   return window ? schedulesOverlappingRange(schedules, window.start, window.end) : schedules;
 }
 
+// 레이더 축으로 보여줄 카테고리 필터 - today-clock 카테고리 필터와 같은 이유로 서버가 아니라
+// 사용자 이메일별 localStorage에 저장한다. 비어있으면 전체 카테고리를 축으로 쓰고, 하나 이상
+// 선택하면 그 카테고리들만 축으로 쓴다
+function radarCategoryFilterStorageKey() {
+  const user = API.getCurrentUser();
+  const email = (user && user.email) || "anonymous";
+  return `radar-category-filter:${email}`;
+}
+
+function loadStoredRadarCategoryFilter() {
+  try {
+    return JSON.parse(localStorage.getItem(radarCategoryFilterStorageKey())) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveRadarCategoryFilter(ids) {
+  localStorage.setItem(radarCategoryFilterStorageKey(), JSON.stringify(ids));
+}
+
+let radarCategoryFilter = loadStoredRadarCategoryFilter();
+
+function radarAxisCategories() {
+  if (radarCategoryFilter.length === 0) return categories;
+  return categories.filter((c) => radarCategoryFilter.includes(String(c.id)));
+}
+
 function renderScheduleRadar() {
   const rangeSchedules = getViewScopedSchedules();
-
-  const counts = {
-    total: rangeSchedules.length,
-    PENDING: rangeSchedules.filter((s) => s.status === "PENDING").length,
-    IN_PROGRESS: rangeSchedules.filter((s) => s.status === "IN_PROGRESS").length,
-    COMPLETED: rangeSchedules.filter((s) => s.status === "COMPLETED").length,
-    CANCELLED: rangeSchedules.filter((s) => s.status === "CANCELLED").length,
-  };
-  // 축마다 다른 스케일을 쓰면 모양 비교가 무의미해지므로, 가장 큰 값을 기준으로 5축 전부 같은 스케일을 쓴다
-  const maxValue = Math.max(1, ...RADAR_AXES.map((a) => counts[a.key]));
+  const axisCategories = radarAxisCategories();
 
   radarSvgEl.textContent = "";
+  if (axisCategories.length === 0) return; // 카테고리가 아예 없거나 필터에서 전부 해제하면 그릴 게 없다
 
-  // 그리드: 25/50/75/100% 위치에 오각형 링을 그린다
+  const counts = Object.fromEntries(
+    axisCategories.map((c) => [c.id, rangeSchedules.filter((s) => s.categoryName === c.name).length])
+  );
+  // 축마다 다른 스케일을 쓰면 모양 비교가 무의미해지므로, 가장 큰 값을 기준으로 전체 축이 같은 스케일을 쓴다
+  const maxValue = Math.max(1, ...axisCategories.map((c) => counts[c.id]));
+
+  // 그리드: 25/50/75/100% 위치에 다각형 링을 그린다
   [0.25, 0.5, 0.75, 1].forEach((ratio) => {
-    const pts = RADAR_AXES.map((_, i) => {
-      const p = radarPolarPoint(RADAR_MAX_R * ratio, (i / RADAR_AXES.length) * 360);
+    const pts = axisCategories.map((_, i) => {
+      const p = radarPolarPoint(RADAR_MAX_R * ratio, (i / axisCategories.length) * 360);
       return `${p.x},${p.y}`;
     }).join(" ");
     radarSvgEl.appendChild(svgEl("polygon", { class: "radar-grid-ring", points: pts }));
   });
 
-  // 축 선 + 라벨
-  RADAR_AXES.forEach((axis, i) => {
-    const angle = (i / RADAR_AXES.length) * 360;
+  // 축 선 + 라벨(카테고리 이름)
+  axisCategories.forEach((category, i) => {
+    const angle = (i / axisCategories.length) * 360;
     const outer = radarPolarPoint(RADAR_MAX_R, angle);
     radarSvgEl.appendChild(
       svgEl("line", { class: "radar-axis-line", x1: RADAR_CENTER, y1: RADAR_CENTER, x2: outer.x, y2: outer.y })
@@ -498,18 +534,18 @@ function renderScheduleRadar() {
     const label = svgEl("text", {
       class: "radar-axis-label",
       x: labelPt.x,
-      y: labelPt.y + axis.labelDy,
+      y: labelPt.y + radarLabelDy(angle),
       "text-anchor": "middle",
     });
-    label.textContent = axis.label;
+    label.textContent = category.name;
     radarSvgEl.appendChild(label);
   });
 
-  // 데이터 오각형
-  const dataPoints = RADAR_AXES.map((axis, i) => {
-    const value = counts[axis.key];
+  // 데이터 다각형
+  const dataPoints = axisCategories.map((category, i) => {
+    const value = counts[category.id];
     const r = (value / maxValue) * RADAR_MAX_R;
-    return radarPolarPoint(r, (i / RADAR_AXES.length) * 360);
+    return radarPolarPoint(r, (i / axisCategories.length) * 360);
   });
   const dataShape = svgEl("polygon", {
     class: "radar-data-shape",
@@ -520,6 +556,46 @@ function renderScheduleRadar() {
   dataShape.style.transformOrigin = `${RADAR_CENTER}px ${RADAR_CENTER}px`;
   radarSvgEl.appendChild(dataShape);
 }
+
+const radarFilterBtn = document.getElementById("radar-filter-btn");
+const radarFilterPopover = document.getElementById("radar-filter-popover");
+const radarFilterOptionsEl = document.getElementById("radar-filter-options");
+
+function renderRadarFilterOptions() {
+  radarFilterOptionsEl.innerHTML = categories
+    .map(
+      (c) => `
+      <label class="clock-filter-option">
+        <input type="checkbox" data-radar-filter-id="${c.id}" ${radarCategoryFilter.includes(String(c.id)) ? "checked" : ""} />
+        <span class="swatch" style="background:${categoryColorFor(c.name)}"></span>
+        ${escapeHtml(c.name)}
+      </label>`
+    )
+    .join("");
+
+  radarFilterOptionsEl.querySelectorAll("[data-radar-filter-id]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const id = input.dataset.radarFilterId;
+      radarCategoryFilter = input.checked
+        ? [...radarCategoryFilter, id]
+        : radarCategoryFilter.filter((existing) => existing !== id);
+      saveRadarCategoryFilter(radarCategoryFilter);
+      radarFilterBtn.classList.toggle("active", radarCategoryFilter.length > 0);
+      renderScheduleRadar();
+    });
+  });
+}
+
+radarFilterBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  radarFilterPopover.classList.toggle("show");
+});
+
+document.addEventListener("click", (e) => {
+  if (!radarFilterPopover.contains(e.target) && e.target !== radarFilterBtn) {
+    radarFilterPopover.classList.remove("show");
+  }
+});
 
 // ---------- 오늘 24시간 시계 (카테고리 필터와 무관하게 항상 전체 일정 기준) ----------
 
@@ -1622,6 +1698,10 @@ function roundUpToQuarterHour(date) {
 }
 
 function openCreateModal() {
+  // AI 채팅에서 "수동 등록"으로 열었을 때만 openCreateModalFromAiSuggestion()이 바로 뒤에서 다시
+  // 채워준다 - "+"로 직접 연 경우처럼 그 외의 모든 경로는 여기서 항상 초기화해 이전에 남아있던
+  // 값이 엉뚱한 일정에 잘못 연결되지 않게 한다
+  pendingAiChatRegisterMessageId = null;
   modalTitle.textContent = "새 일정";
   scheduleForm.reset();
   document.getElementById("schedule-id").value = "";
@@ -1769,6 +1849,12 @@ scheduleForm.addEventListener("submit", async (e) => {
       const user = API.getCurrentUser();
       API.setCurrentUser(Object.assign({}, user, { id: userId }));
     }
+    // AI 채팅의 "수동 등록"으로 채워 넣은 폼이었다면(id 없이 새로 만든 경우만), 방금 저장된 일정과
+    // 그 채팅 메시지를 서버에 연결해둔다 - 실패해도 일정 저장 자체는 이미 끝난 뒤라 조용히 무시한다
+    if (!id && pendingAiChatRegisterMessageId) {
+      await linkAiChatMessageToSchedule(pendingAiChatRegisterMessageId, Number(savedId));
+      pendingAiChatRegisterMessageId = null;
+    }
     closeModal();
     showToast(id ? "일정을 수정했습니다." : "일정을 추가했습니다.");
     await refreshAll();
@@ -1778,30 +1864,208 @@ scheduleForm.addEventListener("submit", async (e) => {
   }
 });
 
-// ---------- AI 일정 추천 (AI_STRATEGY.md Task #7) ----------
+// ---------- 반복 일정 ----------
+// 영양제 먹기/운동/식단처럼 매번 손으로 새 일정을 만들기 귀찮은 것들을 위한 기능 - 여기서는 규칙(요일/
+// 시간/기간)만 한 번 서버에 등록하면, 서버(RecurringScheduleService)가 실제 일정을 미리 여러 개
+// 만들어둔다. 그렇게 만들어진 일정 하나하나는 그냥 평범한 일정이라 상세보기/수정/삭제/상태변경 모두
+// 기존 기능을 그대로 쓸 수 있고, 반복 자체를 그만두는 것만 /settings 페이지에서 따로 한다
 
-const aiSuggestModalOverlay = document.getElementById("ai-suggest-modal-overlay");
+const recurringModalOverlay = document.getElementById("recurring-modal-overlay");
+const recurringForm = document.getElementById("recurring-form");
+const recurringWeekdayPicker = document.getElementById("recurring-weekday-picker");
+const recurringCategorySelect = document.getElementById("recurring-category-select");
+
+function openRecurringModal() {
+  recurringForm.reset();
+  recurringWeekdayPicker.querySelectorAll(".weekday-btn").forEach((btn) => btn.classList.remove("active"));
+  document.getElementById("recurring-start-date").value = toDatetimeLocalValue(new Date()).slice(0, 10);
+  // 이미 렌더링된 카테고리 셀렉트를 그대로 재사용한다 - 다시 fetch할 필요 없음
+  recurringCategorySelect.innerHTML = categorySelect.innerHTML;
+  const activeCat = categories.find((c) => String(c.id) === String(activeCategoryId));
+  if (activeCat) recurringCategorySelect.value = String(activeCat.id);
+  else if (categories.length) recurringCategorySelect.value = String(categories[0].id);
+  recurringModalOverlay.classList.add("show");
+}
+
+function closeRecurringModal() {
+  recurringModalOverlay.classList.remove("show");
+}
+
+document.getElementById("open-recurring-modal").addEventListener("click", openRecurringModal);
+document.getElementById("cancel-recurring-modal-btn").addEventListener("click", closeRecurringModal);
+recurringModalOverlay.addEventListener("click", (e) => {
+  if (e.target === recurringModalOverlay) closeRecurringModal();
+});
+
+recurringWeekdayPicker.querySelectorAll(".weekday-btn").forEach((btn) => {
+  btn.addEventListener("click", () => btn.classList.toggle("active"));
+});
+
+document.getElementById("recurring-select-daily").addEventListener("click", () => {
+  recurringWeekdayPicker.querySelectorAll(".weekday-btn").forEach((btn) => btn.classList.add("active"));
+});
+
+recurringForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const days = Array.from(recurringWeekdayPicker.querySelectorAll(".weekday-btn.active")).map((btn) => btn.dataset.day);
+  if (days.length === 0) {
+    showToast("반복할 요일을 하나 이상 선택해주세요.");
+    return;
+  }
+
+  const payload = {
+    title: document.getElementById("recurring-title").value.trim(),
+    content: document.getElementById("recurring-content").value.trim(),
+    startTime: document.getElementById("recurring-start-time").value,
+    endTime: document.getElementById("recurring-end-time").value || null,
+    daysOfWeek: days,
+    startDate: document.getElementById("recurring-start-date").value,
+    endDate: document.getElementById("recurring-end-date").value || null,
+    categoryId: Number(recurringCategorySelect.value),
+  };
+
+  const submitBtn = document.getElementById("recurring-submit-btn");
+  submitBtn.disabled = true;
+  try {
+    await API.post("/api/recurring-schedules", payload);
+    closeRecurringModal();
+    showToast("반복 일정을 추가했습니다.");
+    await refreshAll();
+  } catch (err) {
+    showToast(`반복 일정 추가에 실패했습니다. ${err.message}`);
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+// ---------- AI 일정 추천 챗봇 ----------
+// 예전엔 프롬프트 한 번 → 결과 한 번으로 끝나는 단발성 모달이었는데, 이제는 대화가 계속 이어지고(서버가
+// AiChatMessage로 기록을 남겨 다음 턴에도 맥락을 기억한다) 각 답변마다 수동/자동 등록을 할 수 있는
+// 채팅창 형태로 바뀌었다. 전체 화면을 덮는 모달이 아니라 로봇 아이콘 위에서 펼쳐지는 작은 패널이라,
+// 열어둔 채로 보드/사이드바 등 페이지의 다른 부분을 그대로 조작할 수 있다(배경 클릭으로 닫히지 않음)
+
+const aiChatPanel = document.getElementById("ai-chat-panel");
+const aiChatbotBubble = document.getElementById("ai-chatbot-bubble");
 const aiSuggestForm = document.getElementById("ai-suggest-form");
 const aiSuggestPromptInput = document.getElementById("ai-suggest-prompt");
-const aiSuggestResultField = document.getElementById("ai-suggest-result-field");
-const aiSuggestResultEl = document.getElementById("ai-suggest-result");
+const aiSuggestLoadingField = document.getElementById("ai-suggest-loading");
+const aiChatMessagesEl = document.getElementById("ai-chat-messages");
 const aiSuggestSubmitBtn = document.getElementById("ai-suggest-submit-btn");
+const aiChatClearBtn = document.getElementById("ai-chat-clear-btn");
+
+// 현재 대화창에 표시 중인 메시지 목록(서버 AiChatMessageDto 모양 그대로) - 모달을 열 때마다 서버에서 새로 받아온다
+let aiChatMessages = [];
+
+// AI 채팅의 "수동 등록"으로 "일정 추가" 폼을 열었을 때만 값이 채워진다 - 그 폼에서 실제로 저장되면
+// (scheduleForm submit 핸들러) 이 값으로 방금 만든 일정과 채팅 메시지를 서버에 연결해 "등록됨" 표시를 남긴다
+let pendingAiChatRegisterMessageId = null;
+
+// 자동 등록이 가능하려면 제목/시작시각/카테고리가 전부 있어야 한다(ScheduleRequestDto의 필수값과 동일) -
+// 하나라도 없으면(AI가 형식을 어겼거나 적절한 카테고리를 못 찾은 경우) 자동 등록 버튼을 비활성화하고
+// 수동 등록으로 유도한다
+function canAutoRegister(message) {
+  return !!(message && message.suggestedTitle && message.suggestedStartAt && message.suggestedCategoryId);
+}
+
+// /settings 페이지의 "AI 추천 일정 자동 등록" 토글 - 꺼져 있으면 "자동 등록" 버튼 자체를 보여주지 않고
+// 항상 수동 등록(검토 후 저장)만 쓰게 한다. 데이터가 다 갖춰졌는지(canAutoRegister)와는 별개 조건이다
+function isAiAutoRegisterSettingEnabled() {
+  const user = API.getCurrentUser();
+  return !!(user && user.aiAutoRegisterEnabled);
+}
+
+function aiChatUserBubbleHtml(message) {
+  return `<div class="ai-chat-bubble ai-chat-bubble-user">${escapeHtml(message.message)}</div>`;
+}
+
+// 구조화된 추천(title 있음)이면 제목/시간/내용을 먼저 보여주고 추천 이유는 구분선 아래 보조 설명으로,
+// 그냥 텍스트로만 답한 메시지(예: 잡담성 후속 질문 답변)면 본문 하나로만 채운다
+function aiChatAssistantBubbleHtml(message) {
+  const hasSuggestion = !!message.suggestedTitle;
+  const parts = [];
+
+  if (hasSuggestion) {
+    parts.push(`<div class="ai-chat-bubble-title">${escapeHtml(message.suggestedTitle)}</div>`);
+    if (message.suggestedStartAt) {
+      parts.push(`<div class="ai-chat-bubble-time">${escapeHtml(formatTimeRange(message.suggestedStartAt, message.suggestedEndAt))}</div>`);
+    }
+    if (message.suggestedContent) {
+      parts.push(`<div class="ai-chat-bubble-content">${escapeHtml(message.suggestedContent)}</div>`);
+    }
+  }
+  if (message.message) {
+    const textClass = hasSuggestion ? "ai-chat-bubble-reason" : "ai-chat-bubble-content";
+    parts.push(`<div class="${textClass}">${escapeHtml(message.message)}</div>`);
+  }
+
+  if (hasSuggestion) {
+    if (message.registeredScheduleId) {
+      parts.push(`<div class="ai-chat-bubble-actions"><span class="ai-chat-registered-badge">✅ 일정으로 등록됨</span></div>`);
+    } else {
+      const autoEligible = canAutoRegister(message);
+      const autoTitle = autoEligible ? "" : "AI가 시작 시각/카테고리 등 충분한 정보를 주지 않아 자동 등록할 수 없어요.";
+      const autoBtnHtml = isAiAutoRegisterSettingEnabled()
+        ? `<button type="button" class="btn btn-primary btn-sm" data-action="auto" data-message-id="${message.id}" ${autoEligible ? "" : "disabled"} title="${escapeHtml(autoTitle)}">자동 등록</button>`
+        : "";
+      parts.push(`<div class="ai-chat-bubble-actions">
+        <button type="button" class="btn btn-ghost btn-sm" data-action="manual" data-message-id="${message.id}">수동 등록</button>
+        ${autoBtnHtml}
+      </div>`);
+    }
+  }
+
+  return `<div class="ai-chat-bubble ai-chat-bubble-assistant${hasSuggestion ? " has-suggestion" : ""}">${parts.join("")}</div>`;
+}
+
+function renderAiChatMessages() {
+  if (aiChatMessages.length === 0) {
+    aiChatMessagesEl.innerHTML = `<div class="ai-chat-empty">안녕하세요! 일정에 대해 무엇이든 물어보세요.<br>예: "이번 주에 운동할 시간 추천해줘"</div>`;
+    return;
+  }
+  aiChatMessagesEl.innerHTML = aiChatMessages
+    .map((m) => (m.role === "USER" ? aiChatUserBubbleHtml(m) : aiChatAssistantBubbleHtml(m)))
+    .join("");
+  aiChatMessagesEl.scrollTop = aiChatMessagesEl.scrollHeight;
+}
+
+async function loadAiChatMessages() {
+  try {
+    aiChatMessages = await API.get("/api/ai/chat/messages");
+  } catch (err) {
+    aiChatMessages = [];
+    showToast(`대화 기록을 불러오지 못했습니다. ${err.message}`);
+  }
+  renderAiChatMessages();
+}
 
 function openAiSuggestModal() {
   aiSuggestForm.reset();
-  aiSuggestResultField.style.display = "none";
-  aiSuggestResultEl.textContent = "";
-  aiSuggestModalOverlay.classList.add("show");
+  aiSuggestLoadingField.style.display = "none";
+  aiChatPanel.classList.add("show");
+  aiChatbotBubble.style.display = "none"; // 패널이 열려 있는 동안은 인사 말풍선과 자리가 겹치니 숨긴다
+  loadAiChatMessages();
+  aiSuggestPromptInput.focus();
 }
 
 function closeAiSuggestModal() {
-  aiSuggestModalOverlay.classList.remove("show");
+  aiChatPanel.classList.remove("show");
+  aiChatbotBubble.style.display = "";
 }
 
-document.getElementById("open-ai-suggest-modal").addEventListener("click", openAiSuggestModal);
-document.getElementById("cancel-ai-suggest-modal-btn").addEventListener("click", closeAiSuggestModal);
-aiSuggestModalOverlay.addEventListener("click", (e) => {
-  if (e.target === aiSuggestModalOverlay) closeAiSuggestModal();
+function toggleAiSuggestModal() {
+  if (aiChatPanel.classList.contains("show")) closeAiSuggestModal();
+  else openAiSuggestModal();
+}
+
+document.getElementById("open-ai-suggest-modal").addEventListener("click", toggleAiSuggestModal);
+document.getElementById("ai-chat-close-btn").addEventListener("click", closeAiSuggestModal);
+
+// 채팅다운 조작감을 위해 Enter로 바로 전송하고, Shift+Enter로만 줄바꿈한다
+aiSuggestPromptInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    aiSuggestForm.requestSubmit();
+  }
 });
 
 aiSuggestForm.addEventListener("submit", async (e) => {
@@ -1810,16 +2074,121 @@ aiSuggestForm.addEventListener("submit", async (e) => {
   if (!prompt) return;
 
   aiSuggestSubmitBtn.disabled = true;
-  aiSuggestSubmitBtn.textContent = "추천 받는 중...";
+  aiSuggestPromptInput.disabled = true;
+  aiSuggestPromptInput.value = "";
+  aiSuggestLoadingField.style.display = "";
   try {
-    const { suggestion } = await API.post("/api/ai/suggest", { prompt });
-    aiSuggestResultEl.textContent = suggestion;
-    aiSuggestResultField.style.display = "";
+    const exchange = await API.post("/api/ai/chat/messages", { message: prompt });
+    aiChatMessages.push(exchange.userMessage, exchange.assistantMessage);
+    renderAiChatMessages();
   } catch (err) {
-    showToast(`AI 추천에 실패했습니다. ${err.message}`);
+    aiSuggestPromptInput.value = prompt; // 실패했으니 입력했던 내용을 되돌려준다
+    showToast(`AI 응답에 실패했습니다. ${err.message}`);
   } finally {
     aiSuggestSubmitBtn.disabled = false;
-    aiSuggestSubmitBtn.textContent = "추천받기";
+    aiSuggestPromptInput.disabled = false;
+    aiSuggestLoadingField.style.display = "none";
+    aiSuggestPromptInput.focus();
+  }
+});
+
+aiChatClearBtn.addEventListener("click", async () => {
+  if (aiChatMessages.length === 0) return;
+  if (!confirm("대화 내용을 모두 지울까요? 되돌릴 수 없습니다.")) return;
+  try {
+    await API.del("/api/ai/chat/messages");
+    aiChatMessages = [];
+    renderAiChatMessages();
+  } catch (err) {
+    showToast(`대화 초기화에 실패했습니다. ${err.message}`);
+  }
+});
+
+// AI 추천 결과로 "일정 추가" 폼을 미리 채우고 그 폼을 연다 - 저장은 여기서 하지 않고, 사용자가
+// 값을 확인/수정한 뒤 폼의 "저장" 버튼을 눌러야 실제로 POST /api/schedules가 호출된다.
+// AI가 형식이 깨진 시각이나 존재하지 않는 categoryId를 준 경우 AiService가 이미 null로 비워서
+// 응답하므로, 여기서는 값이 있는 필드만 채우고 나머지는 openCreateModal()의 기본값을 그대로 둔다
+function openCreateModalFromAiSuggestion(message) {
+  openCreateModal();
+  pendingAiChatRegisterMessageId = message.id;
+
+  if (message.suggestedTitle) document.getElementById("title").value = message.suggestedTitle;
+  if (message.suggestedContent) document.getElementById("content").value = message.suggestedContent;
+
+  if (message.suggestedStartAt) {
+    startAtInput.value = toDatetimeLocalValue(message.suggestedStartAt);
+    startAtSync.syncVisibleFromHidden();
+    lastStartValue = startAtInput.value;
+  }
+  // 종료 시각을 안 줬으면 알림형(시작 시각만) 일정으로 간주한다
+  noEndTimeToggle.checked = !!message.suggestedStartAt && !message.suggestedEndAt;
+  if (message.suggestedEndAt) {
+    endAtInput.value = toDatetimeLocalValue(message.suggestedEndAt);
+  }
+  applyEndTimeToggleUI();
+  if (!noEndTimeToggle.checked) endAtSync.syncVisibleFromHidden();
+
+  if (message.suggestedCategoryId && categories.some((c) => String(c.id) === String(message.suggestedCategoryId))) {
+    categorySelect.value = String(message.suggestedCategoryId);
+  }
+}
+
+// 일정 저장 자체는 이미 끝난 뒤라, 이 연결이 실패해도 조용히 무시한다(채팅창에 "등록됨" 표시만 안 남을 뿐)
+async function linkAiChatMessageToSchedule(messageId, scheduleId) {
+  try {
+    const updated = await API.patch(`/api/ai/chat/messages/${messageId}/register`, { scheduleId });
+    const idx = aiChatMessages.findIndex((m) => m.id === messageId);
+    if (idx !== -1) aiChatMessages[idx] = updated;
+  } catch (err) {
+    // no-op
+  }
+}
+
+// 검토 없이 AI 추천 값을 그대로 저장한다 - canAutoRegister()로 이미 필수값이 갖춰졌는지 확인된
+// 경우에만 버튼이 활성화되므로, 여기서는 그대로 기존 POST /api/schedules 저장 경로를 탄다
+async function autoRegisterAiChatMessage(message, buttonEl) {
+  const currentUser = API.getCurrentUser();
+  const userId = currentUser && currentUser.id;
+  const payload = {
+    title: message.suggestedTitle,
+    content: message.suggestedContent || "",
+    startAt: message.suggestedStartAt,
+    endAt: message.suggestedEndAt,
+    status: "PENDING",
+    userId,
+    categoryId: message.suggestedCategoryId,
+  };
+
+  buttonEl.disabled = true;
+  try {
+    const saved = await API.post("/api/schedules", payload);
+    scheduleMeta.set(String(saved.id), { categoryId: payload.categoryId, userId });
+    await linkAiChatMessageToSchedule(message.id, saved.id);
+    closeAiSuggestModal();
+    showToast("AI 추천으로 일정을 자동 등록했습니다.");
+    await refreshAll();
+    // AiService가 startAt/endAt을 항상 오늘 날짜로 맞춰서 내려주므로(시:분만 추천값 유지), 보드 탭의
+    // "오늘 일정만 표시" 필터에도 자동으로 걸린다 - 별도로 뷰를 이동시킬 필요 없이 상세 팝업만 띄운다
+    openDetailModal(String(saved.id));
+  } catch (err) {
+    showToast(`자동 등록에 실패했습니다. ${err.message}`);
+    buttonEl.disabled = false;
+  }
+}
+
+// 말풍선마다 등록 버튼이 다시 그려지므로(대화가 늘어날 때마다 renderAiChatMessages가 innerHTML을
+// 통째로 갈아끼운다), 버튼 각각에 리스너를 새로 붙이는 대신 컨테이너 하나에 위임해서 처리한다
+aiChatMessagesEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  const message = aiChatMessages.find((m) => String(m.id) === btn.dataset.messageId);
+  if (!message) return;
+
+  if (btn.dataset.action === "manual") {
+    closeAiSuggestModal();
+    openCreateModalFromAiSuggestion(message);
+  } else if (btn.dataset.action === "auto") {
+    autoRegisterAiChatMessage(message, btn);
   }
 });
 
@@ -1830,8 +2199,10 @@ document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (modalOverlay.classList.contains("show")) closeModal();
   if (detailModalOverlay.classList.contains("show")) closeDetailModal();
-  if (aiSuggestModalOverlay.classList.contains("show")) closeAiSuggestModal();
+  if (recurringModalOverlay.classList.contains("show")) closeRecurringModal();
+  if (aiChatPanel.classList.contains("show")) closeAiSuggestModal();
   if (clockFilterPopover.classList.contains("show")) clockFilterPopover.classList.remove("show");
+  if (radarFilterPopover.classList.contains("show")) radarFilterPopover.classList.remove("show");
 });
 
 // ---------- 카테고리 추가 ----------
@@ -1925,7 +2296,13 @@ async function syncCurrentUserId() {
   try {
     const me = await API.get("/api/users/me");
     const current = API.getCurrentUser() || {};
-    API.setCurrentUser(Object.assign({}, current, { id: me.id, email: me.email, userType: me.userType, autoStatusMode: me.autoStatusMode }));
+    API.setCurrentUser(Object.assign({}, current, {
+      id: me.id,
+      email: me.email,
+      userType: me.userType,
+      autoStatusMode: me.autoStatusMode,
+      aiAutoRegisterEnabled: me.aiAutoRegisterEnabled,
+    }));
   } catch (err) {
     // 실패해도 기존 캐시된 id 로 폴백 - 그마저 없으면 일정 생성 시 저장이 실패하고 토스트로 안내된다
   }
@@ -1943,28 +2320,16 @@ function applyAdminVisibility() {
   });
 }
 
-// ---------- 일정 시작 알림 / 자동 상태 변경 ----------
+// ---------- 일정 시작 알림 ----------
 
 // 수동 모드: 알림이 떠도 상태는 그대로 두고 사용자가 직접 바꾼다(기본값).
 // 자동 모드: 시작 시각이 되면 대기→진행중, 종료 시각이 되면 진행중→완료로 자동 전환한다.
 // 종료 시각이 없는 알림형 일정은 "진행중"으로 머물 종료 시점이 없으므로, 시작 시각에 바로 완료 처리한다.
 //
-// 이 값은 브라우저 localStorage가 아니라 서버(User.autoStatusMode)에 저장된다 - 실제 상태 전환은
-// ScheduleService.autoTransitionScheduleStatuses()(@Scheduled)가 서버에서 직접 하기 때문에,
-// 탭이 닫혀 있어도(로그아웃 상태여도) 계속 동작한다. 그래서 이 프론트 코드는 이제 토글 값을
-// 서버와 동기화하는 것과, "지금 시작하는 일정"을 알려주는 팝업(상태를 바꾸진 않는다)만 담당한다
-const autoStatusToggleEl = document.getElementById("auto-status-toggle");
-autoStatusToggleEl.addEventListener("change", async () => {
-  const enabled = autoStatusToggleEl.checked;
-  try {
-    const updated = await API.put("/api/users/me/auto-status-mode", { enabled });
-    const current = API.getCurrentUser() || {};
-    API.setCurrentUser(Object.assign({}, current, { autoStatusMode: updated.autoStatusMode }));
-  } catch (err) {
-    autoStatusToggleEl.checked = !enabled; // 저장 실패 시 토글을 원래 상태로 되돌린다
-    showToast(`설정을 저장하지 못했습니다. ${err.message}`);
-  }
-});
+// 이 토글 자체는 /settings 페이지(js/settings.js)로 옮겨갔다 - 여기서는 syncCurrentUserId()로 최신
+// 값을 캐시에 반영해둘 뿐, 실제 상태 전환은 ScheduleService.autoTransitionScheduleStatuses()
+// (@Scheduled)가 서버에서 직접 하므로 탭이 닫혀 있어도(로그아웃 상태여도) 계속 동작한다.
+// 이 프론트 코드는 "지금 시작하는 일정"을 알려주는 팝업(상태를 바꾸진 않는다)만 담당한다
 
 const scheduleReminderContainerEl = document.getElementById("schedule-reminder-container");
 const REMINDER_AUTO_DISMISS_MS = 12000;
@@ -2095,7 +2460,6 @@ function scheduleStreamReconnect() {
   loadMandalartWidgetSubtitle();
   await syncCurrentUserId();
   applyAdminVisibility();
-  autoStatusToggleEl.checked = !!(API.getCurrentUser() && API.getCurrentUser().autoStatusMode);
   activeCategoryId = loadStoredActiveCategoryId();
   await loadCategories();
   // 새로고침 사이에 그 카테고리가 삭제됐거나 더 이상 안 보이면(다른 유저 소유 등) 전체 일정으로 되돌린다

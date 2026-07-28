@@ -59,6 +59,13 @@ body {
   display: none;
 }
 
+/* quote-banner가 비어서(:empty) 접히면 로그아웃 버튼 앞에 flex:1로 공간을 채워주던 요소가 사라져
+   기본 정렬(flex-start)대로 왼쪽에 붙어버린다 - margin-left:auto로 quote-bar 안에서 항상 오른쪽 끝에
+   붙게 한다(명언이 있는 페이지에서는 quote-banner의 flex:1이 이미 같은 효과를 내므로 변화 없다) */
+#logout-btn {
+  margin-left: auto;
+}
+
 .quote-banner .quote-text {
   color: var(--color-text);
   font-style: italic;
@@ -229,6 +236,12 @@ button {
 
 .btn:active {
   transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .btn-primary {
@@ -518,21 +531,6 @@ button {
   border-top: 1px solid var(--color-border);
 }
 
-.auto-status-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--color-text-muted);
-  margin-bottom: 12px;
-  cursor: pointer;
-}
-
-.auto-status-toggle input[type="checkbox"] {
-  width: auto;
-  flex-shrink: 0;
-}
-
 .user-chip {
   display: flex;
   align-items: center;
@@ -591,8 +589,11 @@ button {
   gap: 12px;
 }
 
-/* 전체 일정 / 대기 / 진행중 / 완료 통계 카드 바로 위 중앙에 놓이는 제목+날짜 */
+/* 전체 일정 / 대기 / 진행중 / 완료 통계 카드 바로 위 중앙에 놓이는 제목+날짜 - 제목/날짜 자체는
+   그대로 가운데 정렬해서 보여주고, "새 일정" 버튼만 이 줄의 오른쪽 끝에 절대 위치로 붙인다(레이아웃
+   흐름에서 빼야 h1/.today의 중앙 정렬 계산에 버튼 너비가 끼어들지 않는다) */
 .board-title-center {
+  position: relative;
   text-align: center;
   margin-bottom: 22px;
 }
@@ -609,6 +610,18 @@ button {
   margin-top: 4px;
 }
 
+.board-title-actions {
+  position: absolute;
+  right: 0;
+  top: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.board-title-actions .btn {
+  width: auto;
+}
+
 /* 만다라트 화면 제목 - main-header 를 공유하던 시절엔 대시보드의 justify-content 변경에 딸려
    오른쪽으로 밀려나 보였다. 이제는 옆에 다른 요소(삭제 버튼 등)가 없어 굳이 flex 줄일 필요가
    없으므로 그냥 좌측 정렬 블록 타이틀로 둔다 */
@@ -616,6 +629,107 @@ button {
   font-size: 21px;
   margin: 0 0 22px;
   letter-spacing: -0.02em;
+}
+
+/* ---------- 설정 페이지 ---------- */
+
+.settings-section {
+  max-width: 640px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+  box-shadow: var(--shadow-card);
+}
+
+.settings-section h2 {
+  font-size: 15px;
+  margin: 0 0 4px;
+}
+
+.settings-section-desc {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  margin: 0 0 6px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.settings-row-text {
+  min-width: 0;
+}
+
+.settings-row-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-row-desc {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+.settings-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding-top: 2px;
+}
+
+.settings-switch input[type="checkbox"] {
+  width: 34px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
+}
+
+.recurring-schedule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.recurring-schedule-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.recurring-schedule-item:first-child {
+  border-top: none;
+}
+
+.recurring-schedule-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.recurring-schedule-meta {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.recurring-schedule-empty {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  padding: 8px 0;
 }
 
 /* ---------- Header widgets (month radar + today clock) ---------- */
@@ -802,6 +916,7 @@ button {
 /* ---------- Month radar (pentagon) ---------- */
 
 .month-radar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1810,6 +1925,30 @@ button {
   min-width: 0;
 }
 
+/* 반복 일정 추가 폼의 요일 선택 - 체크박스 7개 대신 토글 버튼으로 눌러서 선택/해제한다 */
+.weekday-picker {
+  display: flex;
+  gap: 6px;
+}
+
+.weekday-btn {
+  flex: 1;
+  padding: 8px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.weekday-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -1817,44 +1956,285 @@ button {
   margin-top: 18px;
 }
 
-.fab {
+/* 오른쪽 하단 고정 챗봇 캐릭터 - "새 일정 추가"가 FAB에서 보드 제목 줄의 버튼으로 옮겨가면서 이
+   자리(우측 하단)를 그대로 차지한다 */
+.ai-chatbot-widget {
   position: fixed;
-  right: 32px;
   bottom: 32px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  color: #fff;
-  font-size: 26px;
+  right: 32px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.ai-chatbot-bubble {
+  position: relative;
+  max-width: 190px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--color-text);
+  box-shadow: var(--shadow-card);
+  animation: ai-bubble-in 0.35s ease-out;
+}
+
+.ai-chatbot-bubble-tail {
+  position: absolute;
+  right: 18px;
+  bottom: -7px;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  transform: rotate(45deg);
+}
+
+.ai-chatbot-avatar {
+  width: 56px;
+  height: 56px;
   border: none;
-  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.35);
+  background: transparent;
+  font-size: 40px;
+  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  /* 계속 움직이면 시선을 뺏고 거슬리므로(클릭 대상이 끊임없이 흔들리는 것도 문제) 페이지를 열었을 때
+     인사하듯 몇 번만 통통 튀고 멈춘다 - infinite 로 두지 않는다 */
+  animation: ai-bot-bounce 1.4s ease-in-out 3;
 }
 
-.fab:hover {
-  background: var(--color-primary-dark);
+.ai-chatbot-avatar:hover {
+  animation-play-state: paused;
 }
 
-/* 새 일정 FAB 바로 위에 놓이는 2번째 플로팅 버튼 - 크기/모양은 .fab 을 그대로 쓰고 위치와 글자만 다르다 */
-.fab-secondary {
-  bottom: 96px;
-  font-size: 14px;
+@keyframes ai-bubble-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ai-bot-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-chatbot-avatar {
+    animation: none;
+  }
+}
+
+/* ---------- AI 추천 챗봇 (로봇 아이콘에서 펼쳐지는 채팅창) ---------- */
+
+/* 전체 화면을 덮는 .modal-overlay와 달리 배경이 없는 작은 패널이라, 열어둔 채로 뒤의 보드/사이드바를
+   그대로 클릭·조작할 수 있다. .ai-chatbot-widget(bottom:32px)의 아바타 바로 위에 오도록 고정 위치를
+   맞춘다: 아바타 위쪽 끝이 32+56=88px 지점이므로, 거기서 12px 띄운 100px를 패널의 bottom으로 쓴다 */
+.ai-chat-panel {
+  position: fixed;
+  bottom: 100px;
+  right: 32px;
+  z-index: 42;
+  width: 380px;
+  max-width: calc(100vw - 48px);
+  height: min(70vh, 640px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 50px rgba(20, 23, 45, 0.25);
+  padding: 18px 18px 14px;
+  display: none;
+  flex-direction: column;
+  animation: ai-chat-panel-in 0.2s ease-out;
+}
+
+.ai-chat-panel.show {
+  display: flex;
+}
+
+@keyframes ai-chat-panel-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 480px) {
+  .ai-chat-panel {
+    right: 16px;
+    left: 16px;
+    width: auto;
+  }
+}
+
+.ai-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.ai-chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-chat-close-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.ai-chat-close-btn:hover {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
+}
+
+.ai-chat-header h2 {
+  margin: 0;
+}
+
+.ai-chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px;
+}
+
+.ai-chat-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ai-chat-bubble {
+  max-width: 82%;
+  padding: 10px 13px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.ai-chat-bubble-user {
+  align-self: flex-end;
+  background: var(--color-primary);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+  white-space: pre-wrap;
+}
+
+.ai-chat-bubble-assistant {
+  align-self: flex-start;
+  background: #fbfbfe;
+  border: 1px solid var(--color-border);
+  border-bottom-left-radius: 4px;
+}
+
+.ai-chat-bubble-title {
   font-weight: 700;
 }
 
-.ai-suggest-result {
+.ai-chat-bubble-time {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.ai-chat-bubble-content {
   white-space: pre-wrap;
-  background: #fbfbfe;
+  margin-top: 6px;
+}
+
+/* 제목이 있는(구조화된 추천) 말풍선에서만 추천 이유를 구분선 아래 보조 설명으로 둔다 -
+   제목 없이 그냥 텍스트로만 답한 말풍선은 이 텍스트 자체가 본문이라 구분선이 필요 없다 */
+.ai-chat-bubble-assistant.has-suggestion .ai-chat-bubble-reason {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+  white-space: pre-wrap;
+}
+
+.ai-chat-bubble-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ai-chat-bubble-actions .btn {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.ai-chat-registered-badge {
+  font-size: 12px;
+  color: var(--color-completed);
+  font-weight: 600;
+}
+
+.ai-chat-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ai-chat-input-row textarea {
+  flex: 1;
+  resize: none;
+  max-height: 90px;
+  padding: 9px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 10px 12px;
-  font-size: 14px;
-  line-height: 1.5;
-  max-height: 260px;
-  overflow-y: auto;
+  font-size: 13.5px;
+  font-family: inherit;
+}
+
+/* AI 추천 응답을 기다리는 동안 보여주는 인디케이터 - 실제 진행률을 알 수 없는 단발성 요청이라
+   퍼센트 대신 좌우로 흐르는 인디터미네이트 바로 "처리 중"임을 보여준다 */
+.ai-suggest-progress {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--color-primary-soft);
+  overflow: hidden;
+}
+
+.ai-suggest-progress-bar {
+  height: 100%;
+  width: 40%;
+  border-radius: 4px;
+  background: var(--color-primary);
+  animation: ai-suggest-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes ai-suggest-progress-slide {
+  0% { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}
+
+.ai-suggest-loading-text {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  text-align: center;
 }
 
 .toast {
