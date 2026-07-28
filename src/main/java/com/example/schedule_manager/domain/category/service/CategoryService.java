@@ -108,9 +108,7 @@ public class CategoryService {
         // ADMIN 이 만든 기본 설정 카테고리뿐 아니라, 아직 이 카테고리를 쓰는 일정이 남아있는 경우도 삭제를 막는다 —
         // 그대로 두면 categories.category_id 를 참조하는 schedules FK 제약에 걸려 DB 예외가 그대로 500 으로 새어나간다
         boolean hasSchedules = scheduleRepository.existsByCategoryId(id);
-        if (isAdminOwned(category) || hasSchedules) {
-            throw new BusinessException(ErrorCode.DEFAULT_CATEGORY_DELETE_FORBIDDEN);
-        }
+        if (isAdminOwned(category) || hasSchedules) throw new BusinessException(ErrorCode.DEFAULT_CATEGORY_DELETE_FORBIDDEN);
         User owner = category.getUser();
         categoryRepository.delete(category);
         evictCategoryCache(owner);

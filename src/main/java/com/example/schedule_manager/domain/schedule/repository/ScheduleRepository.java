@@ -26,4 +26,10 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long>, Sched
     List<Schedule> findByStatusAndStartAtLessThanEqualAndUser_AutoStatusModeTrue(ScheduleStatus status, LocalDateTime now);
 
     List<Schedule> findByStatusInAndEndAtLessThanEqualAndUser_AutoStatusModeTrue(Collection<ScheduleStatus> statuses, LocalDateTime now);
+
+    // RecurringScheduleService 전용 - 이미 만들어둔 occurrence 날짜와 겹치지 않는 후보 날짜만 새로
+    // 만들기 위한 조회, 그리고 반복 일정을 중단/삭제할 때 아직 지나지 않은(PENDING) occurrence만 정리하기 위한 조회
+    List<Schedule> findByRecurringScheduleId(Long recurringScheduleId);
+
+    List<Schedule> findByRecurringScheduleIdAndStatus(Long recurringScheduleId, ScheduleStatus status);
 }

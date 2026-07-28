@@ -25,10 +25,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -69,6 +71,53 @@ public class ScheduleService {
         ScheduleResponseDto response = ScheduleResponseDto.from(scheduleRepository.save(schedule));
         evictScheduleCacheForUser(user.getId());
         return response;
+    }
+
+    // RecurringScheduleService가 반복 규칙에서 미리 여러 occurrence를 만들 때 쓴다 - 건마다
+    // createSchedule()을 반복 호출하면 그때마다 캐시 무효화·SSE 알림이 따로 나가 우수수 쏟아지므로,
+    // 여러 건을 한 번에 저장하고 캐시 무효화·알림은 마지막에 한 번만 한다(모두 같은 유저 소유라고 가정)
+    public List<ScheduleResponseDto> createSchedules(List<ScheduleRequestDto> requests, Long recurringScheduleId) {
+        if (requests.isEmpty()) return List.of();
+
+        List<Schedule> schedules = requests.stream().map(request -> {
+            User user = userRepository.findById(request.userId()).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+            Category category = categoryRepository.findById(request.categoryId()).orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
+            return Schedule.builder()
+                    .title(request.title())
+                    .content(request.content())
+                    .startAt(request.startAt())
+                    .endAt(request.endAt())
+                    .status(request.status())
+                    .user(user)
+                    .category(category)
+                    .recurringScheduleId(recurringScheduleId)
+                    .build();
+        }).toList();
+
+        List<ScheduleResponseDto> saved = scheduleRepository.saveAll(schedules).stream()
+                .map(ScheduleResponseDto::from)
+                .toList();
+        evictScheduleCacheForUser(schedules.get(0).getUser().getId());
+        return saved;
+    }
+
+    // RecurringScheduleService가 반복 규칙에 대해 이미 만들어둔 occurrence 날짜와 겹치지 않는 후보
+    // 날짜만 새로 만들기 위해 조회한다 - 사용자가 특정 occurrence의 시각을 직접 수정했을 수도 있으니
+    // 정확한 시:분이 아니라 "그 날짜에 이미 하나 있는지"만 본다
+    @Transactional(readOnly = true)
+    public Set<LocalDate> getOccurrenceDates(Long recurringScheduleId) {
+        return scheduleRepository.findByRecurringScheduleId(recurringScheduleId).stream()
+                .map(schedule -> schedule.getStartAt().toLocalDate())
+                .collect(Collectors.toSet());
+    }
+
+    // 반복 일정을 중단/삭제할 때, 아직 지나지 않은(PENDING) occurrence는 정리한다 - 이미 진행중/완료/
+    // 취소된 occurrence는 지나간 기록이니 그대로 남긴다. 여러 건을 지우지만 캐시 무효화는 한 번만 한다
+    public void deletePendingOccurrences(Long recurringScheduleId, Long userId) {
+        List<Schedule> pending = scheduleRepository.findByRecurringScheduleIdAndStatus(recurringScheduleId, ScheduleStatus.PENDING);
+        if (pending.isEmpty()) return;
+        scheduleRepository.deleteAll(pending);
+        evictScheduleCacheForUser(userId);
     }
 
     // 요청자 role 에 따라 결과를 제한한다: ADMIN 은 임의의 일정을 조회할 수 있고,
