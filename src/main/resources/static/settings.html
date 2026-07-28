@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>설정 · Schedule Manager</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="shell-page">
+  <div class="quote-bar">
+    <div id="quote-banner" class="quote-banner"></div>
+    <button class="btn btn-ghost btn-sm" id="logout-btn">로그아웃</button>
+  </div>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="auth-brand" href="/dashboard">
+        <div class="logo-mark">S</div>
+        <div class="logo-text">Schedule Manager</div>
+      </a>
+
+      <div class="sidebar-section">
+        <a class="btn btn-ghost btn-sm" style="width: 100%; display: block; text-align: center" href="/dashboard">← 대시보드로</a>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="user-chip">
+          <div class="avatar" id="user-avatar">?</div>
+          <div class="who">
+            <div class="name" id="user-name">사용자</div>
+            <div class="email" id="user-email">-</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <h1 class="mandalart-page-title">설정</h1>
+
+      <div class="settings-section">
+        <h2>일정 자동화</h2>
+        <p class="settings-section-desc">일정이 어디까지 자동으로 처리될지 정합니다.</p>
+
+        <div class="settings-row">
+          <div class="settings-row-text">
+            <div class="settings-row-title">시작/종료 시각에 맞춰 상태 자동 변경</div>
+            <div class="settings-row-desc">
+              켜면 일정 시작 시각에 대기→진행중, 종료 시각에 진행중→완료로 서버가 자동으로 상태를 바꿉니다.
+              종료 시각이 없는 알림형 일정은 시작 시각에 바로 완료 처리됩니다. 끄면 시각이 지나도 상태는 직접 바꿔야 합니다.
+            </div>
+          </div>
+          <label class="settings-switch">
+            <input type="checkbox" id="auto-status-toggle" />
+            <span>사용</span>
+          </label>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-row-text">
+            <div class="settings-row-title">AI 추천 일정 자동 등록 허용</div>
+            <div class="settings-row-desc">
+              켜면 AI 일정 추천 결과에 제목/시작 시각/카테고리가 모두 갖춰졌을 때 "자동 등록" 버튼이 나타나,
+              한 번의 클릭으로 검토 없이 바로 일정이 저장됩니다. 꺼두면 항상 "수동 등록"으로 폼을 확인/수정한 뒤 저장합니다.
+            </div>
+          </div>
+          <label class="settings-switch">
+            <input type="checkbox" id="ai-auto-register-toggle" />
+            <span>사용</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section" style="margin-top: 16px">
+        <h2>반복 일정</h2>
+        <p class="settings-section-desc">
+          등록해둔 반복 일정 목록입니다. 중단하면 앞으로 만들어질 일정 생성이 멈추고, 아직 지나지 않은
+          일정만 정리됩니다 - 이미 지난/진행 중인 일정은 기록으로 그대로 남습니다.
+        </p>
+        <ul class="recurring-schedule-list" id="recurring-schedule-list"></ul>
+      </div>
+    </main>
+  </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/settings.js"></script>
+</body>
+</html>

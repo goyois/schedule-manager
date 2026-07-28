@@ -32,4 +32,9 @@ public class ViewController {
     public String mandalart() {
         return "forward:/mandalart.html";
     }
+
+    @GetMapping("/settings")
+    public String settings() {
+        return "forward:/settings.html";
+    }
 }

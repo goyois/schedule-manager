@@ -1,5 +1,6 @@
 package com.example.schedule_manager.domain.user;
 
+import com.example.schedule_manager.domain.user.dto.AiAutoRegisterRequestDto;
 import com.example.schedule_manager.domain.user.dto.AutoStatusModeRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserResponseDto;
@@ -153,6 +154,29 @@ class UserServiceTest {
         when(userRepository.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.updateAutoStatusMode("ghost@example.com", new AutoStatusModeRequestDto(true)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("AI 추천 일정 자동 등록 설정 성공 - 켜고 끄는 값이 그대로 반영된다")
+    void updateAiAutoRegisterEnabled_success() {
+        User user = User.builder().id(4L).username("tester").email("tester@example.com").userType(UserType.USER).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(user));
+
+        UserResponseDto response = userService.updateAiAutoRegisterEnabled("tester@example.com", new AiAutoRegisterRequestDto(true));
+
+        assertThat(response.aiAutoRegisterEnabled()).isTrue();
+        assertThat(user.isAiAutoRegisterEnabled()).isTrue();
+    }
+
+    @Test
+    @DisplayName("AI 추천 일정 자동 등록 설정 실패 - 존재하지 않는 이메일이면 예외가 발생한다")
+    void updateAiAutoRegisterEnabled_notFound_throws() {
+        when(userRepository.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.updateAiAutoRegisterEnabled("ghost@example.com", new AiAutoRegisterRequestDto(true)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.USER_NOT_FOUND);

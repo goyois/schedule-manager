@@ -1,5 +1,6 @@
 package com.example.schedule_manager.domain.user.service;
 
+import com.example.schedule_manager.domain.user.dto.AiAutoRegisterRequestDto;
 import com.example.schedule_manager.domain.user.dto.AutoStatusModeRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserResponseDto;
@@ -64,6 +65,15 @@ public class UserService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         user.updateAutoStatusMode(request.enabled());
+        return UserResponseDto.from(user);
+    }
+
+    // 설정 페이지의 "AI 추천 일정 자동 등록" 토글 - AiService 는 이 값을 몰라도 되고(추천 자체는 항상
+    // 동일하게 동작), 어디까지나 프론트가 "자동 등록" 버튼을 보여줄지 말지 결정하는 데만 쓰인다
+    public UserResponseDto updateAiAutoRegisterEnabled(String email, AiAutoRegisterRequestDto request) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        user.updateAiAutoRegisterEnabled(request.enabled());
         return UserResponseDto.from(user);
     }
 

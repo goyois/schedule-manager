@@ -41,6 +41,14 @@ public class User extends BaseEntity {
     @Builder.Default
     private boolean autoStatusMode = false;
 
+    // 켜면 AiService 의 추천 결과에 title/startAt/categoryId 가 모두 갖춰졌을 때 프론트의
+    // "자동 등록" 버튼이 노출된다(꺼져있으면 항상 "수동 등록"으로 검토 후 저장해야 한다). 서버가 직접
+    // 일정을 생성하는 건 아니고 어디까지나 프론트의 버튼 노출 여부만 결정한다는 점에서 autoStatusMode
+    // 와는 다르다 - 그래도 "로그인한 유저별 설정"이라는 성격이 같아 같은 방식(DB 컬럼)으로 둔다
+    @Column(name = "ai_auto_register_enabled", nullable = false)
+    @Builder.Default
+    private boolean aiAutoRegisterEnabled = false;
+
     public void update(String username, String email, String encodedPassword) {
         this.username = username;
         this.email = email;
@@ -49,5 +57,9 @@ public class User extends BaseEntity {
 
     public void updateAutoStatusMode(boolean autoStatusMode) {
         this.autoStatusMode = autoStatusMode;
+    }
+
+    public void updateAiAutoRegisterEnabled(boolean aiAutoRegisterEnabled) {
+        this.aiAutoRegisterEnabled = aiAutoRegisterEnabled;
     }
 }

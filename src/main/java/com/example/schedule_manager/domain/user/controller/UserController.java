@@ -1,5 +1,6 @@
 package com.example.schedule_manager.domain.user.controller;
 
+import com.example.schedule_manager.domain.user.dto.AiAutoRegisterRequestDto;
 import com.example.schedule_manager.domain.user.dto.AutoStatusModeRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserRequestDto;
 import com.example.schedule_manager.domain.user.dto.UserResponseDto;
@@ -46,6 +47,13 @@ public class UserController {
             @AuthenticationPrincipal UserDetails principal,
             @RequestBody AutoStatusModeRequestDto request) {
         return ResponseEntity.ok(ApiResponse.success(userService.updateAutoStatusMode(principal.getUsername(), request)));
+    }
+
+    @PutMapping("/me/ai-auto-register")
+    public ResponseEntity<ApiResponse<UserResponseDto>> updateAiAutoRegisterEnabled(
+            @AuthenticationPrincipal UserDetails principal,
+            @RequestBody AiAutoRegisterRequestDto request) {
+        return ResponseEntity.ok(ApiResponse.success(userService.updateAiAutoRegisterEnabled(principal.getUsername(), request)));
     }
 
     @DeleteMapping("/{id}")

@@ -8,7 +8,8 @@ public record UserResponseDto(
         String username,
         String email,
         UserType userType,
-        boolean autoStatusMode
+        boolean autoStatusMode,
+        boolean aiAutoRegisterEnabled
 ) {
     public static UserResponseDto from(User user) {
         return new UserResponseDto(
@@ -16,7 +17,8 @@ public record UserResponseDto(
                 user.getUsername(),
                 user.getEmail(),
                 user.getUserType(),
-                user.isAutoStatusMode()
+                user.isAutoStatusMode(),
+                user.isAiAutoRegisterEnabled()
         );
     }
 }
