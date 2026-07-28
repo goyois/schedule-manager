@@ -6,6 +6,14 @@ spring:
       # 기본 60초 타임아웃이면 Redis 장애 시 요청마다 60초씩 멈춘다 (JwtAuthenticationFilter 의
       # 블랙리스트 확인, 스케줄 캐시 조회 등). 짧게 잡아 빨리 실패하고 fail-open/DB 폴백으로 넘어가게 한다
       timeout: 2000ms
+  jpa:
+    # Open-in-View(기본 true)를 켜두면 HTTP 요청이 끝날 때까지 DB 커넥션을 붙잡아둔다. 이 앱은
+    # 서버 사이드 뷰 렌더링이 없는 REST API라 애초에 필요 없고, ScheduleController.streamScheduleEvents
+    # (SseEmitter, 장시간 유지되는 스트림)에서는 요청이 사실상 끝나지 않아 커넥션이 계속 물려 있다가
+    # HikariCP 풀(기본 10개)이 고갈되는 원인이 됐다 - 모든 컨트롤러가 이미 @Transactional 서비스
+    # 메서드 안에서 완성된 DTO(record)만 반환하므로(지연 로딩 엔티티를 컨트롤러까지 들고 가지 않음)
+    # 꺼도 안전하다
+    open-in-view: false
 
 management:
   endpoints:
