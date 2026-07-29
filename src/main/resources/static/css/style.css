@@ -1,12 +1,12 @@
 :root {
-  --color-bg: #f5f6fb;
+  --color-bg: #f2f1f6;
   --color-surface: #ffffff;
   --color-border: #e5e7f0;
-  --color-text: #1f2333;
+  --color-text: #201f2c;
   --color-text-muted: #6b7086;
-  --color-primary: #4f46e5;
-  --color-primary-dark: #4338ca;
-  --color-primary-soft: #eef0fd;
+  --color-primary: #3a3552;
+  --color-primary-dark: #2b273f;
+  --color-primary-soft: #eceaf3;
 
   --color-pending: #b45309;
   --color-pending-bg: #fef3c7;
