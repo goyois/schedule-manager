@@ -18,9 +18,13 @@ import com.example.schedule_manager.domain.ai.entity.AiResponseCategory;
 // targetScheduleId: SCHEDULE_UPDATE일 때만 의미가 있다 - [기존 일정] 컨텍스트에 함께 실어 보낸 id 중
 // 사용자가 바꾸고 싶어하는 일정의 id. AiService가 실제로 요청자 소유의 일정인지 검증한 뒤에만 신뢰한다
 // (모델이 존재하지 않거나 다른 유저의 id를 지어낼 수 있으므로, categoryId 검증과 같은 이유).
+//
+// targetMandalartBoardId: MANDALART_FILL일 때만 의미가 있다 - [만다라트 보드] 컨텍스트에 함께 실어 보낸
+// id 중 사용자가 채워달라는 보드의 id. targetScheduleId와 같은 이유로 요청자 소유인지 검증한 뒤에만 신뢰한다.
 public record AiScheduleSuggestion(
         AiResponseCategory category,
         Long targetScheduleId,
+        Long targetMandalartBoardId,
         String title,
         String content,
         String startAt,

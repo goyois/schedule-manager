@@ -6,12 +6,17 @@ import org.springframework.ai.anthropic.api.AnthropicApi;
 import org.springframework.ai.autoconfigure.anthropic.AnthropicChatProperties;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.retry.support.RetryTemplate;
 
 @Configuration
 public class AiConfig {
+
+    // 만다라트 한 번 채우기는 최대 64칸짜리 구조화 응답이라 일반 채팅(기본 max-tokens)보다 훨씬 더
+    // 큰 출력이 필요하다 - 부족하면 JSON이 중간에 잘려 파싱 자체가 실패한다(MandalartAiService 참고)
+    private static final int MANDALART_FILL_MAX_TOKENS = 4096;
 
     // spring-ai-anthropic-spring-boot-starter(1.0.0-M1)의 자동 구성은 AnthropicChatProperties 생성자에서
     // temperature 를 항상 기본값으로 채워 매 요청에 temperature 파라미터를 실어 보낸다. 그런데 설정된 모델
@@ -22,6 +27,7 @@ public class AiConfig {
     // max_tokens 는 Anthropic API에서 필수 필드이므로(temperature와 달리 생략 불가) chatProperties 의 기본값
     // (DEFAULT_MAX_TOKENS=500)을 그대로 옮겨 실어 보낸다 - 빠뜨리면 "max_tokens: Field required" 400 에러가 난다.
     @Bean
+    @Qualifier("chatModel")
     public ChatModel chatModel(AnthropicApi anthropicApi, AnthropicChatProperties chatProperties, RetryTemplate retryTemplate) {
         AnthropicChatOptions options = AnthropicChatOptions.builder()
                 .withModel(chatProperties.getOptions().getModel())
@@ -31,7 +37,23 @@ public class AiConfig {
     }
 
     @Bean
-    public ChatClient chatClient(ChatModel chatModel) {
+    public ChatClient chatClient(@Qualifier("chatModel") ChatModel chatModel) {
         return ChatClient.builder(chatModel).build();
+    }
+
+    // MandalartAiService 전용 - 나머지는 chatModel과 동일하고 max_tokens만 더 크다
+    @Bean
+    @Qualifier("mandalartFillChatModel")
+    public ChatModel mandalartFillChatModel(AnthropicApi anthropicApi, AnthropicChatProperties chatProperties, RetryTemplate retryTemplate) {
+        AnthropicChatOptions options = AnthropicChatOptions.builder()
+                .withModel(chatProperties.getOptions().getModel())
+                .withMaxTokens(MANDALART_FILL_MAX_TOKENS)
+                .build();
+        return new AnthropicChatModel(anthropicApi, options, retryTemplate);
+    }
+
+    @Bean
+    public ChatClient mandalartFillChatClient(@Qualifier("mandalartFillChatModel") ChatModel mandalartFillChatModel) {
+        return ChatClient.builder(mandalartFillChatModel).build();
     }
 }

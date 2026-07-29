@@ -30,13 +30,13 @@
 - **스케줄 CRUD** - 일정 생성·조회·수정·삭제, 상태(`PENDING` / `IN_PROGRESS` / `COMPLETED` / `CANCELLED`) 관리. 상태 자동 전환 모드를 켜면 시작/종료 시각에 맞춰 서버가 상태를 자동으로 바꿔줍니다.
 - **반복 일정** - 요일을 지정해(`MONDAY,WEDNESDAY,...`) 매주 반복되는 일정을 등록하면, 서버가 개별 일정(occurrence)으로 펼쳐 생성합니다.
 - **카테고리 관리** - 일정 분류를 위한 카테고리 CRUD
-- **만다라트** - 목표를 9x9 만다라트 보드로 관리하는 CRUD(AI 자동 생성은 아직 미구현)
-- **AI 일정 추천 챗봇** - Claude(`ChatClient`)와 구조화된 응답 기반으로 지속 대화합니다. 모델이 매 답변을 `SCHEDULE_RECOMMENDATION`(새 일정 추천)/`SCHEDULE_UPDATE`(기존 일정 수정 제안)/`GENERAL`(그 외 일반 답변) 중 하나로 분류해서, 추천·수정 제안일 때만 등록/수정 UI가 뜨고 그 외에는 답변 텍스트만 보여줍니다. 새 일정 추천은 "수동 등록"(폼 검토 후 저장) / "자동 등록"(즉시 저장, "AI 추천 자동 등록" 설정이 켜져 있으면 버튼 클릭 없이 응답 즉시 자동 반영) 중 선택할 수 있고, 기존 일정 수정 제안은 "수정"(수정 폼을 열어 검토 후 저장) / "수정 반영"(추가 창 없이 즉시 반영) 중 선택할 수 있습니다. ADMIN을 제외한 일반 유저는 Redis 기반으로 분당 5회까지만 요청할 수 있습니다.
+- **만다라트** - 목표를 9x9 만다라트 보드로 관리하는 CRUD. 중앙 9칸(핵심 목표 + 세부목표 8개)을 채운 뒤 "AI로 채우기"를 누르면, 바깥 8개 블록의 자기 블록 중심 칸(세부목표 사본)은 그대로 복사하고 나머지 실행항목 최대 64칸은 Claude가 채운다(이미 채워진 칸은 절대 건드리지 않음). AI 챗봇에 "OO 만다라트 채워줘"라고 요청해도 동일하게 동작한다.
+- **AI 일정 추천 챗봇** - Claude(`ChatClient`)와 구조화된 응답 기반으로 지속 대화합니다. 모델이 매 답변을 `SCHEDULE_RECOMMENDATION`(새 일정 추천)/`SCHEDULE_UPDATE`(기존 일정 수정 제안)/`MANDALART_FILL`(만다라트 채우기)/`GENERAL`(그 외 일반 답변) 중 하나로 분류해서, 그에 맞는 UI만 보여줍니다. 새 일정 추천은 "수동 등록"(폼 검토 후 저장) / "자동 등록"(즉시 저장, "AI 추천 자동 등록" 설정이 켜져 있으면 버튼 클릭 없이 응답 즉시 자동 반영) 중 선택할 수 있고, 기존 일정 수정 제안은 "수정"(수정 폼을 열어 검토 후 저장) / "수정 반영"(추가 창 없이 즉시 반영) 중 선택할 수 있습니다. "OO 만다라트 채워줘"처럼 요청하면 대상 보드를 찾아 그 자리에서 바로 채우고 결과만 보여줍니다(빈 칸만 채우므로 검토 단계 없이 자동 적용). ADMIN을 제외한 일반 유저는 Redis 기반으로 분당 5회까지만 요청할 수 있습니다.
 - **실시간 반영(SSE)** - 일정이 생성/수정/삭제/자동 상태 전환될 때 `GET /api/schedules/stream`으로 연결된 브라우저 탭에 즉시 반영합니다(폴링 없음).
 - **Redis 캐싱** - 일정 목록 조회 결과를 캐싱하며, Redis 장애 시 예외를 던지지 않고 DB 조회로 폴백합니다(fail-open). 일정 변경 시에는 캐시 전체가 아니라 해당 유저 키 패턴만 `SCAN` 기반으로 무효화합니다.
-- **대시보드 UI** - 정적 프론트엔드로 제공되는 7×7 달력, 24시간 아날로그 시간표, 카테고리별 방사형 차트, AI 챗봇 패널, 성취도 위젯
+- **대시보드 UI** - 정적 프론트엔드로 제공되는 7×7 달력, 12시간제 아날로그 시계(중앙에 낮/밤에 따라 ☀️/🌙 표시), 카테고리별 방사형 차트, AI 챗봇 패널, 성취도 위젯
 - **모니터링** - Actuator + Micrometer로 Prometheus 메트릭을 노출하고, Grafana 대시보드로 시각화 (`monitoring/docker-compose.yml`)
-- **일정 알림(이메일/푸시)**, **AI 오늘의 운세**, **AI 기반 만다라트 자동 생성** - 미구현 (예정)
+- **일정 알림(이메일/푸시)**, **AI 오늘의 운세** - 미구현 (예정)
 
 ---
 
@@ -129,7 +129,7 @@ src/main/java/com/example/schedule_manager/
 │   ├── recurringschedule/  # 반복 일정(요일 지정) — occurrence로 펼쳐 schedule에 생성 (controller / service / repository / entity / dto)
 │   ├── category/           # 카테고리 CRUD (controller / service / repository / entity / dto)
 │   ├── ai/                 # AI 일정 추천 챗봇 — ChatClient 연동, 대화 이력 저장/등록 (controller / service / repository / entity / dto)
-│   └── mandalart/          # 만다라트 보드/셀 CRUD (controller / service / repository / entity / dto)
+│   └── mandalart/          # 만다라트 보드/셀 CRUD + AI로 빈 칸 채우기 (controller / service / repository / entity / dto)
 ├── global/
 │   ├── security/    # config/SecurityConfig, filter/JwtAuthenticationFilter, util/JwtUtil, service/CustomUserDetailsService
 │   ├── config/      # RedisConfig(캐시), CacheFailSafeErrorHandler, GoogleOAuthConfig, AiConfig(ChatClient 빈)
@@ -178,9 +178,10 @@ monitoring/                  # Prometheus + Grafana docker-compose
 | GET | `/api/mandalart` | 만다라트 보드 목록 | 필요 |
 | GET | `/api/mandalart/{boardId}` | 만다라트 보드 조회 | 필요 |
 | PUT | `/api/mandalart/{boardId}/cells/{row}/{col}` | 만다라트 셀 수정 | 필요 |
+| POST | `/api/mandalart/{boardId}/ai-fill` | 중앙 9칸을 기준으로 나머지 빈 칸을 AI로 채우기(이미 채워진 칸은 유지) | 필요 |
 | DELETE | `/api/mandalart/{boardId}` | 만다라트 보드 삭제 | 필요 |
 | GET | `/api/ai/chat/messages` | AI 챗봇 대화 이력 조회 | 필요 |
-| POST | `/api/ai/chat/messages` | AI 챗봇에 메시지 전송 (구조화된 추천 응답 수신) | 필요 |
+| POST | `/api/ai/chat/messages` | AI 챗봇에 메시지 전송 (구조화된 추천 응답 수신, 만다라트 채우기 요청도 이 엔드포인트로 처리) | 필요 |
 | PATCH | `/api/ai/chat/messages/{id}/register` | AI 추천 메시지를 실제 일정으로 등록 | 필요 |
 | DELETE | `/api/ai/chat/messages` | AI 챗봇 대화 이력 초기화 | 필요 |
 
@@ -188,7 +189,6 @@ monitoring/                  # Prometheus + Grafana docker-compose
 
 - 일정 알림 (이메일 / 푸시)
 - AI 오늘의 운세
-- AI 기반 만다라트 자동 생성 (현재 만다라트는 수동 입력 CRUD만 제공)
 - 캘린더/시계/레이더용 `GET /api/schedules`(전체 목록)는 여전히 페이지네이션 없이 전량 조회 — 보드 뷰(`GET /api/schedules/board`)만 서버 페이징 적용됨 (캘린더 뷰는 특정 날짜 범위 전체가 필요해 의도적으로 그대로 둠)
 - `prod` 스프링 프로파일 (현재 `application-local.yml`만 존재)
 

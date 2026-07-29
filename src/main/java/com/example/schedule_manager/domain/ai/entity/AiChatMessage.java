@@ -45,6 +45,10 @@ public class AiChatMessage extends BaseEntity {
     // SCHEDULE_UPDATE일 때만 값이 있다 - 이 제안이 어느 기존 일정을 바꾸자는 것인지
     private Long targetScheduleId;
 
+    // MANDALART_FILL일 때만 값이 있다 - 어느 만다라트 보드를 채웠는지(이미 채우기가 끝난 뒤의 기록용 -
+    // AiService가 이 카테고리를 감지한 시점에 MandalartAiService를 직접 호출해 그 자리에서 채운다)
+    private Long targetMandalartBoardId;
+
     private String suggestedTitle;
 
     @Column(columnDefinition = "TEXT")

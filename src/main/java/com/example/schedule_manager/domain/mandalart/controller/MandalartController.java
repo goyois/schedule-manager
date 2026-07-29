@@ -4,6 +4,7 @@ import com.example.schedule_manager.domain.mandalart.dto.MandalartBoardCreateReq
 import com.example.schedule_manager.domain.mandalart.dto.MandalartBoardResponseDto;
 import com.example.schedule_manager.domain.mandalart.dto.MandalartBoardSummaryDto;
 import com.example.schedule_manager.domain.mandalart.dto.MandalartCellUpdateRequestDto;
+import com.example.schedule_manager.domain.mandalart.service.MandalartAiService;
 import com.example.schedule_manager.domain.mandalart.service.MandalartService;
 import com.example.schedule_manager.global.response.ApiResponse;
 import jakarta.validation.Valid;
@@ -21,6 +22,7 @@ import java.util.List;
 public class MandalartController {
 
     private final MandalartService mandalartService;
+    private final MandalartAiService mandalartAiService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<MandalartBoardResponseDto>> createBoard(
@@ -51,6 +53,15 @@ public class MandalartController {
             @Valid @RequestBody MandalartCellUpdateRequestDto request) {
         mandalartService.updateCell(principal.getUsername(), boardId, row, col, request);
         return ResponseEntity.ok(ApiResponse.success());
+    }
+
+    // 중앙 9칸(핵심 목표 + 세부목표 8개)을 채운 뒤 나머지 빈 칸을 AI로 채운다 - 이미 채워진 칸은
+    // 건드리지 않는다(MandalartAiService 참고)
+    @PostMapping("/{boardId}/ai-fill")
+    public ResponseEntity<ApiResponse<MandalartBoardResponseDto>> fillWithAi(
+            @AuthenticationPrincipal UserDetails principal,
+            @PathVariable Long boardId) {
+        return ResponseEntity.ok(ApiResponse.success(mandalartAiService.fillWithAi(principal.getUsername(), boardId)));
     }
 
     @DeleteMapping("/{boardId}")

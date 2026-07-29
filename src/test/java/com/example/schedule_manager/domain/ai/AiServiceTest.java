@@ -11,6 +11,10 @@ import com.example.schedule_manager.domain.ai.service.AiRateLimiter;
 import com.example.schedule_manager.domain.ai.service.AiService;
 import com.example.schedule_manager.domain.category.dto.CategoryResponseDto;
 import com.example.schedule_manager.domain.category.service.CategoryService;
+import com.example.schedule_manager.domain.mandalart.entity.MandalartBoard;
+import com.example.schedule_manager.domain.mandalart.repository.MandalartBoardRepository;
+import com.example.schedule_manager.domain.mandalart.repository.MandalartCellRepository;
+import com.example.schedule_manager.domain.mandalart.service.MandalartAiService;
 import com.example.schedule_manager.domain.schedule.dto.ScheduleResponseDto;
 import com.example.schedule_manager.domain.schedule.entity.ScheduleStatus;
 import com.example.schedule_manager.domain.schedule.service.ScheduleService;
@@ -19,6 +23,7 @@ import com.example.schedule_manager.domain.user.entity.UserType;
 import com.example.schedule_manager.domain.user.repository.UserRepository;
 import com.example.schedule_manager.global.exception.BusinessException;
 import com.example.schedule_manager.global.exception.ErrorCode;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,9 +43,12 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -70,8 +78,27 @@ class AiServiceTest {
     @Mock
     private AiRateLimiter aiRateLimiter;
 
+    @Mock
+    private MandalartBoardRepository mandalartBoardRepository;
+
+    @Mock
+    private MandalartCellRepository mandalartCellRepository;
+
+    @Mock
+    private MandalartAiService mandalartAiService;
+
     @InjectMocks
     private AiService aiService;
+
+    // sendMessage()는 매번 [만다라트 보드] 컨텍스트를 위해 이 목록을 조회한다 - 만다라트와 무관한
+    // 기존 테스트들이 전부 이 스텁을 반복할 필요가 없도록 "보드 없음"을 기본값으로 깔아둔다.
+    // lenient인 이유: sendMessage()를 호출하지 않는 테스트(getConversation 등)에서는 이 스텁이
+    // 실제로 쓰이지 않는데, MockitoExtension의 기본 strict stubbing이 "쓰이지 않은 스텁"을 오류로
+    // 보기 때문
+    @BeforeEach
+    void stubNoMandalartBoardsByDefault() {
+        lenient().when(mandalartBoardRepository.findByUserIdOrderByCreatedAtDesc(anyLong())).thenReturn(List.of());
+    }
 
     private User user(Long id) {
         return User.builder().id(id).username("tester").email("tester@example.com").userType(UserType.USER).build();
@@ -117,7 +144,7 @@ class AiServiceTest {
                 .thenReturn(List.of(new CategoryResponseDto(10L, "운동")));
 
         // 모델이 다른 날짜(2026-07-29)를 추천해도, 실제 등록되는 startAt/endAt은 항상 오늘 날짜여야 한다
-        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null,
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
                 "저녁 러닝", "30분 조깅", "2026-07-29T19:00:00", "2026-07-29T19:30:00", 10L, "추천 이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "이번 주 운동 일정 추천해줘");
@@ -161,7 +188,7 @@ class AiServiceTest {
         when(aiChatMessageRepository.save(any(AiChatMessage.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, "제목", "내용", null, null, null, "이유"));
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null, "제목", "내용", null, null, null, "이유"));
 
         aiService.sendMessage("tester@example.com", "그거 말고 다른 거 추천해줘");
 
@@ -184,7 +211,7 @@ class AiServiceTest {
         when(categoryService.getCategories("tester@example.com"))
                 .thenReturn(List.of(new CategoryResponseDto(10L, "일상")));
 
-        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null,
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
                 "야간 근무", "당직", "2026-07-29T23:00:00", "2026-07-30T00:30:00", 10L, "추천 이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "추천해줘");
@@ -203,7 +230,7 @@ class AiServiceTest {
         when(categoryService.getCategories("tester@example.com"))
                 .thenReturn(List.of(new CategoryResponseDto(10L, "운동")));
 
-        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null,
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
                 "제목", "내용", "이상한 형식", null, 999L, "추천 이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "추천해줘");
@@ -223,7 +250,7 @@ class AiServiceTest {
         when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
 
         stubChatClient(new AiScheduleSuggestion(
-                AiResponseCategory.GENERAL, null, null, null, null, null, null, "오늘은 회의가 2건 있어요."));
+                AiResponseCategory.GENERAL, null, null, null, null, null, null, null, "오늘은 회의가 2건 있어요."));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "오늘 일정 몇 개야?");
 
@@ -247,7 +274,7 @@ class AiServiceTest {
                 .thenReturn(List.of(new CategoryResponseDto(10L, "운동")));
 
         // category는 GENERAL인데 모델이 지시를 어기고 title/startAt/categoryId를 채워 보낸 경우
-        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.GENERAL, null,
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.GENERAL, null, null,
                 "저녁 러닝", "30분 조깅", "2026-07-29T19:00:00", "2026-07-29T19:30:00", 10L, "참고로 이런 것도 있어요"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "운동 종류 뭐가 있어?");
@@ -268,7 +295,7 @@ class AiServiceTest {
         when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
         when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
 
-        stubChatClient(new AiScheduleSuggestion(null, null, "제목", null, null, null, null, "답변"));
+        stubChatClient(new AiScheduleSuggestion(null, null, null, "제목", null, null, null, null, "답변"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "질문");
 
@@ -294,7 +321,7 @@ class AiServiceTest {
         // 모레(오늘이 아닌 날짜)로 미뤄달라는 요청 - SCHEDULE_RECOMMENDATION과 달리 날짜까지 그대로 신뢰해야 한다
         String movedStartAt = now.plusDays(2).withHour(15).withMinute(0).withSecond(0).withNano(0).toString();
         String movedEndAt = now.plusDays(2).withHour(16).withMinute(0).withSecond(0).withNano(0).toString();
-        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_UPDATE, 5L,
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_UPDATE, 5L, null,
                 "팀 회의", "주간 회의", movedStartAt, movedEndAt, 10L, "모레 오후로 옮겼어요"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "그 회의 모레 오후 3시로 옮겨줘");
@@ -319,12 +346,54 @@ class AiServiceTest {
         when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
 
         // 컨텍스트로 보여준 적 없는(지어낸) id
-        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_UPDATE, 999L,
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_UPDATE, 999L, null,
                 "제목", "내용", null, null, null, "이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "그 일정 바꿔줘");
 
         assertThat(exchange.assistantMessage().targetScheduleId()).isNull();
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - MANDALART_FILL은 컨텍스트에 있던 보드 id를 targetMandalartBoardId로 채택하고 실제로 채우기를 수행한다")
+    void sendMessage_success_mandalartFill_callsMandalartAiServiceWithValidBoardId() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+
+        MandalartBoard board = MandalartBoard.builder().id(50L).title("2026년 목표").user(requester).build();
+        when(mandalartBoardRepository.findByUserIdOrderByCreatedAtDesc(1L)).thenReturn(List.of(board));
+        when(mandalartCellRepository.findByBoardIdAndRowIndexAndColIndex(50L, 4, 4)).thenReturn(Optional.empty());
+
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.MANDALART_FILL, null, 50L,
+                null, null, null, null, null, "이 보드를 채워드릴게요"));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "이 만다라트 채워줘");
+
+        assertThat(exchange.assistantMessage().category()).isEqualTo("MANDALART_FILL");
+        assertThat(exchange.assistantMessage().targetMandalartBoardId()).isEqualTo(50L);
+        verify(mandalartAiService).fillWithAi("tester@example.com", 50L);
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - MANDALART_FILL인데 컨텍스트에 없는 targetMandalartBoardId를 주면 검증에 실패해 채우기를 실행하지 않는다")
+    void sendMessage_success_mandalartFill_rejectsUnknownBoardId() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+        // mandalartBoardRepository는 @BeforeEach 기본값(빈 목록)을 그대로 쓴다 - 컨텍스트에 어떤 보드도 없는 상태
+
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.MANDALART_FILL, null, 999L,
+                null, null, null, null, null, "이유"));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "만다라트 채워줘");
+
+        assertThat(exchange.assistantMessage().targetMandalartBoardId()).isNull();
+        verifyNoInteractions(mandalartAiService);
     }
 
     @Test

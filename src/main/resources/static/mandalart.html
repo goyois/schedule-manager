@@ -45,7 +45,13 @@
     </aside>
 
     <main class="main">
-      <h1 class="mandalart-page-title" id="board-title">만다라트를 선택하거나 새로 만들어주세요</h1>
+      <div class="mandalart-header">
+        <h1 class="mandalart-page-title" id="board-title">만다라트를 선택하거나 새로 만들어주세요</h1>
+        <button type="button" class="btn btn-primary btn-sm" id="ai-fill-board-btn" style="display: none; width: auto"
+                title="중앙 9칸(핵심 목표 + 세부목표 8개)을 채운 뒤 누르면, 나머지 빈 칸을 AI가 채워줍니다">
+          🤖 AI로 채우기
+        </button>
+      </div>
 
       <div class="mandalart-grid" id="mandalart-grid"></div>
     </main>

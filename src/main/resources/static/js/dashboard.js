@@ -845,9 +845,18 @@ function renderTodayClock() {
   const sourceList = filterActive ? schedules.filter((s) => selectedNames.has(s.categoryName)) : schedules;
   const todays = assignClockLanes(getTodaysScheduleWindows(sourceList));
 
+  const now = new Date();
+  const isDaytime = now.getHours() >= 6 && now.getHours() < 18;
+
   clockSvgEl.textContent = "";
+  // 낮/밤을 배경색으로도 바로 눈에 띄게 보여준다 - 눈금/바늘 등 나머지 색은 .clock-tick 등의
+  // CSS에서 이 클래스로 스코프한 어두운 배경용 색으로 함께 바뀐다(style.css 참고)
+  clockSvgEl.classList.toggle("is-night", !isDaytime);
   hideClockTooltip();
 
+  clockSvgEl.appendChild(
+    svgEl("circle", { class: "clock-face-bg", cx: CLOCK_CENTER, cy: CLOCK_CENTER, r: CLOCK_FACE_R })
+  );
   clockSvgEl.appendChild(
     svgEl("circle", { class: "clock-face-ring", cx: CLOCK_CENTER, cy: CLOCK_CENTER, r: CLOCK_FACE_R })
   );
@@ -921,12 +930,9 @@ function renderTodayClock() {
     renderTodayClockLegend(usedStatuses);
   }
 
-  const now = new Date();
-
   // 중앙: 해/달 아이콘만 크게 (06~18시는 해, 그 외는 달) - 12시간 다이얼은 오전/오후를 구분하지
   // 못하므로 이 아이콘이 그 역할을 한다. 원래 있던 "오늘 일정 개수" 숫자는 시계 중앙의 날짜창처럼
   // 보여 혼동을 줘서 뺐다
-  const isDaytime = now.getHours() >= 6 && now.getHours() < 18;
   const centerIcon = svgEl("text", {
     class: "clock-center-icon",
     x: CLOCK_CENTER,
@@ -2002,12 +2008,14 @@ function aiChatUserBubbleHtml(message) {
 }
 
 // AiChatMessageDto.category가 "SCHEDULE_RECOMMENDATION"(새 일정 추천)이나 "SCHEDULE_UPDATE"(기존 일정
-// 수정 제안)인 메시지만 제목/시간/내용 + 등록·수정 UI를 보여주고, 그 외(category === "GENERAL" - 잡담,
+// 수정 제안)인 메시지만 제목/시간/내용 + 등록·수정 UI를 보여주고, "MANDALART_FILL"(만다라트 채우기)은
+// 서버가 이미 채우기까지 끝낸 뒤라 결과 안내 + 바로가기만 보여준다. 그 외(category === "GENERAL" - 잡담,
 // 일정 조회/설명 등)는 답변 텍스트만 본문 하나로 보여준다. suggestedTitle 유무가 아니라 서버가 명시적으로
 // 분류한 category로 판단한다(AiService.SYSTEM_PROMPT 참고)
 function aiChatAssistantBubbleHtml(message) {
   const isRecommendation = message.category === "SCHEDULE_RECOMMENDATION";
   const isUpdate = message.category === "SCHEDULE_UPDATE";
+  const isMandalartFill = message.category === "MANDALART_FILL";
   const showSuggestionFields = isRecommendation || isUpdate;
   const parts = [];
 
@@ -2025,9 +2033,17 @@ function aiChatAssistantBubbleHtml(message) {
       parts.push(`<div class="ai-chat-bubble-content">${escapeHtml(message.suggestedContent)}</div>`);
     }
   }
+  if (isMandalartFill) {
+    parts.push(`<div class="ai-chat-bubble-tag">🧩 만다라트 채우기</div>`);
+  }
   if (message.message) {
     const textClass = showSuggestionFields ? "ai-chat-bubble-reason" : "ai-chat-bubble-content";
     parts.push(`<div class="${textClass}">${escapeHtml(message.message)}</div>`);
+  }
+  if (isMandalartFill && message.targetMandalartBoardId) {
+    parts.push(`<div class="ai-chat-bubble-actions">
+      <a class="btn btn-ghost btn-sm" href="/mandalart" target="_blank" rel="noopener">만다라트 보기</a>
+    </div>`);
   }
 
   if (isRecommendation) {

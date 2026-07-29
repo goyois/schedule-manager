@@ -9,6 +9,11 @@ import com.example.schedule_manager.domain.ai.entity.AiResponseCategory;
 import com.example.schedule_manager.domain.ai.repository.AiChatMessageRepository;
 import com.example.schedule_manager.domain.category.dto.CategoryResponseDto;
 import com.example.schedule_manager.domain.category.service.CategoryService;
+import com.example.schedule_manager.domain.mandalart.entity.MandalartBoard;
+import com.example.schedule_manager.domain.mandalart.entity.MandalartCell;
+import com.example.schedule_manager.domain.mandalart.repository.MandalartBoardRepository;
+import com.example.schedule_manager.domain.mandalart.repository.MandalartCellRepository;
+import com.example.schedule_manager.domain.mandalart.service.MandalartAiService;
 import com.example.schedule_manager.domain.schedule.dto.ScheduleResponseDto;
 import com.example.schedule_manager.domain.schedule.service.ScheduleService;
 import com.example.schedule_manager.domain.user.entity.User;
@@ -52,10 +57,17 @@ public class AiService {
             대화에 답하세요. 대화는 계속 이어질 수 있으니 이전에 추천/제안한 내용을 기억하고 사용자의 후속
             질문(수정 요청, 추가 질문 등)에 자연스럽게 이어서 답하세요.
 
-            먼저 이번 답변을 아래 세 카테고리 중 하나로 분류해 category에 쓰세요. 판단 순서가 중요합니다 -
+            먼저 이번 답변을 아래 네 카테고리 중 하나로 분류해 category에 쓰세요. 판단 순서가 중요합니다 -
             아래 순서 그대로 확인하세요.
 
-            1) 사용자의 요청이 [기존 일정] 목록에 있는 특정 일정 하나를 바꾸는 것(시간/날짜 변경, 미루기,
+            1) 사용자의 요청이 [만다라트 보드] 목록에 있는 보드 하나를 채워달라는 것(예: "이 목표 만다라트
+               채워줘", "OO 보드 빈 칸 채워줘")이면 MANDALART_FILL로 분류하세요.
+               - targetMandalartBoardId에 [만다라트 보드] 목록의 "id:숫자" 중 그 보드의 id를 정확히 쓰세요.
+                 title/content/startAt/endAt/categoryId/targetScheduleId는 전부 null로 두세요.
+               - reason에는 어느 보드를 채우는지 한 문장으로 답하세요.
+               - 어느 보드인지 [만다라트 보드] 목록에서 특정할 수 없으면(목록이 비어있거나 여러 개라
+                 애매하면) MANDALART_FILL로 분류하지 말고 GENERAL로 답하며 어느 보드인지 되물으세요.
+            2) 사용자의 요청이 [기존 일정] 목록에 있는 특정 일정 하나를 바꾸는 것(시간/날짜 변경, 미루기,
                제목·내용 수정 등)이면 무조건 SCHEDULE_UPDATE로 분류하세요. "옮겨줘", "미뤄줘", "바꿔줘",
                "수정해줘" 같은 말은 거의 항상 이 경우입니다 - 이미 존재하는 그 일정을 다시 추천하듯
                SCHEDULE_RECOMMENDATION으로 분류하면 안 됩니다.
@@ -68,15 +80,15 @@ public class AiService {
                - reason에는 무엇을 어떻게 바꾸는지 한두 문장으로 설명하세요.
                - 어느 일정을 말하는지 [기존 일정] 목록에서 특정할 수 없으면 SCHEDULE_UPDATE로 분류하지 말고
                  GENERAL로 답하며 어느 일정인지 되물으세요.
-            2) 그게 아니라 [기존 일정]에 없는 완전히 새로운 일정 하나를 만들어 추천받고 싶어하는 경우면
+            3) 그게 아니라 [기존 일정]에 없는 완전히 새로운 일정 하나를 만들어 추천받고 싶어하는 경우면
                SCHEDULE_RECOMMENDATION으로 분류하세요. 이때만 title/startAt/categoryId 등 나머지 필드를
-               채우고, targetScheduleId는 null로 두세요.
+               채우고, targetScheduleId/targetMandalartBoardId는 null로 두세요.
                - categoryId는 [사용 가능한 카테고리]에 나열된 id 중 하나만 쓰고, 적절한 카테고리가 없으면 null로 두세요.
                - 종료 시각이 필요 없는 알림형 일정이면 endAt을 null로 두세요.
                - reason에는 왜 이 일정을 추천하는지 한두 문장으로 설명하세요.
-            3) 그 외 모든 경우(기존 일정 조회/설명, 잡담, 대상을 특정할 수 없는 수정 요청 등)는 GENERAL로
-               분류하세요. targetScheduleId와 title/content/startAt/endAt/categoryId를 전부 null로 두고,
-               reason에 답변 내용을 쓰세요.
+            4) 그 외 모든 경우(기존 일정 조회/설명, 잡담, 대상을 특정할 수 없는 수정/채우기 요청 등)는
+               GENERAL로 분류하세요. targetScheduleId/targetMandalartBoardId와
+               title/content/startAt/endAt/categoryId를 전부 null로 두고, reason에 답변 내용을 쓰세요.
 
             SCHEDULE_UPDATE와 SCHEDULE_RECOMMENDATION 모두 startAt/endAt은 "yyyy-MM-ddTHH:mm:ss" 형식
             (타임존 없음)으로 쓰세요.
@@ -88,6 +100,9 @@ public class AiService {
     private final UserRepository userRepository;
     private final AiChatMessageRepository aiChatMessageRepository;
     private final AiRateLimiter aiRateLimiter;
+    private final MandalartBoardRepository mandalartBoardRepository;
+    private final MandalartCellRepository mandalartCellRepository;
+    private final MandalartAiService mandalartAiService;
 
     @Transactional(readOnly = true)
     public List<AiChatMessageDto> getConversation(String requesterEmail) {
@@ -134,6 +149,9 @@ public class AiService {
         Set<Long> windowedScheduleIds = windowedSchedules.stream().map(ScheduleResponseDto::id).collect(Collectors.toSet());
         List<CategoryResponseDto> categories = categoryService.getCategories(requesterEmail);
         String categoryContext = buildCategoryContext(categories);
+        List<MandalartBoard> mandalartBoards = mandalartBoardRepository.findByUserIdOrderByCreatedAtDesc(requester.getId());
+        String mandalartContext = buildMandalartContext(mandalartBoards);
+        Set<Long> ownedMandalartBoardIds = mandalartBoards.stream().map(MandalartBoard::getId).collect(Collectors.toSet());
 
         List<Message> conversationHistory = recentHistory.stream().map(this::toSpringAiMessage).toList();
 
@@ -142,7 +160,8 @@ public class AiService {
             suggestion = chatClient.prompt()
                     .system(SYSTEM_PROMPT)
                     .messages(conversationHistory)
-                    .user(userText + "\n\n[기존 일정]\n" + scheduleContext + "\n\n[사용 가능한 카테고리]\n" + categoryContext)
+                    .user(userText + "\n\n[기존 일정]\n" + scheduleContext + "\n\n[사용 가능한 카테고리]\n" + categoryContext
+                            + "\n\n[만다라트 보드]\n" + mandalartContext)
                     .call()
                     .entity(AiScheduleSuggestion.class);
         } catch (Exception e) {
@@ -152,11 +171,13 @@ public class AiService {
         }
 
         // 모델이 category를 비워 보내는 등 응답을 신뢰할 수 없는 경우 GENERAL로 취급한다(등록/수정 UI가
-        // 잘못 노출되는 쪽보다 안 보이는 쪽이 안전하다) - SCHEDULE_RECOMMENDATION/SCHEDULE_UPDATE일 때만
-        // 나머지 필드를 채우고, 그 외에는 모델이 뭘 채워 보냈든 전부 무시하고 강제로 비운다(방어적 처리)
+        // 잘못 노출되는 쪽보다 안 보이는 쪽이 안전하다) - SCHEDULE_RECOMMENDATION/SCHEDULE_UPDATE/
+        // MANDALART_FILL일 때만 나머지 필드를 채우고, 그 외에는 모델이 뭘 채워 보냈든 전부 무시하고
+        // 강제로 비운다(방어적 처리)
         AiResponseCategory category = suggestion.category() != null ? suggestion.category() : AiResponseCategory.GENERAL;
         boolean isRecommendation = category == AiResponseCategory.SCHEDULE_RECOMMENDATION;
         boolean isUpdate = category == AiResponseCategory.SCHEDULE_UPDATE;
+        boolean isMandalartFill = category == AiResponseCategory.MANDALART_FILL;
 
         Long categoryId = null;
         LocalDateTime startAt = null;
@@ -164,6 +185,7 @@ public class AiService {
         String suggestedTitle = null;
         String suggestedContent = null;
         Long targetScheduleId = null;
+        Long targetMandalartBoardId = null;
 
         if (isRecommendation) {
             Set<Long> validCategoryIds = categories.stream().map(CategoryResponseDto::id).collect(Collectors.toSet());
@@ -203,6 +225,18 @@ public class AiService {
             }
             suggestedTitle = suggestion.title();
             suggestedContent = suggestion.content();
+        } else if (isMandalartFill) {
+            // 모델이 [만다라트 보드] 컨텍스트에 없는(또는 지어낸) id를 줄 수 있으므로, 실제로 이번 턴에
+            // 보여준 본인 소유 보드 id 집합에 있을 때만 신뢰한다(targetScheduleId 검증과 같은 이유)
+            targetMandalartBoardId = suggestion.targetMandalartBoardId() != null
+                    && ownedMandalartBoardIds.contains(suggestion.targetMandalartBoardId())
+                    ? suggestion.targetMandalartBoardId()
+                    : null;
+            if (targetMandalartBoardId != null) {
+                // 스케줄 추천/수정과 달리 별도의 "반영" 버튼 없이 바로 채운다 - 빈 칸만 채우고 이미 채워진
+                // 칸은 절대 건드리지 않으므로(MandalartAiService) 검토 단계 없이 자동 적용해도 안전하다
+                mandalartAiService.fillWithAi(requesterEmail, targetMandalartBoardId);
+            }
         }
 
         AiChatMessage userMessage = aiChatMessageRepository.save(AiChatMessage.builder()
@@ -217,6 +251,7 @@ public class AiService {
                 .messageText(suggestion.reason())
                 .category(category)
                 .targetScheduleId(targetScheduleId)
+                .targetMandalartBoardId(targetMandalartBoardId)
                 .suggestedTitle(suggestedTitle)
                 .suggestedContent(suggestedContent)
                 .suggestedStartAt(startAt)
@@ -225,6 +260,24 @@ public class AiService {
                 .build());
 
         return new AiChatExchangeDto(AiChatMessageDto.from(userMessage), AiChatMessageDto.from(assistantMessage));
+    }
+
+    // 모델이 MANDALART_FILL의 targetMandalartBoardId로 어느 보드를 가리키는지 밝힐 수 있도록 보드
+    // id와 핵심 목표(4,4 칸)를 함께 보여준다 - 제목만으로는 어느 보드인지 구분하기 어려울 수 있어서
+    // (예: 여러 보드를 "커리어"라고 비슷하게 지었어도 핵심 목표 내용은 다를 수 있음)
+    private String buildMandalartContext(List<MandalartBoard> boards) {
+        if (boards.isEmpty()) {
+            return "(등록된 만다라트 보드 없음)";
+        }
+        return boards.stream()
+                .map(b -> {
+                    String mainGoal = mandalartCellRepository.findByBoardIdAndRowIndexAndColIndex(b.getId(), 4, 4)
+                            .map(MandalartCell::getContent)
+                            .filter(content -> content != null && !content.isBlank())
+                            .orElse("(핵심 목표 미입력)");
+                    return "- [id:%d] %s (핵심 목표: %s)".formatted(b.getId(), b.getTitle(), mainGoal);
+                })
+                .collect(Collectors.joining("\n"));
     }
 
     // 과거 ASSISTANT 턴을 LLM에 그대로 재현하기보다(구조화된 필드를 다시 JSON으로 만들어 넣는 건 과함),

@@ -8,6 +8,7 @@ const toast = document.getElementById("toast");
 const boardListEl = document.getElementById("board-list");
 const gridEl = document.getElementById("mandalart-grid");
 const boardTitleEl = document.getElementById("board-title");
+const aiFillBtn = document.getElementById("ai-fill-board-btn");
 
 function showToast(message) {
   toast.textContent = message;
@@ -79,6 +80,7 @@ function renderBoardList() {
           activeCells = null;
           gridEl.innerHTML = "";
           boardTitleEl.textContent = "만다라트를 선택하거나 새로 만들어주세요";
+          aiFillBtn.style.display = "none";
         }
         await loadBoards();
         // 지우고 나서도 빈 화면 대신, 남아있다면 목록 맨 위 것을 바로 보여준다(초기 진입과 동일한 원칙)
@@ -99,12 +101,33 @@ async function loadBoard(id) {
     activeBoardId = board.id;
     activeCells = new Map(board.cells.map((c) => [`${c.row}-${c.col}`, c.content]));
     boardTitleEl.textContent = board.title;
+    aiFillBtn.style.display = "";
     renderBoardList();
     renderGrid();
   } catch (err) {
     showToast(`만다라트를 불러오지 못했습니다. ${err.message}`);
   }
 }
+
+// 중앙 9칸(핵심 목표 + 세부목표 8개)을 채운 뒤 누르면, 나머지 빈 칸(대부분 실행항목 64개)을 AI가
+// 채운다 - 이미 채워진 칸은 절대 건드리지 않으므로(MandalartAiService) 여러 번 눌러도 안전하다
+aiFillBtn.addEventListener("click", async () => {
+  if (!activeBoardId) return;
+
+  const originalLabel = aiFillBtn.textContent;
+  aiFillBtn.disabled = true;
+  aiFillBtn.textContent = "채우는 중...";
+  try {
+    await API.post(`/api/mandalart/${activeBoardId}/ai-fill`, {});
+    await loadBoard(activeBoardId);
+    showToast("AI가 빈 칸을 채웠습니다.");
+  } catch (err) {
+    showToast(`AI로 채우기에 실패했습니다. ${err.message}`);
+  } finally {
+    aiFillBtn.disabled = false;
+    aiFillBtn.textContent = originalLabel;
+  }
+});
 
 // 정중앙(4,4)이 속한 중앙 블록을 제외한 8개 블록의 색 슬롯 - 읽는 순서로 고정(dataviz 색상 배정 규칙:
 // 카테고리 색은 항상 고정 순서로 배정하고, 데이터에 따라 순서를 바꾸지 않는다)
