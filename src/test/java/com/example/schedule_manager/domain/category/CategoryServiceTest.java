@@ -151,6 +151,36 @@ class CategoryServiceTest {
     }
 
     @Test
+    @DisplayName("카테고리 삭제 성공 - ADMIN 요청자는 ADMIN 이 만든 기본 설정 카테고리를 삭제할 수 있다")
+    void deleteCategory_ownedByAdmin_requestedByAdmin_succeeds() {
+        User admin = user(99L, UserType.ADMIN);
+        Category adminCategory = Category.builder().id(1L).name("기본").user(admin).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(admin));
+        when(categoryRepository.findById(1L)).thenReturn(Optional.of(adminCategory));
+
+        categoryService.deleteCategory("tester@example.com", 1L);
+
+        verify(categoryRepository).delete(adminCategory);
+    }
+
+    @Test
+    @DisplayName("카테고리 삭제 실패 - ADMIN 요청자라도 아직 이 카테고리를 쓰는 일정이 있으면 삭제할 수 없다")
+    void deleteCategory_ownedByAdmin_stillUsedBySchedules_throwsForbiddenEvenForAdmin() {
+        User admin = user(99L, UserType.ADMIN);
+        Category adminCategory = Category.builder().id(1L).name("기본").user(admin).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(admin));
+        when(categoryRepository.findById(1L)).thenReturn(Optional.of(adminCategory));
+        when(scheduleRepository.existsByCategoryId(1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> categoryService.deleteCategory("tester@example.com", 1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEFAULT_CATEGORY_DELETE_FORBIDDEN);
+
+        verify(categoryRepository, never()).delete(any());
+    }
+
+    @Test
     @DisplayName("카테고리 삭제 실패 - 아직 이 카테고리를 쓰는 일정이 있으면 삭제할 수 없다")
     void deleteCategory_stillUsedBySchedules_throwsForbidden() {
         User requester = user(5L, UserType.USER);
