@@ -1,11 +1,15 @@
 package com.example.schedule_manager.domain.schedule.controller;
 
+import com.example.schedule_manager.domain.schedule.dto.PageResponseDto;
 import com.example.schedule_manager.domain.schedule.dto.ScheduleRequestDto;
 import com.example.schedule_manager.domain.schedule.dto.ScheduleResponseDto;
+import com.example.schedule_manager.domain.schedule.entity.ScheduleStatus;
 import com.example.schedule_manager.domain.schedule.service.ScheduleService;
 import com.example.schedule_manager.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -41,6 +45,19 @@ public class ScheduleController {
             @RequestParam(required = false) Long userId,
             @RequestParam(required = false) Long categoryId) {
         return ResponseEntity.ok(ApiResponse.success(scheduleService.getSchedules(principal.getUsername(), userId, categoryId)));
+    }
+
+    // 보드 뷰 상태 컬럼(status) 하나를 "오늘" 범위로 좁혀 서버에서 페이징 조회한다 - 컬럼별 "더보기"
+    // 클릭마다 size 를 늘려가며 이 엔드포인트를 다시 호출한다(dashboard.js loadBoardColumns 참고)
+    @GetMapping("/board")
+    public ResponseEntity<ApiResponse<PageResponseDto<ScheduleResponseDto>>> getBoardSchedules(
+            @AuthenticationPrincipal UserDetails principal,
+            @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam ScheduleStatus status,
+            @PageableDefault(size = 5) Pageable pageable) {
+        return ResponseEntity.ok(ApiResponse.success(
+                scheduleService.getBoardSchedules(principal.getUsername(), userId, categoryId, status, pageable)));
     }
 
     @PutMapping("/{id}")

@@ -14,6 +14,8 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.List;
 
@@ -54,6 +56,30 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody().getMessage()).isEqualTo("title: 제목을 입력해주세요.");
+    }
+
+    @Test
+    @DisplayName("필수 @RequestParam 누락 시 파라미터 이름을 담아 400으로 응답한다")
+    void handleMissingParameter_returns400WithParameterName() {
+        MissingServletRequestParameterException e =
+                new MissingServletRequestParameterException("status", "ScheduleStatus");
+
+        ResponseEntity<ApiResponse<Void>> response = handler.handleMissingParameter(e);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getMessage()).isEqualTo("status 파라미터가 필요합니다.");
+    }
+
+    @Test
+    @DisplayName("@RequestParam 값이 대상 타입으로 변환 불가능하면 400으로 응답한다")
+    void handleTypeMismatch_returns400() {
+        MethodArgumentTypeMismatchException e =
+                new MethodArgumentTypeMismatchException("NOT_A_STATUS", null, "status", methodParameter, null);
+
+        ResponseEntity<ApiResponse<Void>> response = handler.handleTypeMismatch(e);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getMessage()).isEqualTo("status 파라미터 값이 올바르지 않습니다.");
     }
 
     @Test

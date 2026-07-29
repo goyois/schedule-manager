@@ -2,6 +2,7 @@ package com.example.schedule_manager.domain.schedule.service;
 
 import com.example.schedule_manager.domain.category.entity.Category;
 import com.example.schedule_manager.domain.category.repository.CategoryRepository;
+import com.example.schedule_manager.domain.schedule.dto.PageResponseDto;
 import com.example.schedule_manager.domain.schedule.dto.ScheduleRequestDto;
 import com.example.schedule_manager.domain.schedule.dto.ScheduleResponseDto;
 import com.example.schedule_manager.domain.schedule.entity.Schedule;
@@ -15,6 +16,8 @@ import com.example.schedule_manager.domain.schedule.entity.ScheduleStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -155,6 +158,26 @@ public class ScheduleService {
         Long targetUserId = requester.getUserType() == UserType.ADMIN ? userId : requester.getId();
 
         return scheduleCacheQueryService.getSchedules(requesterEmail, targetUserId, categoryId);
+    }
+
+    // 보드 뷰 상태 컬럼 하나("더보기" 대상)를 서버에서 LIMIT/OFFSET(Pageable)으로 페이징 조회한다.
+    // getSchedules()와 같은 권한 규칙(USER는 본인 id로 강제, ADMIN은 요청 userId 그대로)을 따르되,
+    // 대상 범위는 항상 "오늘"로 고정한다 - 보드 자체가 오늘 일정만 보여주는 뷰이기 때문(feat-38).
+    // getSchedules()와 달리 캐싱하지 않는다: 페이지 조합이 (email, userId, categoryId, status, size)로
+    // 훨씬 다양해 캐시 적중률이 낮고, "오늘" 범위라 자정마다 저절로 갱신 대상이 바뀌는 데이터라 캐싱해서
+    // 얻는 이득이 적다
+    @Transactional(readOnly = true)
+    public PageResponseDto<ScheduleResponseDto> getBoardSchedules(String requesterEmail, Long userId, Long categoryId,
+                                                                    ScheduleStatus status, Pageable pageable) {
+        User requester = findUserByEmail(requesterEmail);
+        Long targetUserId = requester.getUserType() == UserType.ADMIN ? userId : requester.getId();
+
+        LocalDateTime rangeStart = LocalDate.now().atStartOfDay();
+        LocalDateTime rangeEnd = rangeStart.plusDays(1);
+
+        Page<ScheduleResponseDto> page = scheduleRepository.searchBoardSchedules(
+                targetUserId, categoryId, status, rangeStart, rangeEnd, pageable);
+        return PageResponseDto.from(page);
     }
 
     // #v3: update/delete 는 매개변수로 스케줄 id 만 받기 때문에, 이전엔 소유자(userId)를 알아내려면

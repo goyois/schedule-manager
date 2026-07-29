@@ -7,8 +7,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @Slf4j
 @RestControllerAdvice
@@ -31,6 +33,21 @@ public class GlobalExceptionHandler {
                 .orElse("요청 값이 올바르지 않습니다.");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.error(HttpStatus.BAD_REQUEST.value(), message));
+    }
+
+    // 필수 @RequestParam 누락(예: GET /api/schedules/board?status= 을 빼먹은 경우) — @Valid 바디 검증과
+    // 마찬가지로 400으로 응답한다. 이 핸들러가 없으면 Exception.class 캐치올로 떨어져 500으로 새어나간다
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingParameter(MissingServletRequestParameterException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(HttpStatus.BAD_REQUEST.value(), e.getParameterName() + " 파라미터가 필요합니다."));
+    }
+
+    // @RequestParam 값이 대상 타입으로 변환 불가능한 경우 (예: status=존재하지_않는_enum_값, id=문자열)
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(HttpStatus.BAD_REQUEST.value(), e.getName() + " 파라미터 값이 올바르지 않습니다."));
     }
 
     // 로그인 시 AuthenticationManager.authenticate() 가 던지는 예외(이메일 없음/비밀번호 불일치 등) —
