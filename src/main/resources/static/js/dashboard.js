@@ -852,35 +852,36 @@ function renderTodayClock() {
     svgEl("circle", { class: "clock-face-ring", cx: CLOCK_CENTER, cy: CLOCK_CENTER, r: CLOCK_FACE_R })
   );
 
-  // 24시간 눈금: 매시 hairline, 0/6/12/18 시에만 라벨 (직접 라벨은 아껴서)
-  for (let h = 0; h < 24; h++) {
-    const angle = (h / 24) * 360;
-    const isMajor = h % 6 === 0;
-    const inner = polarPoint(isMajor ? 66 : 70, angle);
+  // 12시간 눈금: 일반 시계처럼 1~12 전부 라벨을 붙인다(0시/12시는 "12"로 표시)
+  for (let h = 0; h < 12; h++) {
+    const angle = (h / 12) * 360;
+    const inner = polarPoint(66, angle);
     const outer = polarPoint(CLOCK_FACE_R, angle);
     clockSvgEl.appendChild(
       svgEl("line", { class: "clock-tick", x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y })
     );
-    if (isMajor) {
-      const labelPt = polarPoint(58, angle);
-      const label = svgEl("text", {
-        class: "clock-tick-label",
-        x: labelPt.x,
-        y: labelPt.y + 3,
-        "text-anchor": "middle",
-      });
-      label.textContent = String(h).padStart(2, "0");
-      clockSvgEl.appendChild(label);
-    }
+    const labelPt = polarPoint(56, angle);
+    const label = svgEl("text", {
+      class: "clock-tick-label",
+      x: labelPt.x,
+      y: labelPt.y + 3,
+      "text-anchor": "middle",
+    });
+    label.textContent = String(h === 0 ? 12 : h);
+    clockSvgEl.appendChild(label);
   }
 
   const usedStatuses = new Set();
   const usedCategoryNames = new Set();
 
+  // 레인 배정(assignClockLanes)은 실제 24시간 기준 겹침으로 이미 끝난 뒤이므로, 각도만 12시간
+  // 기준(720분 = 12*60)으로 접어 넣는다 - 오전/오후에 같은 시각의 일정이 있으면 각도가 겹칠 수 있는데
+  // (일반 아날로그 시계와 같은 한계), 중앙의 해/달 아이콘으로 지금이 오전인지 오후인지 구분해준다
   todays.forEach((s) => {
     const r = CLOCK_LANE_R[s.lane];
-    const startAngle = (s.startMin / 1440) * 360;
-    const endAngle = (s.endMin / 1440) * 360;
+    const startAngle = ((s.startMin % 720) / 720) * 360;
+    let endAngle = ((s.endMin % 720) / 720) * 360;
+    if (endAngle <= startAngle) endAngle += 360; // 11시대 -> 12시대처럼 12시간 경계를 넘어가는 구간 보정
     const d = describeClockArc(r, startAngle, endAngle);
     usedStatuses.add(s.status);
     if (s.categoryName) usedCategoryNames.add(s.categoryName);
@@ -920,27 +921,23 @@ function renderTodayClock() {
     renderTodayClockLegend(usedStatuses);
   }
 
-  // 중앙: 오늘 일정 개수 (데이터가 없어도 "0"으로 자연스럽게 빈 상태를 표현)
-  const centerValue = svgEl("text", {
-    class: "clock-center-value",
-    x: CLOCK_CENTER,
-    y: CLOCK_CENTER - 2,
-    "text-anchor": "middle",
-  });
-  centerValue.textContent = String(todays.length);
-  const centerLabel = svgEl("text", {
-    class: "clock-center-label",
-    x: CLOCK_CENTER,
-    y: CLOCK_CENTER + 14,
-    "text-anchor": "middle",
-  });
-  centerLabel.textContent = "오늘 일정";
-  clockSvgEl.appendChild(centerValue);
-  clockSvgEl.appendChild(centerLabel);
-
-  // 현재 시각 표시선
   const now = new Date();
-  const nowAngle = ((now.getHours() * 60 + now.getMinutes()) / 1440) * 360;
+
+  // 중앙: 해/달 아이콘만 크게 (06~18시는 해, 그 외는 달) - 12시간 다이얼은 오전/오후를 구분하지
+  // 못하므로 이 아이콘이 그 역할을 한다. 원래 있던 "오늘 일정 개수" 숫자는 시계 중앙의 날짜창처럼
+  // 보여 혼동을 줘서 뺐다
+  const isDaytime = now.getHours() >= 6 && now.getHours() < 18;
+  const centerIcon = svgEl("text", {
+    class: "clock-center-icon",
+    x: CLOCK_CENTER,
+    y: CLOCK_CENTER + 8,
+    "text-anchor": "middle",
+  });
+  centerIcon.textContent = isDaytime ? "☀️" : "🌙";
+  clockSvgEl.appendChild(centerIcon);
+
+  // 현재 시각 표시선 - 12시간을 한 바퀴로 돈다(일반 아날로그 시계와 동일)
+  const nowAngle = (((now.getHours() % 12) * 60 + now.getMinutes()) / 720) * 360;
   const nowInner = polarPoint(30, nowAngle);
   const nowOuter = polarPoint(CLOCK_FACE_R, nowAngle);
   clockSvgEl.appendChild(
@@ -2087,6 +2084,28 @@ async function loadAiChatMessages() {
   renderAiChatMessages();
 }
 
+// 인사 말풍선을 X로 닫으면, 새로고침해도 다시 뜨지 않게 이메일별로 기억해둔다 - 서버에는 저장할 만한
+// 값이 아니라(activeCategoryStorageKey/radarCategoryFilterStorageKey와 같은 이유) localStorage를 쓴다
+function aiChatbotBubbleDismissedKey() {
+  const user = API.getCurrentUser();
+  const email = (user && user.email) || "anonymous";
+  return `ai-chatbot-bubble-dismissed:${email}`;
+}
+
+function isAiChatbotBubbleDismissed() {
+  return localStorage.getItem(aiChatbotBubbleDismissedKey()) === "true";
+}
+
+if (isAiChatbotBubbleDismissed()) {
+  aiChatbotBubble.style.display = "none";
+}
+
+document.getElementById("ai-chatbot-bubble-close").addEventListener("click", (e) => {
+  e.stopPropagation(); // 아바타 클릭(채팅 패널 열기)으로 번지지 않게
+  aiChatbotBubble.style.display = "none";
+  localStorage.setItem(aiChatbotBubbleDismissedKey(), "true");
+});
+
 function openAiSuggestModal() {
   aiSuggestForm.reset();
   aiSuggestLoadingField.style.display = "none";
@@ -2098,7 +2117,10 @@ function openAiSuggestModal() {
 
 function closeAiSuggestModal() {
   aiChatPanel.classList.remove("show");
-  aiChatbotBubble.style.display = "";
+  // X로 이미 닫아둔 상태라면 패널을 닫는다고 인사 말풍선을 다시 띄우지 않는다
+  if (!isAiChatbotBubbleDismissed()) {
+    aiChatbotBubble.style.display = "";
+  }
 }
 
 function toggleAiSuggestModal() {
@@ -2535,7 +2557,12 @@ function showScheduleReminder(schedule) {
   card.appendChild(metaEl);
   card.appendChild(closeBtn);
 
-  const dismiss = () => card.remove();
+  // 나타날 때(schedule-reminder-in, CSS) 위에서 당겨지듯 내려오는 것과 대칭으로, 사라질 때도 바로
+  // DOM에서 지우지 않고 위로 당겨지듯 올라가며 사라지는 애니메이션이 끝난 뒤에 지운다
+  const dismiss = () => {
+    card.classList.add("dismissing");
+    card.addEventListener("animationend", () => card.remove(), { once: true });
+  };
   closeBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     dismiss();

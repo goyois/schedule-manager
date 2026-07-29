@@ -1153,15 +1153,8 @@ button {
   stroke-width: 1;
 }
 
-.clock-center-value {
-  font-size: 22px;
-  font-weight: 700;
-  fill: var(--color-text);
-}
-
-.clock-center-label {
-  font-size: 9px;
-  fill: var(--color-text-muted);
+.clock-center-icon {
+  font-size: 26px;
 }
 
 .clock-arc {
@@ -2019,12 +2012,35 @@ button {
   background: #fff;
   border: 1px solid var(--color-border);
   border-radius: 14px;
-  padding: 10px 14px;
+  padding: 10px 22px 10px 14px;
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--color-text);
   box-shadow: var(--shadow-card);
   animation: ai-bubble-in 0.35s ease-out;
+}
+
+.ai-chatbot-bubble-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.ai-chatbot-bubble-close:hover {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
 }
 
 .ai-chatbot-bubble-tail {
@@ -2391,6 +2407,24 @@ button {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* 닫기 버튼/클릭/자동 dismiss 모두 이 클래스를 먼저 붙이고, 애니메이션이 끝나면(animationend) DOM에서
+   지운다(dashboard.js showScheduleReminder의 dismiss 참고) - schedule-reminder-in과 정확히 대칭 */
+.schedule-reminder.dismissing {
+  animation: schedule-reminder-out 0.18s ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes schedule-reminder-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
   }
 }
 
