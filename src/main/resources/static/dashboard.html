@@ -164,9 +164,13 @@
 
     <div class="ai-chat-messages" id="ai-chat-messages"></div>
 
-    <div class="ai-suggest-loading" id="ai-suggest-loading" style="display: none">
-      <div class="ai-suggest-progress"><div class="ai-suggest-progress-bar"></div></div>
-      <div class="ai-suggest-loading-text">AI가 답변을 생각하는 중이에요...</div>
+    <div class="ai-suggest-loading" id="ai-suggest-loading" style="display: none" aria-label="AI가 답변을 작성하는 중">
+      <div class="ai-suggest-loading-avatar">🤖</div>
+      <div class="ai-suggest-loading-bubble">
+        <span class="ai-typing-dot"></span>
+        <span class="ai-typing-dot"></span>
+        <span class="ai-typing-dot"></span>
+      </div>
     </div>
 
     <form id="ai-suggest-form" class="ai-chat-input-row">

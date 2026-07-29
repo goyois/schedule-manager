@@ -14,6 +14,27 @@ function requireAuth() {
   return true;
 }
 
+// ---------- 왼쪽 메뉴바 - 패널 전환 ----------
+// 항목이 늘어나도 data-settings-panel 값과 #settings-panel-{key} id만 맞추면 되도록 위임 처리한다
+
+const settingsMenuEl = document.getElementById("settings-menu");
+const settingsPanelEls = document.querySelectorAll(".settings-panel");
+
+function showSettingsPanel(key) {
+  settingsMenuEl.querySelectorAll(".settings-menu-item").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.settingsPanel === key);
+  });
+  settingsPanelEls.forEach((panel) => {
+    panel.classList.toggle("active", panel.id === `settings-panel-${key}`);
+  });
+}
+
+settingsMenuEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-settings-panel]");
+  if (!btn) return;
+  showSettingsPanel(btn.dataset.settingsPanel);
+});
+
 function renderUserChip() {
   const user = API.getCurrentUser();
   const email = (user && user.email) || "-";
@@ -129,6 +150,7 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
 (async function init() {
   if (!requireAuth()) return;
   renderUserChip();
+  showSettingsPanel("automation"); // 기본으로 열리는 패널
 
   try {
     const me = await API.get("/api/users/me");
