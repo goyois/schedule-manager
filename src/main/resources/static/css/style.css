@@ -2146,6 +2146,15 @@ button {
   border-bottom-left-radius: 4px;
 }
 
+/* SCHEDULE_UPDATE(기존 일정 수정 제안) 말풍선임을 알려주는 작은 라벨 - 새 일정 추천과 헷갈리지 않도록 */
+.ai-chat-bubble-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-bottom: 3px;
+}
+
 .ai-chat-bubble-title {
   font-weight: 700;
 }
@@ -2175,13 +2184,33 @@ button {
 .ai-chat-bubble-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 8px;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
 }
 
+/* .btn-primary는 전역적으로 width: 100%라, 여길 override하지 않으면 옆의 ghost 버튼이 남는 공간으로
+   찌그러져 텍스트가 세로로 줄바꿈된다 - 두 버튼 모두 내용 크기만큼만 차지하는 필(pill) 모양으로 통일한다 */
 .ai-chat-bubble-actions .btn {
-  padding: 5px 10px;
-  font-size: 12px;
+  width: auto;
+  flex: 0 0 auto;
+  padding: 7px 16px;
+  font-size: 12.5px;
+  border-radius: 999px;
+  line-height: 1.2;
+}
+
+.ai-chat-bubble-actions .btn-ghost {
+  background: #fff;
+}
+
+.ai-chat-bubble-actions .btn-primary {
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.28);
+}
+
+.ai-chat-bubble-actions .btn-primary:hover {
+  box-shadow: 0 3px 9px rgba(79, 70, 229, 0.38);
 }
 
 .ai-chat-registered-badge {

@@ -10,7 +10,8 @@ let schedules = [];  // ScheduleResponseDto[] (전체 일정, 통계 카드용)
 let categorySchedules = null; // 카테고리 선택 시 서버에서 받아온 해당 카테고리 일정, null = 미선택
 let activeCategoryId = ""; // "" = 전체
 const BOARD_COLUMN_VISIBLE_LIMIT = 5;
-const boardColumnVisibleCount = new Map(); // status key -> 현재까지 펼쳐서 보여줄 개수. "더보기"를 누를 때마다 5씩 늘어나고, 재렌더링(상태 변경 등) 후에도 유지된다
+const boardColumnVisibleCount = new Map(); // status key -> 현재까지 서버에 요청할 개수(size). "더보기"를 누를 때마다 5씩 늘어나고, 재렌더링(상태 변경 등) 후에도 유지된다
+const boardColumnData = new Map(); // status key -> { items: ScheduleResponseDto[], totalElements } - GET /api/schedules/board 응답 캐시
 let viewMode = "board"; // "board" | "day" | "week" | "month" | "year"
 let viewDate = new Date(); // 일/주/월/년 뷰의 기준(anchor) 날짜
 // 이번 세션에서 생성/수정한 일정의 categoryId, userId 를 기억해 수정 모달을 정확히 채워준다
@@ -1089,28 +1090,45 @@ function scheduleCardHtml(s) {
     </div>`;
 }
 
-function renderBoard() {
-  // 보드는 원래 날짜 개념 없이 전체 일정을 다 보여줬는데, 오늘 일정만 보이도록 범위를 좁힌다.
-  // "오늘과 겹치는지"는 시계 위젯(getTodaysScheduleWindows)과 같은 기준(schedulesOverlappingRange)을
-  // 써서, 예를 들어 어제 시작해 오늘 새벽에 끝나는 일정처럼 오늘과 걸쳐 있기만 해도 포함시킨다
-  const todayStart = startOfDay(new Date());
-  const todayEnd = addDays(todayStart, 1);
-  const list = schedulesOverlappingRange(visibleSchedules(), todayStart, todayEnd);
+// 보드 상태 컬럼 하나를 서버에서 페이징 조회한다 - "오늘" 범위 필터링/카테고리 필터는 서버가 담당하고
+// (ScheduleService.getBoardSchedules 참고), size 는 boardColumnVisibleCount(컬럼별로 "더보기"를 누른
+// 만큼 커지는 값)를 그대로 실어 보낸다. offset 은 항상 0으로 두고 size 만 키우는 방식이라 별도의 클라이언트
+// 배열 이어붙이기 없이 매번 "지금까지 펼친 만큼"을 정확히 다시 받아온다
+async function fetchBoardColumnPage(statusKey, size) {
+  const params = new URLSearchParams({ status: statusKey, page: "0", size: String(size) });
+  if (activeCategoryId !== "") params.set("categoryId", activeCategoryId);
+  return API.get(`/api/schedules/board?${params.toString()}`);
+}
 
+async function loadBoardColumns() {
+  await Promise.all(
+    STATUS_COLUMNS.map(async (col) => {
+      const size = boardColumnVisibleCount.get(col.key) ?? BOARD_COLUMN_VISIBLE_LIMIT;
+      try {
+        const res = await fetchBoardColumnPage(col.key, size);
+        boardColumnData.set(col.key, { items: res.content, totalElements: res.totalElements });
+      } catch (err) {
+        boardColumnData.set(col.key, { items: [], totalElements: 0 });
+        showToast(`일정을 불러오지 못했습니다. ${err.message}`);
+      }
+    })
+  );
+}
+
+function renderBoard() {
   board.innerHTML = STATUS_COLUMNS.map((col) => {
-    const items = list.filter((s) => s.status === col.key);
-    const visibleCount = boardColumnVisibleCount.get(col.key) ?? BOARD_COLUMN_VISIBLE_LIMIT;
-    const visibleItems = items.slice(0, visibleCount);
-    const hiddenCount = items.length - visibleItems.length;
+    const data = boardColumnData.get(col.key) ?? { items: [], totalElements: 0 };
+    const items = data.items;
+    const hiddenCount = data.totalElements - items.length;
 
     return `
       <div class="board-column ${col.key}" data-status-column="${col.key}">
         <div class="board-column-header">
           <div class="title"><span class="status-dot ${col.key}"></span>${col.label}</div>
-          <span class="count-badge">${items.length}</span>
+          <span class="count-badge">${data.totalElements}</span>
         </div>
         <div class="board-column-body">
-          ${items.length ? visibleItems.map(scheduleCardHtml).join("") : `<div class="empty-hint">일정이 없습니다</div>`}
+          ${items.length ? items.map(scheduleCardHtml).join("") : `<div class="empty-hint">일정이 없습니다</div>`}
         </div>
         ${
           hiddenCount > 0
@@ -1121,10 +1139,18 @@ function renderBoard() {
   }).join("");
 
   board.querySelectorAll("[data-toggle-more]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const key = btn.dataset.toggleMore;
       const current = boardColumnVisibleCount.get(key) ?? BOARD_COLUMN_VISIBLE_LIMIT;
       boardColumnVisibleCount.set(key, current + BOARD_COLUMN_VISIBLE_LIMIT);
+      const size = boardColumnVisibleCount.get(key);
+      try {
+        const res = await fetchBoardColumnPage(key, size);
+        boardColumnData.set(key, { items: res.content, totalElements: res.totalElements });
+      } catch (err) {
+        showToast(`더 불러오지 못했습니다. ${err.message}`);
+        return;
+      }
       renderBoard();
     });
   });
@@ -1282,7 +1308,7 @@ function refreshVisibleView() {
   renderTodayClock();
   renderAchievementWidget();
   if (viewMode === "board") {
-    renderBoard();
+    loadBoardColumns().then(renderBoard);
     return;
   }
   updateViewRangeLabel();
@@ -1978,14 +2004,23 @@ function aiChatUserBubbleHtml(message) {
   return `<div class="ai-chat-bubble ai-chat-bubble-user">${escapeHtml(message.message)}</div>`;
 }
 
-// 구조화된 추천(title 있음)이면 제목/시간/내용을 먼저 보여주고 추천 이유는 구분선 아래 보조 설명으로,
-// 그냥 텍스트로만 답한 메시지(예: 잡담성 후속 질문 답변)면 본문 하나로만 채운다
+// AiChatMessageDto.category가 "SCHEDULE_RECOMMENDATION"(새 일정 추천)이나 "SCHEDULE_UPDATE"(기존 일정
+// 수정 제안)인 메시지만 제목/시간/내용 + 등록·수정 UI를 보여주고, 그 외(category === "GENERAL" - 잡담,
+// 일정 조회/설명 등)는 답변 텍스트만 본문 하나로 보여준다. suggestedTitle 유무가 아니라 서버가 명시적으로
+// 분류한 category로 판단한다(AiService.SYSTEM_PROMPT 참고)
 function aiChatAssistantBubbleHtml(message) {
-  const hasSuggestion = !!message.suggestedTitle;
+  const isRecommendation = message.category === "SCHEDULE_RECOMMENDATION";
+  const isUpdate = message.category === "SCHEDULE_UPDATE";
+  const showSuggestionFields = isRecommendation || isUpdate;
   const parts = [];
 
-  if (hasSuggestion) {
-    parts.push(`<div class="ai-chat-bubble-title">${escapeHtml(message.suggestedTitle)}</div>`);
+  if (showSuggestionFields) {
+    if (isUpdate) {
+      parts.push(`<div class="ai-chat-bubble-tag">✏️ 수정 제안</div>`);
+    }
+    if (message.suggestedTitle) {
+      parts.push(`<div class="ai-chat-bubble-title">${escapeHtml(message.suggestedTitle)}</div>`);
+    }
     if (message.suggestedStartAt) {
       parts.push(`<div class="ai-chat-bubble-time">${escapeHtml(formatTimeRange(message.suggestedStartAt, message.suggestedEndAt))}</div>`);
     }
@@ -1994,14 +2029,17 @@ function aiChatAssistantBubbleHtml(message) {
     }
   }
   if (message.message) {
-    const textClass = hasSuggestion ? "ai-chat-bubble-reason" : "ai-chat-bubble-content";
+    const textClass = showSuggestionFields ? "ai-chat-bubble-reason" : "ai-chat-bubble-content";
     parts.push(`<div class="${textClass}">${escapeHtml(message.message)}</div>`);
   }
 
-  if (hasSuggestion) {
+  if (isRecommendation) {
     if (message.registeredScheduleId) {
       parts.push(`<div class="ai-chat-bubble-actions"><span class="ai-chat-registered-badge">✅ 일정으로 등록됨</span></div>`);
     } else {
+      // 설정이 켜져 있으면 메시지를 받는 즉시 자동 등록을 시도하므로(maybeAutoRegisterAfterSend 참고)
+      // 정상적인 경우엔 이 버튼이 거의 보이지 않는다 - 그 시도가 실패했거나(네트워크 오류 등)
+      // 과거 대화 기록을 다시 불러온 경우의 수동 재시도 수단으로 남겨둔다
       const autoEligible = canAutoRegister(message);
       const autoTitle = autoEligible ? "" : "AI가 시작 시각/카테고리 등 충분한 정보를 주지 않아 자동 등록할 수 없어요.";
       const autoBtnHtml = isAiAutoRegisterSettingEnabled()
@@ -2012,9 +2050,20 @@ function aiChatAssistantBubbleHtml(message) {
         ${autoBtnHtml}
       </div>`);
     }
+  } else if (isUpdate) {
+    if (message.registeredScheduleId) {
+      parts.push(`<div class="ai-chat-bubble-actions"><span class="ai-chat-registered-badge">✅ 일정이 수정됨</span></div>`);
+    } else if (message.targetScheduleId) {
+      // "수정": 대상 일정의 기존 수정 폼을 열어(현재 값으로 미리 채워짐) AI 제안값만 덮어쓴 뒤 검토하고
+      // 저장하게 한다. "수정 반영": 추가 창 없이 AI가 제안한 값을 곧바로 PUT으로 반영한다
+      parts.push(`<div class="ai-chat-bubble-actions">
+        <button type="button" class="btn btn-ghost btn-sm" data-action="edit-update" data-message-id="${message.id}">수정</button>
+        <button type="button" class="btn btn-primary btn-sm" data-action="apply-update" data-message-id="${message.id}">수정 반영</button>
+      </div>`);
+    }
   }
 
-  return `<div class="ai-chat-bubble ai-chat-bubble-assistant${hasSuggestion ? " has-suggestion" : ""}">${parts.join("")}</div>`;
+  return `<div class="ai-chat-bubble ai-chat-bubble-assistant${showSuggestionFields ? " has-suggestion" : ""}">${parts.join("")}</div>`;
 }
 
 function renderAiChatMessages() {
@@ -2077,12 +2126,27 @@ aiSuggestForm.addEventListener("submit", async (e) => {
   aiSuggestPromptInput.disabled = true;
   aiSuggestPromptInput.value = "";
   aiSuggestLoadingField.style.display = "";
+
+  // 서버 응답(Claude 호출 포함이라 몇 초 걸릴 수 있다)을 기다리지 않고 내가 보낸 질문을 즉시 채팅창에
+  // 올린다 - 임시 id로 먼저 그렸다가, 서버가 실제로 저장한 메시지 쌍이 오면 그 자리를 통째로 교체한다
+  const tempId = `temp-${Date.now()}`;
+  aiChatMessages.push({ id: tempId, role: "USER", message: prompt });
+  renderAiChatMessages();
+
   try {
     const exchange = await API.post("/api/ai/chat/messages", { message: prompt });
-    aiChatMessages.push(exchange.userMessage, exchange.assistantMessage);
+    const tempIndex = aiChatMessages.findIndex((m) => m.id === tempId);
+    if (tempIndex !== -1) {
+      aiChatMessages.splice(tempIndex, 1, exchange.userMessage, exchange.assistantMessage);
+    } else {
+      aiChatMessages.push(exchange.userMessage, exchange.assistantMessage);
+    }
     renderAiChatMessages();
+    await maybeAutoRegisterAfterSend(exchange.assistantMessage);
   } catch (err) {
-    aiSuggestPromptInput.value = prompt; // 실패했으니 입력했던 내용을 되돌려준다
+    aiChatMessages = aiChatMessages.filter((m) => m.id !== tempId); // 실패했으니 임시로 띄웠던 내 메시지를 지운다
+    renderAiChatMessages();
+    aiSuggestPromptInput.value = prompt; // 입력했던 내용을 되돌려준다
     showToast(`AI 응답에 실패했습니다. ${err.message}`);
   } finally {
     aiSuggestSubmitBtn.disabled = false;
@@ -2133,7 +2197,33 @@ function openCreateModalFromAiSuggestion(message) {
   }
 }
 
-// 일정 저장 자체는 이미 끝난 뒤라, 이 연결이 실패해도 조용히 무시한다(채팅창에 "등록됨" 표시만 안 남을 뿐)
+// AI의 "수정 제안"으로 기존 일정의 수정 폼을 연다 - openEditModal()로 그 일정의 현재 값을 먼저 채운 뒤,
+// AI가 제안한 값이 있는 필드만 덮어쓴다(제안에 없는 필드는 기존 값 그대로 유지). 저장은 여기서 하지 않고,
+// 사용자가 검토/수정한 뒤 폼의 "저장" 버튼을 눌러야 실제로 PUT /api/schedules/{id}가 호출된다
+function openEditModalFromAiSuggestion(message) {
+  openEditModal(message.targetScheduleId);
+  pendingAiChatRegisterMessageId = message.id;
+
+  if (message.suggestedTitle) document.getElementById("title").value = message.suggestedTitle;
+  if (message.suggestedContent) document.getElementById("content").value = message.suggestedContent;
+
+  if (message.suggestedStartAt) {
+    startAtInput.value = toDatetimeLocalValue(message.suggestedStartAt);
+    startAtSync.syncVisibleFromHidden();
+    lastStartValue = startAtInput.value;
+  }
+  if (message.suggestedEndAt) {
+    noEndTimeToggle.checked = false;
+    endAtInput.value = toDatetimeLocalValue(message.suggestedEndAt);
+    applyEndTimeToggleUI();
+    endAtSync.syncVisibleFromHidden();
+  }
+  if (message.suggestedCategoryId && categories.some((c) => String(c.id) === String(message.suggestedCategoryId))) {
+    categorySelect.value = String(message.suggestedCategoryId);
+  }
+}
+
+// 일정 저장/수정 자체는 이미 끝난 뒤라, 이 연결이 실패해도 조용히 무시한다(채팅창에 "등록됨"/"수정됨" 표시만 안 남을 뿐)
 async function linkAiChatMessageToSchedule(messageId, scheduleId) {
   try {
     const updated = await API.patch(`/api/ai/chat/messages/${messageId}/register`, { scheduleId });
@@ -2144,9 +2234,9 @@ async function linkAiChatMessageToSchedule(messageId, scheduleId) {
   }
 }
 
-// 검토 없이 AI 추천 값을 그대로 저장한다 - canAutoRegister()로 이미 필수값이 갖춰졌는지 확인된
-// 경우에만 버튼이 활성화되므로, 여기서는 그대로 기존 POST /api/schedules 저장 경로를 탄다
-async function autoRegisterAiChatMessage(message, buttonEl) {
+// AI 추천 값을 그대로 새 일정으로 저장하고 채팅 메시지와 연결한다 - 검토 없이 바로 반영되는 두 경로
+// (버튼으로 누른 "자동 등록", 설정이 켜져 있을 때 응답을 받자마자 자동으로 반영하는 경로)가 공유한다
+async function saveAiRecommendationAsSchedule(message) {
   const currentUser = API.getCurrentUser();
   const userId = currentUser && currentUser.id;
   const payload = {
@@ -2159,11 +2249,18 @@ async function autoRegisterAiChatMessage(message, buttonEl) {
     categoryId: message.suggestedCategoryId,
   };
 
+  const saved = await API.post("/api/schedules", payload);
+  scheduleMeta.set(String(saved.id), { categoryId: payload.categoryId, userId });
+  await linkAiChatMessageToSchedule(message.id, saved.id);
+  return saved;
+}
+
+// "자동 등록" 버튼을 직접 눌렀을 때 - 저장 후 채팅 패널을 닫고 방금 만든 일정의 상세 팝업까지 보여준다
+// (사용자가 명시적으로 요청한 동작이니 결과를 바로 확인시켜준다)
+async function autoRegisterAiChatMessage(message, buttonEl) {
   buttonEl.disabled = true;
   try {
-    const saved = await API.post("/api/schedules", payload);
-    scheduleMeta.set(String(saved.id), { categoryId: payload.categoryId, userId });
-    await linkAiChatMessageToSchedule(message.id, saved.id);
+    const saved = await saveAiRecommendationAsSchedule(message);
     closeAiSuggestModal();
     showToast("AI 추천으로 일정을 자동 등록했습니다.");
     await refreshAll();
@@ -2176,7 +2273,68 @@ async function autoRegisterAiChatMessage(message, buttonEl) {
   }
 }
 
-// 말풍선마다 등록 버튼이 다시 그려지므로(대화가 늘어날 때마다 renderAiChatMessages가 innerHTML을
+// /settings의 "AI 추천 일정 자동 등록"이 켜져 있으면, 방금 받은 답변이 등록 가능한 추천일 때 버튼
+// 클릭 없이 바로 등록한다 - 채팅 중이라 채팅 패널은 닫지 않고, 결과는 말풍선의 "✅ 등록됨" 배지와
+// 토스트로만 알려준다(자동 등록 버튼을 눌렀을 때처럼 패널을 닫고 상세 팝업으로 이동하진 않는다)
+async function maybeAutoRegisterAfterSend(message) {
+  if (message.category !== "SCHEDULE_RECOMMENDATION" || !canAutoRegister(message)) return;
+  if (!isAiAutoRegisterSettingEnabled()) return;
+
+  try {
+    await saveAiRecommendationAsSchedule(message);
+    renderAiChatMessages(); // linkAiChatMessageToSchedule이 aiChatMessages를 이미 갱신해뒀으므로 다시 그리기만 하면 된다
+    showToast("AI 추천 일정을 자동으로 등록했습니다.");
+    await refreshAll();
+  } catch (err) {
+    showToast(`AI 추천 일정 자동 등록에 실패했습니다. ${err.message}`);
+  }
+}
+
+// AI의 수정 제안을 곧바로 기존 일정에 반영한다("수정 반영" 버튼) - PUT 대상은 항상 대상 일정의 "현재"
+// 값에서 시작해, AiService가 검증에 실패해 null로 비운 필드(예: 잘못된 categoryId)만 원래 값으로
+// 되돌리고 나머지는 AI가 제안한 값을 그대로 쓴다. status는 AI가 건드리지 않는 필드라 항상 현재 값을
+// 유지한다. endAt만은 예외로 원래 값에 fallback하지 않는다 - null 자체가 "알림형으로 바꾼다"는 유효한
+// 최종 상태일 수 있어서, AI가 준 값을 그대로 신뢰해야 한다(SYSTEM_PROMPT가 바뀌지 않는 필드는 현재
+// 값을 그대로 반복하라고 지시하므로, 정말 안 바뀌는 경우엔 이미 원래 endAt이 그대로 담겨 온다)
+async function saveAiUpdateAsSchedule(message) {
+  const current = schedules.find((s) => String(s.id) === String(message.targetScheduleId));
+  if (!current) throw new Error("대상 일정을 더 이상 찾을 수 없습니다. 새로고침 후 다시 시도해주세요.");
+
+  const meta = scheduleMeta.get(String(message.targetScheduleId)) || {};
+  const currentUser = API.getCurrentUser();
+  const userId = meta.userId ?? (currentUser && currentUser.id);
+  const currentCategory = categories.find((c) => c.name === current.categoryName);
+
+  const payload = {
+    title: message.suggestedTitle || current.title,
+    content: message.suggestedContent != null ? message.suggestedContent : current.content || "",
+    startAt: message.suggestedStartAt || current.startAt,
+    endAt: message.suggestedEndAt,
+    status: current.status,
+    userId,
+    categoryId: message.suggestedCategoryId || meta.categoryId || (currentCategory ? currentCategory.id : undefined),
+  };
+
+  const saved = await API.put(`/api/schedules/${message.targetScheduleId}`, payload);
+  scheduleMeta.set(String(saved.id), { categoryId: payload.categoryId, userId });
+  await linkAiChatMessageToSchedule(message.id, saved.id);
+  return saved;
+}
+
+async function applyAiUpdateToSchedule(message, buttonEl) {
+  buttonEl.disabled = true;
+  try {
+    await saveAiUpdateAsSchedule(message);
+    renderAiChatMessages();
+    showToast("AI 제안대로 일정을 수정했습니다.");
+    await refreshAll();
+  } catch (err) {
+    showToast(`일정 수정에 실패했습니다. ${err.message}`);
+    buttonEl.disabled = false;
+  }
+}
+
+// 말풍선마다 등록/수정 버튼이 다시 그려지므로(대화가 늘어날 때마다 renderAiChatMessages가 innerHTML을
 // 통째로 갈아끼운다), 버튼 각각에 리스너를 새로 붙이는 대신 컨테이너 하나에 위임해서 처리한다
 aiChatMessagesEl.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-action]");
@@ -2189,6 +2347,11 @@ aiChatMessagesEl.addEventListener("click", (e) => {
     openCreateModalFromAiSuggestion(message);
   } else if (btn.dataset.action === "auto") {
     autoRegisterAiChatMessage(message, btn);
+  } else if (btn.dataset.action === "edit-update") {
+    closeAiSuggestModal();
+    openEditModalFromAiSuggestion(message);
+  } else if (btn.dataset.action === "apply-update") {
+    applyAiUpdateToSchedule(message, btn);
   }
 });
 

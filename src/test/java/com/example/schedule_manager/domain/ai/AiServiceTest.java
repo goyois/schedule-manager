@@ -5,7 +5,9 @@ import com.example.schedule_manager.domain.ai.dto.AiChatMessageDto;
 import com.example.schedule_manager.domain.ai.dto.AiScheduleSuggestion;
 import com.example.schedule_manager.domain.ai.entity.AiChatMessage;
 import com.example.schedule_manager.domain.ai.entity.AiChatRole;
+import com.example.schedule_manager.domain.ai.entity.AiResponseCategory;
 import com.example.schedule_manager.domain.ai.repository.AiChatMessageRepository;
+import com.example.schedule_manager.domain.ai.service.AiRateLimiter;
 import com.example.schedule_manager.domain.ai.service.AiService;
 import com.example.schedule_manager.domain.category.dto.CategoryResponseDto;
 import com.example.schedule_manager.domain.category.service.CategoryService;
@@ -65,6 +67,9 @@ class AiServiceTest {
     @Mock
     private AiChatMessageRepository aiChatMessageRepository;
 
+    @Mock
+    private AiRateLimiter aiRateLimiter;
+
     @InjectMocks
     private AiService aiService;
 
@@ -112,7 +117,7 @@ class AiServiceTest {
                 .thenReturn(List.of(new CategoryResponseDto(10L, "운동")));
 
         // 모델이 다른 날짜(2026-07-29)를 추천해도, 실제 등록되는 startAt/endAt은 항상 오늘 날짜여야 한다
-        stubChatClient(new AiScheduleSuggestion(
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null,
                 "저녁 러닝", "30분 조깅", "2026-07-29T19:00:00", "2026-07-29T19:30:00", 10L, "추천 이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "이번 주 운동 일정 추천해줘");
@@ -120,6 +125,7 @@ class AiServiceTest {
         assertThat(exchange.userMessage().role()).isEqualTo("USER");
         assertThat(exchange.userMessage().message()).isEqualTo("이번 주 운동 일정 추천해줘");
         assertThat(exchange.assistantMessage().role()).isEqualTo("ASSISTANT");
+        assertThat(exchange.assistantMessage().category()).isEqualTo("SCHEDULE_RECOMMENDATION");
         assertThat(exchange.assistantMessage().message()).isEqualTo("추천 이유");
         assertThat(exchange.assistantMessage().suggestedTitle()).isEqualTo("저녁 러닝");
         assertThat(exchange.assistantMessage().suggestedContent()).isEqualTo("30분 조깅");
@@ -155,7 +161,7 @@ class AiServiceTest {
         when(aiChatMessageRepository.save(any(AiChatMessage.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        stubChatClient(new AiScheduleSuggestion("제목", "내용", null, null, null, "이유"));
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, "제목", "내용", null, null, null, "이유"));
 
         aiService.sendMessage("tester@example.com", "그거 말고 다른 거 추천해줘");
 
@@ -178,7 +184,7 @@ class AiServiceTest {
         when(categoryService.getCategories("tester@example.com"))
                 .thenReturn(List.of(new CategoryResponseDto(10L, "일상")));
 
-        stubChatClient(new AiScheduleSuggestion(
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null,
                 "야간 근무", "당직", "2026-07-29T23:00:00", "2026-07-30T00:30:00", 10L, "추천 이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "추천해줘");
@@ -197,7 +203,7 @@ class AiServiceTest {
         when(categoryService.getCategories("tester@example.com"))
                 .thenReturn(List.of(new CategoryResponseDto(10L, "운동")));
 
-        stubChatClient(new AiScheduleSuggestion(
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null,
                 "제목", "내용", "이상한 형식", null, 999L, "추천 이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "추천해줘");
@@ -205,6 +211,120 @@ class AiServiceTest {
         assertThat(exchange.assistantMessage().suggestedStartAt()).isNull();
         assertThat(exchange.assistantMessage().suggestedEndAt()).isNull();
         assertThat(exchange.assistantMessage().suggestedCategoryId()).isNull();
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - GENERAL로 분류된 답변은 등록 UI에 쓰이는 필드 없이 답변 텍스트만 채운다")
+    void sendMessage_success_generalCategory_hasNoSuggestionFields() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+
+        stubChatClient(new AiScheduleSuggestion(
+                AiResponseCategory.GENERAL, null, null, null, null, null, null, "오늘은 회의가 2건 있어요."));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "오늘 일정 몇 개야?");
+
+        assertThat(exchange.assistantMessage().category()).isEqualTo("GENERAL");
+        assertThat(exchange.assistantMessage().message()).isEqualTo("오늘은 회의가 2건 있어요.");
+        assertThat(exchange.assistantMessage().suggestedTitle()).isNull();
+        assertThat(exchange.assistantMessage().suggestedContent()).isNull();
+        assertThat(exchange.assistantMessage().suggestedStartAt()).isNull();
+        assertThat(exchange.assistantMessage().suggestedEndAt()).isNull();
+        assertThat(exchange.assistantMessage().suggestedCategoryId()).isNull();
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - GENERAL인데 모델이 추천 필드를 채워 보내도 방어적으로 전부 비운다")
+    void sendMessage_success_generalCategory_ignoresLeftoverSuggestionFieldsFromModel() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com"))
+                .thenReturn(List.of(new CategoryResponseDto(10L, "운동")));
+
+        // category는 GENERAL인데 모델이 지시를 어기고 title/startAt/categoryId를 채워 보낸 경우
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.GENERAL, null,
+                "저녁 러닝", "30분 조깅", "2026-07-29T19:00:00", "2026-07-29T19:30:00", 10L, "참고로 이런 것도 있어요"));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "운동 종류 뭐가 있어?");
+
+        assertThat(exchange.assistantMessage().suggestedTitle()).isNull();
+        assertThat(exchange.assistantMessage().suggestedContent()).isNull();
+        assertThat(exchange.assistantMessage().suggestedStartAt()).isNull();
+        assertThat(exchange.assistantMessage().suggestedEndAt()).isNull();
+        assertThat(exchange.assistantMessage().suggestedCategoryId()).isNull();
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - category를 비워 보내면 GENERAL로 취급해 등록 UI 필드를 비운다")
+    void sendMessage_success_nullCategory_treatedAsGeneral() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+
+        stubChatClient(new AiScheduleSuggestion(null, null, "제목", null, null, null, null, "답변"));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "질문");
+
+        assertThat(exchange.assistantMessage().category()).isEqualTo("GENERAL");
+        assertThat(exchange.assistantMessage().suggestedTitle()).isNull();
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - SCHEDULE_UPDATE는 컨텍스트에 있던 일정 id를 targetScheduleId로 채택하고, 날짜를 오늘로 강제하지 않는다")
+    void sendMessage_success_scheduleUpdate_appliesTargetScheduleIdWithoutForcingToday() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+
+        LocalDateTime now = LocalDateTime.now();
+        ScheduleResponseDto existing = new ScheduleResponseDto(
+                5L, "팀 회의", "주간 회의", now.plusDays(1), now.plusDays(1).plusHours(1),
+                ScheduleStatus.PENDING, "tester", "업무");
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(existing));
+        when(categoryService.getCategories("tester@example.com"))
+                .thenReturn(List.of(new CategoryResponseDto(10L, "업무")));
+
+        // 모레(오늘이 아닌 날짜)로 미뤄달라는 요청 - SCHEDULE_RECOMMENDATION과 달리 날짜까지 그대로 신뢰해야 한다
+        String movedStartAt = now.plusDays(2).withHour(15).withMinute(0).withSecond(0).withNano(0).toString();
+        String movedEndAt = now.plusDays(2).withHour(16).withMinute(0).withSecond(0).withNano(0).toString();
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_UPDATE, 5L,
+                "팀 회의", "주간 회의", movedStartAt, movedEndAt, 10L, "모레 오후로 옮겼어요"));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "그 회의 모레 오후 3시로 옮겨줘");
+
+        assertThat(exchange.assistantMessage().category()).isEqualTo("SCHEDULE_UPDATE");
+        assertThat(exchange.assistantMessage().targetScheduleId()).isEqualTo(5L);
+        assertThat(exchange.assistantMessage().suggestedStartAt()).isEqualTo(now.plusDays(2).withHour(15).withMinute(0).withSecond(0).withNano(0));
+        assertThat(exchange.assistantMessage().suggestedEndAt()).isEqualTo(now.plusDays(2).withHour(16).withMinute(0).withSecond(0).withNano(0));
+
+        ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatClientRequest).user(userPromptCaptor.capture());
+        assertThat(userPromptCaptor.getValue()).contains("id:5");
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - SCHEDULE_UPDATE인데 컨텍스트에 없는 targetScheduleId를 주면 검증에 실패해 null로 비운다")
+    void sendMessage_success_scheduleUpdate_rejectsUnknownTargetScheduleId() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+
+        // 컨텍스트로 보여준 적 없는(지어낸) id
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_UPDATE, 999L,
+                "제목", "내용", null, null, null, "이유"));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "그 일정 바꿔줘");
+
+        assertThat(exchange.assistantMessage().targetScheduleId()).isNull();
     }
 
     @Test
@@ -227,6 +347,22 @@ class AiServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.AI_REQUEST_FAILED);
+    }
+
+    @Test
+    @DisplayName("메시지 전송 실패 - 분당 호출 제한에 걸리면 ChatClient를 호출하지 않고 예외를 그대로 전파한다")
+    void sendMessage_rateLimited_doesNotCallChatClientAndPropagates() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.AI_RATE_LIMIT_EXCEEDED))
+                .when(aiRateLimiter).checkLimit(1L, UserType.USER);
+
+        assertThatThrownBy(() -> aiService.sendMessage("tester@example.com", "추천해줘"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AI_RATE_LIMIT_EXCEEDED);
+
+        org.mockito.Mockito.verifyNoInteractions(chatClient);
     }
 
     @Test

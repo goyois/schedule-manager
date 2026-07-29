@@ -30,7 +30,8 @@ public enum ErrorCode {
     DUPLICATE_EMAIL(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다."),
     DUPLICATE_CATEGORY(HttpStatus.CONFLICT, "이미 존재하는 카테고리입니다."),
 
-    AI_REQUEST_FAILED(HttpStatus.BAD_GATEWAY, "AI 추천 요청 처리 중 오류가 발생했습니다.");
+    AI_REQUEST_FAILED(HttpStatus.BAD_GATEWAY, "AI 추천 요청 처리 중 오류가 발생했습니다."),
+    AI_RATE_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "AI 챗봇 요청이 너무 잦습니다. 잠시 후 다시 시도해주세요.");
 
     private final HttpStatus status;
     private final String message;

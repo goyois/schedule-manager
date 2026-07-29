@@ -1,6 +1,6 @@
 # Schedule Manager
 
-스케줄 관리 백엔드 서비스입니다. JWT 기반 인증, Redis 캐싱/로그아웃 블랙리스트, Prometheus·Grafana 모니터링을 갖춘 Java 17 + Spring Boot 3.4.0 프로젝트이며, 정적 리소스로 제공되는 대시보드(캘린더·방사형 차트) 프론트엔드를 포함합니다.
+스케줄 관리 백엔드 서비스입니다. JWT 기반 인증(액세스/리프레시 토큰 로테이션), Redis 캐싱/로그아웃 블랙리스트, Prometheus·Grafana 모니터링을 갖춘 Java 17 + Spring Boot 3.4.0 프로젝트이며, 정적 리소스로 제공되는 대시보드(캘린더·방사형 차트·AI 챗봇 패널) 프론트엔드를 포함합니다. 일정 CRUD 외에 반복 일정(요일 지정), 만다라트, Claude 기반 AI 일정 추천 챗봇, 상태 자동 전환 등 자동화 설정을 제공합니다.
 
 ---
 
@@ -19,20 +19,24 @@
 | Build | Gradle |
 | Utility | Lombok |
 
-> `spring-ai-anthropic-spring-boot-starter` 의존성과 설정값은 있지만, AI 일정 추천 기능 자체는 아직 구현되지 않았습니다. (아래 "예정" 참고)
+> `spring-ai-anthropic-spring-boot-starter`(`ChatClient`)를 사용해 AI 일정 추천 챗봇(`domain/ai`)이 실제로 Anthropic API를 호출합니다. 구현 배경은 `AI_STRATEGY.md` 참고.
 
 ---
 
 ## 주요 기능
 
-- **회원 관리** - 회원가입(`POST /api/users`), 로그인/로그아웃. 세션이 아닌 JWT 액세스 토큰 기반이며, 로그아웃된 토큰은 Redis 블랙리스트로 등록되어 재사용을 막습니다.
+- **회원 관리** - 회원가입(`POST /api/users`), 이메일/비밀번호 로그인, 구글 로그인(GIS ID 토큰 검증). 세션이 아닌 JWT 액세스 토큰 기반이며, 액세스 토큰 만료 시 리프레시 토큰으로 재발급(로테이션)합니다. 로그아웃된 액세스 토큰과 폐기된 리프레시 토큰은 Redis에 등록되어 재사용을 막습니다.
 - **권한 분리** - `USER` / `ADMIN` 두 역할. ADMIN은 임의 유저의 일정을 조회할 수 있고, USER는 본인 소유 일정에만 접근할 수 있습니다.
-- **스케줄 CRUD** - 일정 생성·조회·수정·삭제, 상태(`PENDING` / `IN_PROGRESS` / `COMPLETED` / `CANCELLED`) 관리
+- **스케줄 CRUD** - 일정 생성·조회·수정·삭제, 상태(`PENDING` / `IN_PROGRESS` / `COMPLETED` / `CANCELLED`) 관리. 상태 자동 전환 모드를 켜면 시작/종료 시각에 맞춰 서버가 상태를 자동으로 바꿔줍니다.
+- **반복 일정** - 요일을 지정해(`MONDAY,WEDNESDAY,...`) 매주 반복되는 일정을 등록하면, 서버가 개별 일정(occurrence)으로 펼쳐 생성합니다.
 - **카테고리 관리** - 일정 분류를 위한 카테고리 CRUD
-- **Redis 캐싱** - 일정 목록 조회 결과를 캐싱하며, Redis 장애 시 예외를 던지지 않고 DB 조회로 폴백합니다(fail-open).
-- **대시보드 UI** - 정적 프론트엔드로 제공되는 7×7 달력, 24시간 아날로그 시간표, 카테고리별 방사형 차트
+- **만다라트** - 목표를 9x9 만다라트 보드로 관리하는 CRUD(AI 자동 생성은 아직 미구현)
+- **AI 일정 추천 챗봇** - Claude(`ChatClient`)와 구조화된 응답 기반으로 지속 대화합니다. 모델이 매 답변을 `SCHEDULE_RECOMMENDATION`(새 일정 추천)/`SCHEDULE_UPDATE`(기존 일정 수정 제안)/`GENERAL`(그 외 일반 답변) 중 하나로 분류해서, 추천·수정 제안일 때만 등록/수정 UI가 뜨고 그 외에는 답변 텍스트만 보여줍니다. 새 일정 추천은 "수동 등록"(폼 검토 후 저장) / "자동 등록"(즉시 저장, "AI 추천 자동 등록" 설정이 켜져 있으면 버튼 클릭 없이 응답 즉시 자동 반영) 중 선택할 수 있고, 기존 일정 수정 제안은 "수정"(수정 폼을 열어 검토 후 저장) / "수정 반영"(추가 창 없이 즉시 반영) 중 선택할 수 있습니다. ADMIN을 제외한 일반 유저는 Redis 기반으로 분당 5회까지만 요청할 수 있습니다.
+- **실시간 반영(SSE)** - 일정이 생성/수정/삭제/자동 상태 전환될 때 `GET /api/schedules/stream`으로 연결된 브라우저 탭에 즉시 반영합니다(폴링 없음).
+- **Redis 캐싱** - 일정 목록 조회 결과를 캐싱하며, Redis 장애 시 예외를 던지지 않고 DB 조회로 폴백합니다(fail-open). 일정 변경 시에는 캐시 전체가 아니라 해당 유저 키 패턴만 `SCAN` 기반으로 무효화합니다.
+- **대시보드 UI** - 정적 프론트엔드로 제공되는 7×7 달력, 24시간 아날로그 시간표, 카테고리별 방사형 차트, AI 챗봇 패널, 성취도 위젯
 - **모니터링** - Actuator + Micrometer로 Prometheus 메트릭을 노출하고, Grafana 대시보드로 시각화 (`monitoring/docker-compose.yml`)
-- **일정 알림(이메일/푸시)**, **AI 일정 추천/요약**, **AI 오늘의 운세**, **AI 만다라트** - 미구현 (예정)
+- **일정 알림(이메일/푸시)**, **AI 오늘의 운세**, **AI 기반 만다라트 자동 생성** - 미구현 (예정)
 
 ---
 
@@ -94,7 +98,7 @@ google:
     client-id: your_google_oauth_client_id
 ```
 
-> `spring.jwt.secret`은 HMAC-SHA 서명에 쓰이므로 최소 256bit(32자) 이상이어야 합니다. `spring.ai.anthropic.api-key`는 AI 기능이 아직 미구현이라 실제로 호출되진 않지만, 스타터 의존성이 값을 요구하므로 임의의 문자열이라도 채워둬야 부팅됩니다. `google.oauth.client-id`는 구글 로그인(`POST /api/auth/google`)에서 ID 토큰의 audience 검증에 쓰이며, [Google Cloud Console](https://console.cloud.google.com/)에서 웹 애플리케이션용 OAuth 2.0 클라이언트 ID를 발급받아 채워야 합니다(Client Secret은 필요 없음 — ID 토큰 검증만 하는 방식이라 Client ID만 사용). 값이 없으면 부팅 자체가 실패하므로, 아직 구글 로그인을 안 쓰더라도 임의의 문자열을 채워둬야 합니다.
+> `spring.jwt.secret`은 HMAC-SHA 서명에 쓰이므로 최소 256bit(32자) 이상이어야 합니다. `spring.ai.anthropic.api-key`는 AI 일정 추천 챗봇(`POST /api/ai/chat/messages`)이 실제로 호출하는 유효한 Anthropic API 키여야 합니다(과금 발생). `google.oauth.client-id`는 구글 로그인(`POST /api/auth/google`)에서 ID 토큰의 audience 검증에 쓰이며, [Google Cloud Console](https://console.cloud.google.com/)에서 웹 애플리케이션용 OAuth 2.0 클라이언트 ID를 발급받아 채워야 합니다(Client Secret은 필요 없음 — ID 토큰 검증만 하는 방식이라 Client ID만 사용). 값이 없으면 부팅 자체가 실패하므로, 아직 구글 로그인을 안 쓰더라도 임의의 문자열을 채워둬야 합니다.
 
 ### 실행
 
@@ -119,23 +123,27 @@ Prometheus: `http://localhost:9090`, Grafana: `http://localhost:3000` (admin/adm
 ```
 src/main/java/com/example/schedule_manager/
 ├── domain/
-│   ├── user/       # 회원 CRUD (controller / service / repository / entity / dto)
-│   ├── auth/       # 로그인·로그아웃 — JWT 발급 및 블랙리스트 등록 (controller / service / dto)
-│   ├── schedule/   # 일정 CRUD, Redis 캐싱, ADMIN/USER 권한 분기 (controller / service / repository / entity / dto)
-│   └── category/   # 카테고리 CRUD (controller / service / repository / entity / dto)
+│   ├── user/               # 회원 CRUD, 자동 상태 전환·AI 자동 등록 설정 (controller / service / repository / entity / dto)
+│   ├── auth/               # 로그인(비밀번호/구글)·로그아웃·리프레시 — JWT 발급 및 Redis 블랙리스트/리프레시 저장 (controller / service / dto)
+│   ├── schedule/           # 일정 CRUD, Redis 캐싱, SSE 실시간 반영, ADMIN/USER 권한 분기 (controller / service / repository / entity / dto)
+│   ├── recurringschedule/  # 반복 일정(요일 지정) — occurrence로 펼쳐 schedule에 생성 (controller / service / repository / entity / dto)
+│   ├── category/           # 카테고리 CRUD (controller / service / repository / entity / dto)
+│   ├── ai/                 # AI 일정 추천 챗봇 — ChatClient 연동, 대화 이력 저장/등록 (controller / service / repository / entity / dto)
+│   └── mandalart/          # 만다라트 보드/셀 CRUD (controller / service / repository / entity / dto)
 ├── global/
-│   ├── security/   # SecurityConfig, JwtAuthenticationFilter, JwtUtil, CustomUserDetailsService
-│   ├── config/     # RedisConfig(캐시), CacheFailSafeErrorHandler
-│   ├── common/     # BaseEntity (createdAt/updatedAt)
-│   ├── response/   # ApiResponse<T>
-│   └── controller/ # ViewController — 정적 페이지 forward
+│   ├── security/    # config/SecurityConfig, filter/JwtAuthenticationFilter, util/JwtUtil, service/CustomUserDetailsService
+│   ├── config/      # RedisConfig(캐시), CacheFailSafeErrorHandler, GoogleOAuthConfig, AiConfig(ChatClient 빈)
+│   ├── exception/   # GlobalExceptionHandler(@RestControllerAdvice), BusinessException, ErrorCode
+│   ├── common/      # BaseEntity (createdAt/updatedAt)
+│   ├── response/    # ApiResponse<T>
+│   └── controller/  # ViewController — 정적 페이지 forward
 └── ScheduleManagerApplication.java
 
-src/main/resources/static/   # 정적 프론트엔드 (index/signup/dashboard.html, css, js)
+src/main/resources/static/   # 정적 프론트엔드 (index/signup/dashboard/mandalart/settings.html, css, js)
 monitoring/                  # Prometheus + Grafana docker-compose
 ```
 
-전역 예외 처리(`@RestControllerAdvice`)는 아직 없습니다. 서비스 계층은 not-found/권한 오류를 `IllegalArgumentException`으로 던지며, 현재는 매핑되지 않은 500으로 응답합니다.
+전역 예외 처리는 `global/exception/GlobalExceptionHandler`(`@RestControllerAdvice`)가 담당합니다. 서비스 계층은 not-found/권한/충돌 오류를 `ErrorCode`(HTTP 상태 + 메시지 매핑)를 담은 `BusinessException`으로 던지고, 핸들러가 이를 그대로 `ApiResponse.error(...)`로 변환합니다. `@Valid` 검증 실패, 인증 실패(`AuthenticationException`), 권한 없음(`AccessDeniedException`), 그 외 예기치 못한 예외도 각각 매핑되어 더 이상 원인 불명의 500으로 새어나가지 않습니다.
 
 ---
 
@@ -144,26 +152,45 @@ monitoring/                  # Prometheus + Grafana docker-compose
 | Method | URI | 설명 | 인증 |
 |--------|-----|------|------|
 | POST | `/api/users` | 회원가입 | 불필요 |
+| GET | `/api/users/me` | 내 정보 조회 | 필요 |
 | GET / PUT / DELETE | `/api/users/{id}` | 회원 조회 / 수정 / 삭제 | 필요 |
-| POST | `/api/auth/login` | 로그인 (JWT 발급) | 불필요 |
-| POST | `/api/auth/logout` | 로그아웃 (토큰 블랙리스트 등록) | 필요 (Bearer 토큰) |
+| PUT | `/api/users/me/auto-status-mode` | 일정 상태 자동 전환 on/off | 필요 |
+| PUT | `/api/users/me/ai-auto-register` | AI 추천 자동 등록 on/off | 필요 |
+| GET | `/api/auth/google/client-id` | 구글 로그인용 OAuth client-id 조회(공개값) | 불필요 |
+| POST | `/api/auth/login` | 이메일/비밀번호 로그인 (액세스+리프레시 토큰 발급) | 불필요 |
+| POST | `/api/auth/google` | 구글 ID 토큰 로그인 (get-or-create) | 불필요 |
+| POST | `/api/auth/refresh` | 리프레시 토큰으로 액세스/리프레시 토큰 재발급(로테이션) | 불필요 (리프레시 토큰 필요) |
+| POST | `/api/auth/logout` | 로그아웃 (액세스 토큰 블랙리스트 등록 + 리프레시 토큰 폐기) | 필요 (Bearer 토큰) |
 | GET | `/api/schedules?userId=&categoryId=` | 일정 목록 조회 — `userId`는 ADMIN에게만 유효, USER는 본인 것만 조회됨 | 필요 |
 | POST | `/api/schedules` | 일정 생성 | 필요 |
 | GET | `/api/schedules/{id}` | 일정 단건 조회 (본인 소유만, ADMIN 예외) | 필요 |
 | PUT | `/api/schedules/{id}` | 일정 수정 | 필요 |
 | DELETE | `/api/schedules/{id}` | 일정 삭제 | 필요 |
+| GET | `/api/schedules/board?status=&page=&size=&categoryId=` | 보드 뷰 상태 컬럼 하나를 "오늘" 범위로 페이징 조회(LIMIT/OFFSET) — 보드의 "더보기" 전용 | 필요 |
+| GET | `/api/schedules/stream` | 일정 변경 실시간 반영 (SSE, 토큰은 쿼리 파라미터로 전달) | 필요 |
+| POST | `/api/recurring-schedules` | 반복 일정(요일 지정) 등록 | 필요 |
+| GET | `/api/recurring-schedules` | 반복 일정 목록 조회 | 필요 |
+| DELETE | `/api/recurring-schedules/{id}` | 반복 일정 삭제 | 필요 |
 | GET | `/api/categories` | 카테고리 목록 | 필요 |
 | POST | `/api/categories` | 카테고리 생성 | 필요 |
 | GET / PUT / DELETE | `/api/categories/{id}` | 카테고리 조회 / 수정 / 삭제 | 필요 |
+| POST | `/api/mandalart` | 만다라트 보드 생성 | 필요 |
+| GET | `/api/mandalart` | 만다라트 보드 목록 | 필요 |
+| GET | `/api/mandalart/{boardId}` | 만다라트 보드 조회 | 필요 |
+| PUT | `/api/mandalart/{boardId}/cells/{row}/{col}` | 만다라트 셀 수정 | 필요 |
+| DELETE | `/api/mandalart/{boardId}` | 만다라트 보드 삭제 | 필요 |
+| GET | `/api/ai/chat/messages` | AI 챗봇 대화 이력 조회 | 필요 |
+| POST | `/api/ai/chat/messages` | AI 챗봇에 메시지 전송 (구조화된 추천 응답 수신) | 필요 |
+| PATCH | `/api/ai/chat/messages/{id}/register` | AI 추천 메시지를 실제 일정으로 등록 | 필요 |
+| DELETE | `/api/ai/chat/messages` | AI 챗봇 대화 이력 초기화 | 필요 |
 
-### 예정 (미구현)
+### 아직 미구현
 
-| Method | URI | 설명 |
-|--------|-----|------|
-| POST | `/api/ai/suggest` | AI 일정 추천 |
-| POST | `/api/ai/summary` | 이번 주 일정 요약 |
-
-일정 알림(이메일 / 푸시)도 아직 구현되지 않았습니다.
+- 일정 알림 (이메일 / 푸시)
+- AI 오늘의 운세
+- AI 기반 만다라트 자동 생성 (현재 만다라트는 수동 입력 CRUD만 제공)
+- 캘린더/시계/레이더용 `GET /api/schedules`(전체 목록)는 여전히 페이지네이션 없이 전량 조회 — 보드 뷰(`GET /api/schedules/board`)만 서버 페이징 적용됨 (캘린더 뷰는 특정 날짜 범위 전체가 필요해 의도적으로 그대로 둠)
+- `prod` 스프링 프로파일 (현재 `application-local.yml`만 존재)
 
 ---
 

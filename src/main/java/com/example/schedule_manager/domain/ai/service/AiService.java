@@ -5,6 +5,7 @@ import com.example.schedule_manager.domain.ai.dto.AiChatMessageDto;
 import com.example.schedule_manager.domain.ai.dto.AiScheduleSuggestion;
 import com.example.schedule_manager.domain.ai.entity.AiChatMessage;
 import com.example.schedule_manager.domain.ai.entity.AiChatRole;
+import com.example.schedule_manager.domain.ai.entity.AiResponseCategory;
 import com.example.schedule_manager.domain.ai.repository.AiChatMessageRepository;
 import com.example.schedule_manager.domain.category.dto.CategoryResponseDto;
 import com.example.schedule_manager.domain.category.service.CategoryService;
@@ -48,12 +49,37 @@ public class AiService {
 
     private static final String SYSTEM_PROMPT = """
             당신은 일정 관리 도우미입니다. 사용자의 기존 일정과 카테고리, 그리고 이전 대화 맥락을 참고해
-            실행 가능한 일정 하나를 추천하세요. 대화는 계속 이어질 수 있으니 이전에 추천한 내용을 기억하고
-            사용자의 후속 질문(수정 요청, 추가 질문 등)에 자연스럽게 이어서 답하세요.
-            - categoryId는 [사용 가능한 카테고리]에 나열된 id 중 하나만 쓰고, 적절한 카테고리가 없으면 null로 두세요.
-            - startAt/endAt은 "yyyy-MM-ddTHH:mm:ss" 형식(타임존 없음)으로 쓰세요.
-            - 종료 시각이 필요 없는 알림형 일정이면 endAt을 null로 두세요.
-            - reason에는 왜 이 일정을 추천하는지 한두 문장으로 설명하세요.
+            대화에 답하세요. 대화는 계속 이어질 수 있으니 이전에 추천/제안한 내용을 기억하고 사용자의 후속
+            질문(수정 요청, 추가 질문 등)에 자연스럽게 이어서 답하세요.
+
+            먼저 이번 답변을 아래 세 카테고리 중 하나로 분류해 category에 쓰세요. 판단 순서가 중요합니다 -
+            아래 순서 그대로 확인하세요.
+
+            1) 사용자의 요청이 [기존 일정] 목록에 있는 특정 일정 하나를 바꾸는 것(시간/날짜 변경, 미루기,
+               제목·내용 수정 등)이면 무조건 SCHEDULE_UPDATE로 분류하세요. "옮겨줘", "미뤄줘", "바꿔줘",
+               "수정해줘" 같은 말은 거의 항상 이 경우입니다 - 이미 존재하는 그 일정을 다시 추천하듯
+               SCHEDULE_RECOMMENDATION으로 분류하면 안 됩니다.
+               - targetScheduleId에 [기존 일정] 목록의 "id:숫자" 중 그 일정의 id를 정확히 쓰세요.
+               - title/content/startAt/endAt/categoryId에는 "바뀐 뒤의 최종 값"을 채우세요 - 사용자가 특정
+                 필드만 바꿔달라고 했어도, 바뀌지 않는 나머지 필드는 [기존 일정]에 나온 그 일정의 현재 값을
+                 그대로 옮겨 쓰세요(예: 시간만 바꿔달라고 하면 title/categoryId는 기존 값을 그대로 반복).
+                 startAt/endAt은 사용자가 말한 날짜를 그대로 반영하세요(오늘로 바꿔치기하지 마세요) - 예를
+                 들어 "내일로 옮겨줘"면 실제로 내일 날짜를 쓰세요.
+               - reason에는 무엇을 어떻게 바꾸는지 한두 문장으로 설명하세요.
+               - 어느 일정을 말하는지 [기존 일정] 목록에서 특정할 수 없으면 SCHEDULE_UPDATE로 분류하지 말고
+                 GENERAL로 답하며 어느 일정인지 되물으세요.
+            2) 그게 아니라 [기존 일정]에 없는 완전히 새로운 일정 하나를 만들어 추천받고 싶어하는 경우면
+               SCHEDULE_RECOMMENDATION으로 분류하세요. 이때만 title/startAt/categoryId 등 나머지 필드를
+               채우고, targetScheduleId는 null로 두세요.
+               - categoryId는 [사용 가능한 카테고리]에 나열된 id 중 하나만 쓰고, 적절한 카테고리가 없으면 null로 두세요.
+               - 종료 시각이 필요 없는 알림형 일정이면 endAt을 null로 두세요.
+               - reason에는 왜 이 일정을 추천하는지 한두 문장으로 설명하세요.
+            3) 그 외 모든 경우(기존 일정 조회/설명, 잡담, 대상을 특정할 수 없는 수정 요청 등)는 GENERAL로
+               분류하세요. targetScheduleId와 title/content/startAt/endAt/categoryId를 전부 null로 두고,
+               reason에 답변 내용을 쓰세요.
+
+            SCHEDULE_UPDATE와 SCHEDULE_RECOMMENDATION 모두 startAt/endAt은 "yyyy-MM-ddTHH:mm:ss" 형식
+            (타임존 없음)으로 쓰세요.
             """;
 
     private final ChatClient chatClient;
@@ -61,6 +87,7 @@ public class AiService {
     private final CategoryService categoryService;
     private final UserRepository userRepository;
     private final AiChatMessageRepository aiChatMessageRepository;
+    private final AiRateLimiter aiRateLimiter;
 
     @Transactional(readOnly = true)
     public List<AiChatMessageDto> getConversation(String requesterEmail) {
@@ -96,12 +123,15 @@ public class AiService {
     // 설정이 켜져 있을 때만)에서 기존 POST /api/schedules로 하고, 여기서 직접 저장하지 않는다
     public AiChatExchangeDto sendMessage(String requesterEmail, String userText) {
         User requester = findUserByEmail(requesterEmail);
+        aiRateLimiter.checkLimit(requester.getId(), requester.getUserType());
 
         List<AiChatMessage> recentHistory = aiChatMessageRepository
                 .findByUserIdOrderByCreatedAtDesc(requester.getId(), PageRequest.of(0, MAX_HISTORY_MESSAGES));
         Collections.reverse(recentHistory); // 최신순으로 가져온 걸 시간순으로 뒤집는다
 
-        String scheduleContext = buildScheduleContext(requesterEmail, requester.getId());
+        List<ScheduleResponseDto> windowedSchedules = getWindowedSchedules(requesterEmail, requester.getId());
+        String scheduleContext = buildScheduleContext(windowedSchedules);
+        Set<Long> windowedScheduleIds = windowedSchedules.stream().map(ScheduleResponseDto::id).collect(Collectors.toSet());
         List<CategoryResponseDto> categories = categoryService.getCategories(requesterEmail);
         String categoryContext = buildCategoryContext(categories);
 
@@ -121,21 +151,58 @@ public class AiService {
             throw new BusinessException(ErrorCode.AI_REQUEST_FAILED, e);
         }
 
-        Set<Long> validCategoryIds = categories.stream().map(CategoryResponseDto::id).collect(Collectors.toSet());
-        Long categoryId = suggestion.categoryId() != null && validCategoryIds.contains(suggestion.categoryId())
-                ? suggestion.categoryId()
-                : null;
+        // 모델이 category를 비워 보내는 등 응답을 신뢰할 수 없는 경우 GENERAL로 취급한다(등록/수정 UI가
+        // 잘못 노출되는 쪽보다 안 보이는 쪽이 안전하다) - SCHEDULE_RECOMMENDATION/SCHEDULE_UPDATE일 때만
+        // 나머지 필드를 채우고, 그 외에는 모델이 뭘 채워 보냈든 전부 무시하고 강제로 비운다(방어적 처리)
+        AiResponseCategory category = suggestion.category() != null ? suggestion.category() : AiResponseCategory.GENERAL;
+        boolean isRecommendation = category == AiResponseCategory.SCHEDULE_RECOMMENDATION;
+        boolean isUpdate = category == AiResponseCategory.SCHEDULE_UPDATE;
 
-        // 모델은 컨텍스트로 준 최근 2주~향후 2주 일정을 보고 다른 날짜(예: "이번 주 목요일")를 추천할 수도
-        // 있는데, 실제로 등록될 일정은 항상 오늘 날짜여야 한다는 요구사항이 있어 시각(시:분)만 남기고
-        // 날짜는 오늘로 강제한다 - reason 텍스트는 원래 추천 맥락(다른 요일 언급 등)을 그대로 담고 있을 수
-        // 있지만, 실제로 등록되는 startAt/endAt은 항상 오늘 기준이다
-        LocalDateTime startAt = toToday(parseDateTimeSafely(suggestion.startAt()));
-        LocalDateTime endAt = toToday(parseDateTimeSafely(suggestion.endAt()));
-        // 종료 시각이 시작 시각보다 앞서면(예: 23:00~00:30처럼 자정을 걸치는 시간대) 같은 날로 만들어버린
-        // 탓에 순서가 뒤집힌 것이므로, 다음날로 하루 밀어 원래 지속 시간 관계를 유지한다
-        if (startAt != null && endAt != null && !endAt.isAfter(startAt)) {
-            endAt = endAt.plusDays(1);
+        Long categoryId = null;
+        LocalDateTime startAt = null;
+        LocalDateTime endAt = null;
+        String suggestedTitle = null;
+        String suggestedContent = null;
+        Long targetScheduleId = null;
+
+        if (isRecommendation) {
+            Set<Long> validCategoryIds = categories.stream().map(CategoryResponseDto::id).collect(Collectors.toSet());
+            categoryId = suggestion.categoryId() != null && validCategoryIds.contains(suggestion.categoryId())
+                    ? suggestion.categoryId()
+                    : null;
+
+            // 모델은 컨텍스트로 준 최근 2주~향후 2주 일정을 보고 다른 날짜(예: "이번 주 목요일")를 추천할 수도
+            // 있는데, 실제로 등록될 일정은 항상 오늘 날짜여야 한다는 요구사항이 있어 시각(시:분)만 남기고
+            // 날짜는 오늘로 강제한다 - reason 텍스트는 원래 추천 맥락(다른 요일 언급 등)을 그대로 담고 있을 수
+            // 있지만, 실제로 등록되는 startAt/endAt은 항상 오늘 기준이다
+            startAt = toToday(parseDateTimeSafely(suggestion.startAt()));
+            endAt = toToday(parseDateTimeSafely(suggestion.endAt()));
+            if (startAt != null && endAt != null && !endAt.isAfter(startAt)) {
+                endAt = endAt.plusDays(1);
+            }
+            suggestedTitle = suggestion.title();
+            suggestedContent = suggestion.content();
+        } else if (isUpdate) {
+            // 모델이 [기존 일정] 컨텍스트에 없는(또는 지어낸) id를 targetScheduleId로 줄 수 있으므로,
+            // 실제로 이번 턴에 컨텍스트로 보여준 id 집합에 있을 때만 신뢰한다 - 검증에 실패하면 targetScheduleId가
+            // null로 남아 프론트가 "수정 반영" 버튼을 아예 보여주지 않는다(엉뚱한 일정을 덮어쓸 위험 차단)
+            targetScheduleId = suggestion.targetScheduleId() != null && windowedScheduleIds.contains(suggestion.targetScheduleId())
+                    ? suggestion.targetScheduleId()
+                    : null;
+
+            Set<Long> validCategoryIds = categories.stream().map(CategoryResponseDto::id).collect(Collectors.toSet());
+            categoryId = suggestion.categoryId() != null && validCategoryIds.contains(suggestion.categoryId())
+                    ? suggestion.categoryId()
+                    : null;
+            // 수정 제안은 추천과 달리 "오늘"로 강제하지 않는다 - 기존 일정을 다른 날짜로 미루는 요청(예: "내일로
+            // 옮겨줘")도 있을 수 있으므로, 모델이 계산한 날짜를 시:분뿐 아니라 날짜까지 그대로 신뢰한다
+            startAt = parseDateTimeSafely(suggestion.startAt());
+            endAt = parseDateTimeSafely(suggestion.endAt());
+            if (startAt != null && endAt != null && !endAt.isAfter(startAt)) {
+                endAt = endAt.plusDays(1);
+            }
+            suggestedTitle = suggestion.title();
+            suggestedContent = suggestion.content();
         }
 
         AiChatMessage userMessage = aiChatMessageRepository.save(AiChatMessage.builder()
@@ -148,8 +215,10 @@ public class AiService {
                 .user(requester)
                 .role(AiChatRole.ASSISTANT)
                 .messageText(suggestion.reason())
-                .suggestedTitle(suggestion.title())
-                .suggestedContent(suggestion.content())
+                .category(category)
+                .targetScheduleId(targetScheduleId)
+                .suggestedTitle(suggestedTitle)
+                .suggestedContent(suggestedContent)
                 .suggestedStartAt(startAt)
                 .suggestedEndAt(endAt)
                 .suggestedCategoryId(categoryId)
@@ -201,7 +270,7 @@ public class AiService {
     // 항상 요청자 본인의 일정만 컨텍스트로 쓴다 - ADMIN 이 호출하더라도 전체 유저 일정이 아니라 본인 일정
     // 기준으로 추천해야 하므로, ScheduleService.getSchedules 의 "USER 는 본인 id 로 강제" 규칙에 기대지 않고
     // 여기서 직접 requester.getId() 를 명시적으로 넘긴다
-    private String buildScheduleContext(String requesterEmail, Long requesterId) {
+    private List<ScheduleResponseDto> getWindowedSchedules(String requesterEmail, Long requesterId) {
         List<ScheduleResponseDto> schedules = scheduleService.getSchedules(requesterEmail, requesterId, null);
 
         LocalDateTime now = LocalDateTime.now();
@@ -209,24 +278,29 @@ public class AiService {
         LocalDateTime windowEnd = now.plusWeeks(CONTEXT_WINDOW_WEEKS);
 
         // 알림형(종료 시각 없음) 일정은 시작 시각을 종료 시각 대신 써서 윈도우 필터를 통과시킨다
-        List<ScheduleResponseDto> windowed = schedules.stream()
+        return schedules.stream()
                 .filter(s -> {
                     LocalDateTime effectiveEnd = s.endAt() != null ? s.endAt() : s.startAt();
                     return !effectiveEnd.isBefore(windowStart) && !s.startAt().isAfter(windowEnd);
                 })
                 .sorted(Comparator.comparing(ScheduleResponseDto::startAt))
                 .toList();
+    }
 
+    // id를 함께 실어 보내야 SCHEDULE_UPDATE 응답의 targetScheduleId로 모델이 정확히 어느 일정을 가리키는지
+    // 밝힐 수 있다 - windowedScheduleIds(sendMessage에서 이 메서드에 넘긴 것과 같은 목록의 id 집합)로
+    // 그 값이 실제로 이번 턴에 보여준 일정인지 검증한다
+    private String buildScheduleContext(List<ScheduleResponseDto> windowed) {
         if (windowed.isEmpty()) {
             return "(최근 2주~향후 2주 사이 등록된 일정 없음)";
         }
 
         return windowed.stream()
                 .map(s -> s.endAt() != null
-                        ? "- [%s] %s (%s ~ %s, 카테고리: %s)".formatted(
-                                s.status(), s.title(), s.startAt(), s.endAt(), s.categoryName())
-                        : "- [%s] %s (%s, 카테고리: %s)".formatted(
-                                s.status(), s.title(), s.startAt(), s.categoryName()))
+                        ? "- [id:%d][%s] %s (%s ~ %s, 카테고리: %s)".formatted(
+                                s.id(), s.status(), s.title(), s.startAt(), s.endAt(), s.categoryName())
+                        : "- [id:%d][%s] %s (%s, 카테고리: %s)".formatted(
+                                s.id(), s.status(), s.title(), s.startAt(), s.categoryName()))
                 .collect(Collectors.joining("\n"));
     }
 
