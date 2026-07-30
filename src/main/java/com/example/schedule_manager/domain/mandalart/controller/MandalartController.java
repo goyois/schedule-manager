@@ -71,4 +71,21 @@ public class MandalartController {
         mandalartService.deleteBoard(principal.getUsername(), boardId);
         return ResponseEntity.ok(ApiResponse.success());
     }
+
+    // 이 보드를 "적용 중"으로 지정한다 - 유저당 하나뿐이라 이전에 적용돼 있던 다른 보드는 자동으로 해제된다.
+    // AiService가 새 일정을 추천할 때 이 보드의 핵심/세부 목표를 프롬프트 컨텍스트로 참고한다
+    @PostMapping("/{boardId}/activate")
+    public ResponseEntity<ApiResponse<Void>> activateBoard(
+            @AuthenticationPrincipal UserDetails principal,
+            @PathVariable Long boardId) {
+        mandalartService.activateBoard(principal.getUsername(), boardId);
+        return ResponseEntity.ok(ApiResponse.success());
+    }
+
+    @PostMapping("/deactivate")
+    public ResponseEntity<ApiResponse<Void>> deactivateBoard(
+            @AuthenticationPrincipal UserDetails principal) {
+        mandalartService.deactivateBoard(principal.getUsername());
+        return ResponseEntity.ok(ApiResponse.success());
+    }
 }

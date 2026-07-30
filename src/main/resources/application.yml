@@ -1,6 +1,24 @@
 spring:
   profiles:
     default: local
+  ai:
+    openai:
+      # Anthropic은 임베딩 모델을 제공하지 않아 만다라트 RAG(MandalartGoalEmbeddingService)용
+      # 임베딩만 OpenAI를 별도로 쓴다 - 이 스타터가 자동구성하는 OpenAI 채팅 모델은 쓰지 않으므로 꺼둔다
+      # (안 꺼두면 spring.ai.openai.chat.enabled의 matchIfMissing=true 기본값 때문에 아무도 안 쓰는
+      # OpenAiChatModel 빈이 하나 더 생긴다 - AiConfig의 Anthropic ChatModel 빈들과는 별개 타입이라
+      # 이름 충돌은 없지만 불필요함)
+      chat:
+        enabled: false
+      embedding:
+        options:
+          model: text-embedding-3-small
+    vectorstore:
+      pgvector:
+        # vector_store 테이블/HNSW 인덱스는 Hibernate가 관리하는 JPA 엔티티가 아니라 Spring AI
+        # PgVectorStore가 자체적으로 초기화하는 별도 스키마다 - ddl-auto: validate 와는 무관
+        initialize-schema: true
+        dimensions: 1536
   data:
     redis:
       # 기본 60초 타임아웃이면 Redis 장애 시 요청마다 60초씩 멈춘다 (JwtAuthenticationFilter 의

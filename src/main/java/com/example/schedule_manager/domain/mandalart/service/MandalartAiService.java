@@ -18,6 +18,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,10 +55,13 @@ public class MandalartAiService {
             최대 40자)로 채우세요. 같은 세부목표 아래 항목끼리는 서로 겹치지 않고 다양한 각도여야 합니다.
             """;
 
+    private static final int MAX_FEW_SHOT_EXAMPLES = 3;
+
     private final MandalartBoardRepository mandalartBoardRepository;
     private final MandalartCellRepository mandalartCellRepository;
     private final UserRepository userRepository;
     private final AiRateLimiter aiRateLimiter;
+    private final MandalartGoalEmbeddingService mandalartGoalEmbeddingService;
 
     // Lombok의 @RequiredArgsConstructor는 필드의 @Qualifier를 생성자 파라미터로 복사해주지 않으므로
     // (lombok.config 없이는), 필드/파라미터 이름을 AiConfig의 빈 이름과 정확히 맞춰 Spring의 이름 기반
@@ -83,19 +87,21 @@ public class MandalartAiService {
                 .filter(c -> isBlank(c.getContent()))
                 .toList();
         if (emptyCells.isEmpty()) {
-            return MandalartBoardResponseDto.from(board, cells);
+            return MandalartBoardResponseDto.from(board, cells, board.getId().equals(requester.getActiveMandalartBoardId()));
         }
 
         String gridContext = buildGridContext(cellByKey);
         String targetContext = emptyCells.stream()
                 .map(c -> "- (%d,%d)".formatted(c.getRowIndex(), c.getColIndex()))
                 .collect(Collectors.joining("\n"));
+        String fewShotContext = buildFewShotContext(requester.getId(), boardId, cellByKey);
 
         MandalartFillSuggestion suggestion;
         try {
             suggestion = mandalartFillChatClient.prompt()
                     .system(SYSTEM_PROMPT)
-                    .user("[현재 만다라트 상태]\n" + gridContext + "\n\n[채워야 하는 칸 좌표]\n" + targetContext)
+                    .user("[현재 만다라트 상태]\n" + gridContext + fewShotContext
+                            + "\n\n[채워야 하는 칸 좌표]\n" + targetContext)
                     .call()
                     .entity(MandalartFillSuggestion.class);
         } catch (Exception e) {
@@ -104,7 +110,36 @@ public class MandalartAiService {
 
         applySuggestion(suggestion, emptyCells, cellByKey);
 
-        return MandalartBoardResponseDto.from(board, cells);
+        // 이번에 실행항목이 채워져 새로 "완성"됐을 수 있는 블록들을 RAG 검색용으로 다시 색인한다
+        // (이미 완성돼 있던 블록은 같은 내용으로 upsert되므로 그냥 no-op에 가깝다)
+        for (int[] block : OUTER_BLOCKS) {
+            mandalartGoalEmbeddingService.reindexBlockIfComplete(requester.getId(), boardId, block[0], block[1]);
+        }
+
+        return MandalartBoardResponseDto.from(board, cells, board.getId().equals(requester.getActiveMandalartBoardId()));
+    }
+
+    // 지금 채우려는 보드의 각 세부목표와 의미적으로 비슷한, 요청자 본인의 과거(다른 보드) 블록을 찾아
+    // 그 실행항목들을 few-shot 예시로 프롬프트에 얹는다. 예시가 하나도 없으면 빈 문자열(프롬프트에
+    // 아무 것도 추가하지 않음) - 검색 자체가 실패해도 MandalartGoalEmbeddingService가 이미 fail-open으로
+    // 빈 목록을 돌려주므로 여기서 별도 예외 처리는 필요 없다
+    private String buildFewShotContext(Long requesterId, Long boardId, Map<String, MandalartCell> cellByKey) {
+        List<MandalartGoalEmbeddingService.GoalExample> examples = new ArrayList<>();
+        for (int[] block : OUTER_BLOCKS) {
+            if (examples.size() >= MAX_FEW_SHOT_EXAMPLES) break;
+            String subGoal = cellByKey.get(key(block[0] + 3, block[1] + 3)).getContent();
+            if (isBlank(subGoal)) continue;
+            examples.addAll(mandalartGoalEmbeddingService.findSimilarExamples(requesterId, boardId, subGoal, 1));
+        }
+        if (examples.isEmpty()) return "";
+
+        log.info("만다라트 AI 채우기 - RAG few-shot {}건 매칭됨 (boardId={}): {}",
+                examples.size(), boardId, examples.stream().map(MandalartGoalEmbeddingService.GoalExample::subGoal).toList());
+
+        String body = examples.stream()
+                .map(e -> "- \"%s\" 목표의 실행항목 예시: %s".formatted(e.subGoal(), e.actionItems().replace("\n", ", ")))
+                .collect(Collectors.joining("\n"));
+        return "\n\n[참고: 과거 비슷한 목표의 실행항목 예시]\n" + body;
     }
 
     // 모델이 요청하지 않은 좌표를 지어내거나 이미 채워진 칸을 덮어쓰려 할 수 있으므로, 실제로 이번에

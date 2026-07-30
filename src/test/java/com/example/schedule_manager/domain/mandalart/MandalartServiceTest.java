@@ -8,6 +8,7 @@ import com.example.schedule_manager.domain.mandalart.entity.MandalartBoard;
 import com.example.schedule_manager.domain.mandalart.entity.MandalartCell;
 import com.example.schedule_manager.domain.mandalart.repository.MandalartBoardRepository;
 import com.example.schedule_manager.domain.mandalart.repository.MandalartCellRepository;
+import com.example.schedule_manager.domain.mandalart.service.MandalartGoalEmbeddingService;
 import com.example.schedule_manager.domain.mandalart.service.MandalartService;
 import com.example.schedule_manager.domain.user.entity.User;
 import com.example.schedule_manager.domain.user.entity.UserType;
@@ -28,6 +29,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,6 +46,9 @@ class MandalartServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private MandalartGoalEmbeddingService mandalartGoalEmbeddingService;
 
     @InjectMocks
     private MandalartService mandalartService;
@@ -96,6 +101,22 @@ class MandalartServiceTest {
     }
 
     @Test
+    @DisplayName("만다라트 목록 조회 성공 - 적용 중인 보드는 active 플래그가 true로 표시된다")
+    void getBoards_success_marksActiveBoard() {
+        User requester = user(1L);
+        requester.updateActiveMandalartBoardId(1L);
+        MandalartBoard applied = MandalartBoard.builder().id(1L).title("적용된 목표").user(requester).build();
+        MandalartBoard other = MandalartBoard.builder().id(2L).title("다른 목표").user(requester).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(mandalartBoardRepository.findByUserIdOrderByCreatedAtDesc(1L)).thenReturn(List.of(applied, other));
+
+        List<MandalartBoardSummaryDto> response = mandalartService.getBoards("tester@example.com");
+
+        assertThat(response).filteredOn(b -> b.id().equals(1L)).extracting(MandalartBoardSummaryDto::active).containsExactly(true);
+        assertThat(response).filteredOn(b -> b.id().equals(2L)).extracting(MandalartBoardSummaryDto::active).containsExactly(false);
+    }
+
+    @Test
     @DisplayName("만다라트 상세 조회 성공 - 본인 소유 보드는 셀과 함께 조회된다")
     void getBoard_success_returnsBoardWithCells() {
         User requester = user(1L);
@@ -109,6 +130,7 @@ class MandalartServiceTest {
 
         assertThat(response.cells()).hasSize(1);
         assertThat(response.cells().get(0).content()).isEqualTo("메인 목표");
+        assertThat(response.active()).isFalse();
     }
 
     @Test
@@ -151,6 +173,38 @@ class MandalartServiceTest {
         mandalartService.updateCell("tester@example.com", 1L, 0, 0, new MandalartCellUpdateRequestDto("실행 항목 1"));
 
         assertThat(cell.getContent()).isEqualTo("실행 항목 1");
+    }
+
+    @Test
+    @DisplayName("셀 수정 성공 - 수정한 칸이 속한 바깥 블록을 RAG 색인 대상으로 넘긴다")
+    void updateCell_success_reindexesAffectedBlock() {
+        User requester = user(1L);
+        MandalartBoard board = MandalartBoard.builder().id(1L).title("목표").user(requester).build();
+        MandalartCell cell = MandalartCell.builder().id(1L).board(board).rowIndex(0).colIndex(1).content("").build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(mandalartBoardRepository.findById(1L)).thenReturn(Optional.of(board));
+        when(mandalartCellRepository.findByBoardIdAndRowIndexAndColIndex(1L, 0, 1)).thenReturn(Optional.of(cell));
+        when(mandalartGoalEmbeddingService.resolveAffectedBlock(0, 1)).thenReturn(new int[] {0, 0});
+
+        mandalartService.updateCell("tester@example.com", 1L, 0, 1, new MandalartCellUpdateRequestDto("실행 항목 1"));
+
+        verify(mandalartGoalEmbeddingService).reindexBlockIfComplete(1L, 1L, 0, 0);
+    }
+
+    @Test
+    @DisplayName("셀 수정 성공 - 핵심 목표(4,4) 등 색인 대상이 아닌 칸은 재색인을 호출하지 않는다")
+    void updateCell_success_skipsReindexForNonIndexableCell() {
+        User requester = user(1L);
+        MandalartBoard board = MandalartBoard.builder().id(1L).title("목표").user(requester).build();
+        MandalartCell cell = MandalartCell.builder().id(1L).board(board).rowIndex(4).colIndex(4).content("").build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(mandalartBoardRepository.findById(1L)).thenReturn(Optional.of(board));
+        when(mandalartCellRepository.findByBoardIdAndRowIndexAndColIndex(1L, 4, 4)).thenReturn(Optional.of(cell));
+        when(mandalartGoalEmbeddingService.resolveAffectedBlock(4, 4)).thenReturn(null);
+
+        mandalartService.updateCell("tester@example.com", 1L, 4, 4, new MandalartCellUpdateRequestDto("핵심 목표"));
+
+        verify(mandalartGoalEmbeddingService, never()).reindexBlockIfComplete(any(), any(), anyInt(), anyInt());
     }
 
     @Test
@@ -198,6 +252,19 @@ class MandalartServiceTest {
     }
 
     @Test
+    @DisplayName("만다라트 삭제 성공 - 해당 보드의 RAG 임베딩도 함께 삭제한다")
+    void deleteBoard_success_deletesGoalEmbeddings() {
+        User requester = user(1L);
+        MandalartBoard board = MandalartBoard.builder().id(1L).title("목표").user(requester).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(mandalartBoardRepository.findById(1L)).thenReturn(Optional.of(board));
+
+        mandalartService.deleteBoard("tester@example.com", 1L);
+
+        verify(mandalartGoalEmbeddingService).deleteBoardEmbeddings(1L);
+    }
+
+    @Test
     @DisplayName("만다라트 삭제 실패 - 다른 유저의 보드는 삭제할 수 없다")
     void deleteBoard_otherUsersBoard_throwsAccessDenied() {
         User requester = user(1L);
@@ -212,5 +279,74 @@ class MandalartServiceTest {
 
         verify(mandalartCellRepository, never()).deleteByBoardId(any());
         verify(mandalartBoardRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("만다라트 삭제 성공 - 적용 중이던 보드를 삭제하면 적용 상태도 함께 해제된다")
+    void deleteBoard_success_clearsActiveBoardIdWhenDeletingAppliedBoard() {
+        User requester = user(1L);
+        requester.updateActiveMandalartBoardId(1L);
+        MandalartBoard board = MandalartBoard.builder().id(1L).title("목표").user(requester).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(mandalartBoardRepository.findById(1L)).thenReturn(Optional.of(board));
+
+        mandalartService.deleteBoard("tester@example.com", 1L);
+
+        assertThat(requester.getActiveMandalartBoardId()).isNull();
+    }
+
+    @Test
+    @DisplayName("만다라트 삭제 성공 - 적용 중이 아닌 보드를 삭제해도 다른 보드의 적용 상태는 유지된다")
+    void deleteBoard_success_keepsActiveBoardIdWhenDeletingOtherBoard() {
+        User requester = user(1L);
+        requester.updateActiveMandalartBoardId(9L);
+        MandalartBoard board = MandalartBoard.builder().id(1L).title("목표").user(requester).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(mandalartBoardRepository.findById(1L)).thenReturn(Optional.of(board));
+
+        mandalartService.deleteBoard("tester@example.com", 1L);
+
+        assertThat(requester.getActiveMandalartBoardId()).isEqualTo(9L);
+    }
+
+    @Test
+    @DisplayName("만다라트 적용 성공 - 본인 소유 보드를 적용하면 activeMandalartBoardId가 갱신된다")
+    void activateBoard_success_updatesActiveMandalartBoardId() {
+        User requester = user(1L);
+        MandalartBoard board = MandalartBoard.builder().id(1L).title("목표").user(requester).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(mandalartBoardRepository.findById(1L)).thenReturn(Optional.of(board));
+
+        mandalartService.activateBoard("tester@example.com", 1L);
+
+        assertThat(requester.getActiveMandalartBoardId()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("만다라트 적용 실패 - 다른 유저의 보드는 적용할 수 없다")
+    void activateBoard_otherUsersBoard_throwsAccessDenied() {
+        User requester = user(1L);
+        MandalartBoard othersBoard = MandalartBoard.builder().id(2L).title("남의 목표").user(user(2L)).build();
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(mandalartBoardRepository.findById(2L)).thenReturn(Optional.of(othersBoard));
+
+        assertThatThrownBy(() -> mandalartService.activateBoard("tester@example.com", 2L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.MANDALART_ACCESS_DENIED);
+
+        assertThat(requester.getActiveMandalartBoardId()).isNull();
+    }
+
+    @Test
+    @DisplayName("만다라트 적용 해제 성공 - activeMandalartBoardId를 null로 되돌린다")
+    void deactivateBoard_success_clearsActiveMandalartBoardId() {
+        User requester = user(1L);
+        requester.updateActiveMandalartBoardId(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+
+        mandalartService.deactivateBoard("tester@example.com");
+
+        assertThat(requester.getActiveMandalartBoardId()).isNull();
     }
 }

@@ -100,14 +100,25 @@ ALTER TABLE categories ALTER COLUMN name  TYPE varchar(255) COLLATE case_insensi
 
 - **데이터 이관 안 함** — 위 결정에 따라 기존 MySQL 로컬 데이터는 이관하지 않음. 필요해지면
   `pgloader`(MySQL → PostgreSQL 전용 도구)로 별도 진행.
-- **pgvector 익스텐션/의존성 추가 안 함** — 이번 범위는 DB 전환까지. RAG 구현 착수 시:
-  1. PostgreSQL에서 `CREATE EXTENSION IF NOT EXISTS vector;`
-  2. `build.gradle`에 `spring-ai-starter-vector-store-pgvector` 추가
-  3. 임베딩 대상 정하기(예: `Schedule.content` + `title`, 또는 별도 "메모/기록" 도메인)와
-     임베딩 모델(Anthropic은 임베딩 모델을 제공하지 않으므로 별도 임베딩 모델 필요 — 예:
-     OpenAI `text-embedding-3-small` 또는 로컬 임베딩 모델) 선정
-  4. `AiService`의 컨텍스트 구성(`buildScheduleContext`, 최근/향후 2주 윈도우 방식)을
-     `VectorStore.similaritySearch()` 기반으로 교체
+- [x] **pgvector RAG 1탄 완료 — 만다라트 과거 목표 검색** (`MandalartGoalEmbeddingService`,
+  `[feat] 만다라트 AI 채우기 RAG` 커밋): 완성된 바깥 블록(세부목표+실행항목 8개)을 pgvector에
+  임베딩해뒀다가, `fillWithAi`가 지금 채우는 세부목표와 비슷한 요청자 본인의 과거 블록을 검색해
+  few-shot 예시로 프롬프트에 얹는다. 실제로 쓴 구성: `spring-ai-openai-spring-boot-starter`(임베딩
+  전용, `spring.ai.openai.chat.enabled: false`로 채팅 빈은 꺼둠) + `spring-ai-pgvector-store-spring-boot-starter`
+  (M1 기준 실제 artifact 이름 — `spring-ai-starter-vector-store-pgvector`라는 최신 이름은 이 버전엔
+  없음, `PgVectorStoreAutoConfiguration`이 `JdbcTemplate`+`EmbeddingModel`만 있으면 자동 구성), 임베딩
+  모델은 OpenAI `text-embedding-3-small`. 로컬에 `vector` 익스텐션 외에 `uuid-ossp`도 추가로 필요했음
+  (`PgVectorStore`의 기본 id 컬럼이 `uuid_generate_v4()` 디폴트를 쓰는 `uuid` 타입이라, 결정적 upsert
+  키를 만들려면 `UUID.nameUUIDFromBytes(...)`로 문자열 키를 uuid로 변환해야 함). 자세한 내용은
+  `CLAUDE.md`의 "Mandalart RAG" 절 참고.
+- [x] **pgvector RAG 2탄 완료 — 일정 컨텍스트 RAG** (`ScheduleEmbeddingService`): 고정 ±2주 윈도우
+  (`AiService.filterToWindow`)는 대체하지 않고 그대로 두되, 윈도우 밖 일정 중 지금 대화와 의미적으로
+  비슷한 것만 `[참고: 의미상 비슷한 과거/예정 일정]` 섹션으로 보강. 만다라트 RAG와 같은
+  `VectorStore`/OpenAI 임베딩 빈을 그대로 재사용(임베딩 대상은 계획대로 `Schedule.title`+`content`).
+  같은 `vector_store` 테이블을 공유하게 되면서, 두 RAG 용도가 섞이지 않도록 `docType` 메타데이터
+  구분을 이번에 추가(기존 만다라트 RAG 필터에도 소급 적용). 색인은 `createSchedule`/`updateSchedule`/
+  `deleteSchedule`에만 연결하고, 반복 일정 배치 생성(`createSchedules`)과 자동 상태 전환은 제외
+  (지연시간/가치 트레이드오프). 자세한 내용은 `CLAUDE.md`의 "Schedule RAG" 절 참고.
 - **로컬 MySQL 서비스 중지/삭제 안 함** — 다른 로컬 프로젝트가 같은 MySQL 인스턴스를 쓰고 있어
   (`stock`/`history`/`outbox_event` 등 무관 테이블 존재) 그대로 둠. 이 프로젝트만 PostgreSQL을
   바라보도록 설정만 바꿨다.

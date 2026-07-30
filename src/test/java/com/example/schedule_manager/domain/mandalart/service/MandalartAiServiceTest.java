@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
@@ -29,8 +30,11 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -52,6 +56,8 @@ class MandalartAiServiceTest {
     @Mock
     private AiRateLimiter aiRateLimiter;
     @Mock
+    private MandalartGoalEmbeddingService mandalartGoalEmbeddingService;
+    @Mock
     private ChatClient chatClient;
     @Mock
     private ChatClient.ChatClientRequest chatClientRequest;
@@ -66,7 +72,8 @@ class MandalartAiServiceTest {
     @BeforeEach
     void setUp() {
         mandalartAiService = new MandalartAiService(
-                mandalartBoardRepository, mandalartCellRepository, userRepository, aiRateLimiter, chatClient);
+                mandalartBoardRepository, mandalartCellRepository, userRepository, aiRateLimiter,
+                mandalartGoalEmbeddingService, chatClient);
         requester = User.builder().id(1L).username("tester").email("tester@example.com").userType(UserType.USER).build();
         board = MandalartBoard.builder().id(10L).title("2026년 목표").user(requester).build();
     }
@@ -129,6 +136,59 @@ class MandalartAiServiceTest {
         // 바깥 블록의 자기 블록 중심(1,1)은 (3,3)의 세부목표를 AI 없이 그대로 복사한다
         assertThat(byKey.get("1-1")).isEqualTo("규칙적인 운동");
         assertThat(byKey.get("7-7")).isEqualTo("체중 관리");
+    }
+
+    @Test
+    @DisplayName("채우기 성공 - 과거 유사 목표 예시가 있으면 프롬프트에 few-shot으로 포함된다")
+    void fillWithAi_success_includesFewShotExamplesWhenFound() {
+        List<MandalartCell> cells = buildCellsWithFilledCenter(Map.of());
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(mandalartBoardRepository.findById(10L)).thenReturn(Optional.of(board));
+        when(mandalartCellRepository.findByBoardIdOrderByRowIndexAscColIndexAsc(10L)).thenReturn(cells);
+        when(mandalartGoalEmbeddingService.findSimilarExamples(eq(1L), eq(10L), eq("규칙적인 운동"), eq(1)))
+                .thenReturn(List.of(new MandalartGoalEmbeddingService.GoalExample("규칙적인 운동", "아침 조깅 30분\n주 3회 헬스장")));
+        stubChatClient(new MandalartFillSuggestion(List.of(new MandalartCellSuggestion(0, 0, "아침 스트레칭"))));
+
+        mandalartAiService.fillWithAi("tester@example.com", 10L);
+
+        ArgumentCaptor<String> userMessageCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatClientRequest).user(userMessageCaptor.capture());
+        assertThat(userMessageCaptor.getValue())
+                .contains("[참고: 과거 비슷한 목표의 실행항목 예시]")
+                .contains("규칙적인 운동")
+                .contains("아침 조깅 30분");
+    }
+
+    @Test
+    @DisplayName("채우기 성공 - 과거 유사 목표 예시가 없으면 프롬프트에 few-shot 섹션 자체가 없다")
+    void fillWithAi_success_omitsFewShotSectionWhenNoExamplesFound() {
+        List<MandalartCell> cells = buildCellsWithFilledCenter(Map.of());
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(mandalartBoardRepository.findById(10L)).thenReturn(Optional.of(board));
+        when(mandalartCellRepository.findByBoardIdOrderByRowIndexAscColIndexAsc(10L)).thenReturn(cells);
+        when(mandalartGoalEmbeddingService.findSimilarExamples(eq(1L), eq(10L), anyString(), eq(1)))
+                .thenReturn(List.of());
+        stubChatClient(new MandalartFillSuggestion(List.of(new MandalartCellSuggestion(0, 0, "아침 스트레칭"))));
+
+        mandalartAiService.fillWithAi("tester@example.com", 10L);
+
+        ArgumentCaptor<String> userMessageCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatClientRequest).user(userMessageCaptor.capture());
+        assertThat(userMessageCaptor.getValue()).doesNotContain("[참고: 과거 비슷한 목표의 실행항목 예시]");
+    }
+
+    @Test
+    @DisplayName("채우기 성공 - AI 채우기가 끝나면 바깥 8개 블록을 전부 RAG 색인 대상으로 넘긴다")
+    void fillWithAi_success_reindexesAllOuterBlocksAfterFill() {
+        List<MandalartCell> cells = buildCellsWithFilledCenter(Map.of());
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(mandalartBoardRepository.findById(10L)).thenReturn(Optional.of(board));
+        when(mandalartCellRepository.findByBoardIdOrderByRowIndexAscColIndexAsc(10L)).thenReturn(cells);
+        stubChatClient(new MandalartFillSuggestion(List.of(new MandalartCellSuggestion(0, 0, "아침 스트레칭"))));
+
+        mandalartAiService.fillWithAi("tester@example.com", 10L);
+
+        verify(mandalartGoalEmbeddingService, times(8)).reindexBlockIfComplete(eq(1L), eq(10L), anyInt(), anyInt());
     }
 
     @Test

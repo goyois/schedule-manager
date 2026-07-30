@@ -12,5 +12,8 @@ public interface MandalartCellRepository extends JpaRepository<MandalartCell, Lo
 
     Optional<MandalartCell> findByBoardIdAndRowIndexAndColIndex(Long boardId, int rowIndex, int colIndex);
 
+    List<MandalartCell> findByBoardIdAndRowIndexBetweenAndColIndexBetween(
+            Long boardId, int rowStart, int rowEnd, int colStart, int colEnd);
+
     void deleteByBoardId(Long boardId);
 }

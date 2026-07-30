@@ -49,6 +49,13 @@ public class User extends BaseEntity {
     @Builder.Default
     private boolean aiAutoRegisterEnabled = false;
 
+    // 지금 이 유저가 "따르고 있는" 만다라트 보드 - null이면 적용된 보드 없음. MandalartBoard와
+    // 하드 FK로 묶지 않는다(AiChatMessage.targetScheduleId 등과 같은 느슨한 참조 관례) - 보드가
+    // 삭제되면 MandalartService.deleteBoard가 이 값을 직접 null로 정리한다. AiService가 새 일정을
+    // 추천할 때 이 보드의 핵심/세부 목표를 프롬프트 컨텍스트로 참고한다
+    @Column(name = "active_mandalart_board_id")
+    private Long activeMandalartBoardId;
+
     public void update(String username, String email, String encodedPassword) {
         this.username = username;
         this.email = email;
@@ -61,5 +68,9 @@ public class User extends BaseEntity {
 
     public void updateAiAutoRegisterEnabled(boolean aiAutoRegisterEnabled) {
         this.aiAutoRegisterEnabled = aiAutoRegisterEnabled;
+    }
+
+    public void updateActiveMandalartBoardId(Long activeMandalartBoardId) {
+        this.activeMandalartBoardId = activeMandalartBoardId;
     }
 }

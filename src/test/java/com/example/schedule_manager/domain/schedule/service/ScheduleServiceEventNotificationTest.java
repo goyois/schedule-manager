@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,6 +50,8 @@ class ScheduleServiceEventNotificationTest {
     private ScheduleCacheQueryService scheduleCacheQueryService;
     @Mock
     private ScheduleEventPublisher scheduleEventPublisher;
+    @Mock
+    private ScheduleEmbeddingService scheduleEmbeddingService;
 
     @InjectMocks
     private ScheduleService scheduleService;
@@ -76,6 +79,7 @@ class ScheduleServiceEventNotificationTest {
         scheduleService.createSchedule(request);
 
         verify(scheduleEventPublisher).notifyChanged(owner.getId());
+        verify(scheduleEmbeddingService).reindexSchedule(eq(owner.getId()), any(Schedule.class));
     }
 
     @Test
@@ -91,6 +95,7 @@ class ScheduleServiceEventNotificationTest {
         scheduleService.updateSchedule(100L, request);
 
         verify(scheduleEventPublisher).notifyChanged(owner.getId());
+        verify(scheduleEmbeddingService).reindexSchedule(eq(owner.getId()), any(Schedule.class));
     }
 
     @Test
@@ -103,6 +108,7 @@ class ScheduleServiceEventNotificationTest {
         scheduleService.deleteSchedule(100L);
 
         verify(scheduleEventPublisher).notifyChanged(owner.getId());
+        verify(scheduleEmbeddingService).deleteScheduleEmbedding(100L);
     }
 
     @Test

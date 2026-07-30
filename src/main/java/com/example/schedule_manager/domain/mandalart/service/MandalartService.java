@@ -29,6 +29,7 @@ public class MandalartService {
     private final MandalartBoardRepository mandalartBoardRepository;
     private final MandalartCellRepository mandalartCellRepository;
     private final UserRepository userRepository;
+    private final MandalartGoalEmbeddingService mandalartGoalEmbeddingService;
 
     // 보드 생성과 동시에 9x9 = 81개 셀을 전부 빈 문자열로 만들어둔다 — 이후 조회/수정 로직에서
     // "셀이 아직 없을 수도 있다"는 경우의 수를 다룰 필요가 없어진다
@@ -54,14 +55,14 @@ public class MandalartService {
         }
         List<MandalartCell> savedCells = mandalartCellRepository.saveAll(cells);
 
-        return MandalartBoardResponseDto.from(board, savedCells);
+        return MandalartBoardResponseDto.from(board, savedCells, false);
     }
 
     @Transactional(readOnly = true)
     public List<MandalartBoardSummaryDto> getBoards(String requesterEmail) {
         User requester = findUserByEmail(requesterEmail);
         return mandalartBoardRepository.findByUserIdOrderByCreatedAtDesc(requester.getId()).stream()
-                .map(MandalartBoardSummaryDto::from)
+                .map(b -> MandalartBoardSummaryDto.from(b, b.getId().equals(requester.getActiveMandalartBoardId())))
                 .toList();
     }
 
@@ -72,7 +73,21 @@ public class MandalartService {
         assertOwner(board, requester);
 
         List<MandalartCell> cells = mandalartCellRepository.findByBoardIdOrderByRowIndexAscColIndexAsc(boardId);
-        return MandalartBoardResponseDto.from(board, cells);
+        return MandalartBoardResponseDto.from(board, cells, board.getId().equals(requester.getActiveMandalartBoardId()));
+    }
+
+    // 유저당 적용 보드는 하나뿐이라 별도의 "이전 적용 해제" 처리 없이 그냥 덮어쓴다
+    public void activateBoard(String requesterEmail, Long boardId) {
+        User requester = findUserByEmail(requesterEmail);
+        MandalartBoard board = findBoard(boardId);
+        assertOwner(board, requester);
+
+        requester.updateActiveMandalartBoardId(boardId);
+    }
+
+    public void deactivateBoard(String requesterEmail) {
+        User requester = findUserByEmail(requesterEmail);
+        requester.updateActiveMandalartBoardId(null);
     }
 
     public void updateCell(String requesterEmail, Long boardId, int row, int col, MandalartCellUpdateRequestDto request) {
@@ -87,6 +102,13 @@ public class MandalartService {
         MandalartCell cell = mandalartCellRepository.findByBoardIdAndRowIndexAndColIndex(boardId, row, col)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MANDALART_NOT_FOUND));
         cell.update(request.content());
+
+        // 방금 수정한 칸이 속한 바깥 블록이 이걸로 완성됐으면(세부목표+실행항목 8개 모두 채워짐) RAG
+        // few-shot 검색용으로 색인한다 - 실패해도 셀 저장 자체는 이미 끝난 뒤라 영향 없다(fail-open)
+        int[] affectedBlock = mandalartGoalEmbeddingService.resolveAffectedBlock(row, col);
+        if (affectedBlock != null) {
+            mandalartGoalEmbeddingService.reindexBlockIfComplete(requester.getId(), boardId, affectedBlock[0], affectedBlock[1]);
+        }
     }
 
     public void deleteBoard(String requesterEmail, Long boardId) {
@@ -96,6 +118,11 @@ public class MandalartService {
 
         mandalartCellRepository.deleteByBoardId(boardId);
         mandalartBoardRepository.delete(board);
+        mandalartGoalEmbeddingService.deleteBoardEmbeddings(boardId);
+        // 지운 보드가 적용 중이던 보드면 끊긴 포인터로 남지 않게 정리한다
+        if (boardId.equals(requester.getActiveMandalartBoardId())) {
+            requester.updateActiveMandalartBoardId(null);
+        }
     }
 
     // 만다라트 보드는 Category 의 소유자-null 공유 모델과 달리 공유/기본 개념이 없는 완전 개인 소유라,

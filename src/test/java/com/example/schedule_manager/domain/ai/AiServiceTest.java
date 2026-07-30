@@ -12,11 +12,13 @@ import com.example.schedule_manager.domain.ai.service.AiService;
 import com.example.schedule_manager.domain.category.dto.CategoryResponseDto;
 import com.example.schedule_manager.domain.category.service.CategoryService;
 import com.example.schedule_manager.domain.mandalart.entity.MandalartBoard;
+import com.example.schedule_manager.domain.mandalart.entity.MandalartCell;
 import com.example.schedule_manager.domain.mandalart.repository.MandalartBoardRepository;
 import com.example.schedule_manager.domain.mandalart.repository.MandalartCellRepository;
 import com.example.schedule_manager.domain.mandalart.service.MandalartAiService;
 import com.example.schedule_manager.domain.schedule.dto.ScheduleResponseDto;
 import com.example.schedule_manager.domain.schedule.entity.ScheduleStatus;
+import com.example.schedule_manager.domain.schedule.service.ScheduleEmbeddingService;
 import com.example.schedule_manager.domain.schedule.service.ScheduleService;
 import com.example.schedule_manager.domain.user.entity.User;
 import com.example.schedule_manager.domain.user.entity.UserType;
@@ -86,6 +88,9 @@ class AiServiceTest {
 
     @Mock
     private MandalartAiService mandalartAiService;
+
+    @Mock
+    private ScheduleEmbeddingService scheduleEmbeddingService;
 
     @InjectMocks
     private AiService aiService;
@@ -355,6 +360,81 @@ class AiServiceTest {
     }
 
     @Test
+    @DisplayName("메시지 전송 성공 - 고정 윈도우 밖이라도 RAG로 찾은 일정은 [참고: 의미상 비슷한 과거/예정 일정] 섹션으로 프롬프트에 포함된다")
+    void sendMessage_success_includesRagScheduleContextWhenFound() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+
+        LocalDateTime now = LocalDateTime.now();
+        ScheduleResponseDto farInThePast = new ScheduleResponseDto(
+                7L, "저번 분기 킥오프", "분기 목표 논의", now.minusMonths(3), now.minusMonths(3).plusHours(1),
+                ScheduleStatus.COMPLETED, "tester", "업무");
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(farInThePast));
+        when(categoryService.getCategories("tester@example.com"))
+                .thenReturn(List.of(new CategoryResponseDto(10L, "업무")));
+        when(scheduleEmbeddingService.findSimilarScheduleIds(eq(1L), anyString(), any(), eq(5)))
+                .thenReturn(List.of(7L));
+
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
+                "제목", "내용", null, null, 10L, "추천 이유"));
+
+        aiService.sendMessage("tester@example.com", "저번 분기 킥오프처럼 잡아줘");
+
+        ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatClientRequest).user(userPromptCaptor.capture());
+        assertThat(userPromptCaptor.getValue())
+                .contains("[참고: 의미상 비슷한 과거/예정 일정]")
+                .contains("저번 분기 킥오프");
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - RAG로 찾은 게 없으면 [참고: 의미상 비슷한 과거/예정 일정] 섹션 자체가 생략된다")
+    void sendMessage_success_omitsRagScheduleContextWhenNoneFound() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+        // scheduleEmbeddingService.findSimilarScheduleIds는 스텁하지 않음 - Mockito 기본값(빈 리스트)을 그대로 씀
+
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
+                "제목", "내용", null, null, null, "이유"));
+
+        aiService.sendMessage("tester@example.com", "추천해줘");
+
+        ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatClientRequest).user(userPromptCaptor.capture());
+        assertThat(userPromptCaptor.getValue()).doesNotContain("[참고: 의미상 비슷한 과거/예정 일정]");
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - RAG로 찾은, 고정 윈도우 밖 일정도 SCHEDULE_UPDATE의 targetScheduleId로 신뢰한다")
+    void sendMessage_success_scheduleUpdate_trustsRagFoundScheduleIdOutsideWindow() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+
+        LocalDateTime now = LocalDateTime.now();
+        ScheduleResponseDto farInThePast = new ScheduleResponseDto(
+                7L, "저번 분기 킥오프", "분기 목표 논의", now.minusMonths(3), now.minusMonths(3).plusHours(1),
+                ScheduleStatus.COMPLETED, "tester", "업무");
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(farInThePast));
+        when(categoryService.getCategories("tester@example.com"))
+                .thenReturn(List.of(new CategoryResponseDto(10L, "업무")));
+        when(scheduleEmbeddingService.findSimilarScheduleIds(eq(1L), anyString(), any(), eq(5)))
+                .thenReturn(List.of(7L));
+
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_UPDATE, 7L, null,
+                "저번 분기 킥오프", "분기 목표 논의", now.minusMonths(3).toString(), now.minusMonths(3).plusHours(1).toString(),
+                10L, "그거 다음 주로 옮겼어요"));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "저번 분기 킥오프 다음 주로 옮겨줘");
+
+        assertThat(exchange.assistantMessage().targetScheduleId()).isEqualTo(7L);
+    }
+
+    @Test
     @DisplayName("메시지 전송 성공 - MANDALART_FILL은 컨텍스트에 있던 보드 id를 targetMandalartBoardId로 채택하고 실제로 채우기를 수행한다")
     void sendMessage_success_mandalartFill_callsMandalartAiServiceWithValidBoardId() {
         User requester = user(1L);
@@ -394,6 +474,82 @@ class AiServiceTest {
 
         assertThat(exchange.assistantMessage().targetMandalartBoardId()).isNull();
         verifyNoInteractions(mandalartAiService);
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - 적용된 만다라트 보드가 있으면 핵심/세부 목표를 [나의 목표(만다라트)] 컨텍스트로 프롬프트에 포함한다")
+    void sendMessage_success_includesActiveMandalartGoalContext() {
+        User requester = user(1L);
+        requester.updateActiveMandalartBoardId(10L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com"))
+                .thenReturn(List.of(new CategoryResponseDto(10L, "운동")));
+
+        MandalartBoard board = MandalartBoard.builder().id(10L).title("2026년 목표").user(requester).build();
+        when(mandalartBoardRepository.findByUserIdOrderByCreatedAtDesc(1L)).thenReturn(List.of(board));
+        when(mandalartBoardRepository.findById(10L)).thenReturn(Optional.of(board));
+        List<MandalartCell> cells = List.of(
+                MandalartCell.builder().board(board).rowIndex(4).colIndex(4).content("건강한 삶").build(),
+                MandalartCell.builder().board(board).rowIndex(3).colIndex(3).content("규칙적인 운동").build(),
+                MandalartCell.builder().board(board).rowIndex(3).colIndex(4).content("균형 잡힌 식단").build()
+        );
+        when(mandalartCellRepository.findByBoardIdOrderByRowIndexAscColIndexAsc(10L)).thenReturn(cells);
+
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
+                "저녁 러닝", "30분 조깅", "2026-07-29T19:00:00", "2026-07-29T19:30:00", 10L, "추천 이유"));
+
+        aiService.sendMessage("tester@example.com", "운동 일정 추천해줘");
+
+        ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatClientRequest).user(userPromptCaptor.capture());
+        assertThat(userPromptCaptor.getValue())
+                .contains("[나의 목표(만다라트)]")
+                .contains("건강한 삶")
+                .contains("규칙적인 운동")
+                .contains("균형 잡힌 식단");
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - 적용된 만다라트 보드가 없으면 [나의 목표(만다라트)] 컨텍스트를 프롬프트에서 생략한다")
+    void sendMessage_success_omitsMandalartGoalContextWhenNoneActive() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
+                "제목", "내용", null, null, null, "이유"));
+
+        aiService.sendMessage("tester@example.com", "추천해줘");
+
+        ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatClientRequest).user(userPromptCaptor.capture());
+        assertThat(userPromptCaptor.getValue()).doesNotContain("[나의 목표(만다라트)]");
+        verify(mandalartBoardRepository, org.mockito.Mockito.never()).findById(anyLong());
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - 적용된 만다라트 보드 id가 이미 삭제되어 조회되지 않으면 목표 컨텍스트를 생략한다")
+    void sendMessage_success_omitsMandalartGoalContextWhenActiveBoardMissing() {
+        User requester = user(1L);
+        requester.updateActiveMandalartBoardId(999L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+        when(mandalartBoardRepository.findById(999L)).thenReturn(Optional.empty());
+
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
+                "제목", "내용", null, null, null, "이유"));
+
+        aiService.sendMessage("tester@example.com", "추천해줘");
+
+        ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatClientRequest).user(userPromptCaptor.capture());
+        assertThat(userPromptCaptor.getValue()).doesNotContain("[나의 목표(만다라트)]");
     }
 
     @Test

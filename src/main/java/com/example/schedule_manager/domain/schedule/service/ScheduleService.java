@@ -52,6 +52,7 @@ public class ScheduleService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final ScheduleCacheQueryService scheduleCacheQueryService;
     private final ScheduleEventPublisher scheduleEventPublisher;
+    private final ScheduleEmbeddingService scheduleEmbeddingService;
 
     // #v3: 새 일정이 생기면 해당 유저의 목록 캐시가 최신 상태가 아니게 된다
     // 이전엔 특정 키 하나만 골라 지울 수 없다는 이유로 캐시 전체(allEntries)를 무효화했는데,
@@ -71,9 +72,10 @@ public class ScheduleService {
                 .category(category)
                 .build();
 
-        ScheduleResponseDto response = ScheduleResponseDto.from(scheduleRepository.save(schedule));
+        Schedule saved = scheduleRepository.save(schedule);
+        scheduleEmbeddingService.reindexSchedule(user.getId(), saved);
         evictScheduleCacheForUser(user.getId());
-        return response;
+        return ScheduleResponseDto.from(saved);
     }
 
     // RecurringScheduleService가 반복 규칙에서 미리 여러 occurrence를 만들 때 쓴다 - 건마다
@@ -197,6 +199,7 @@ public class ScheduleService {
                 request.status(),
                 category
         );
+        scheduleEmbeddingService.reindexSchedule(schedule.getUser().getId(), schedule);
         evictScheduleCacheForUser(schedule.getUser().getId());
         return ScheduleResponseDto.from(schedule);
     }
@@ -206,6 +209,7 @@ public class ScheduleService {
         Schedule schedule = findSchedule(id);
         Long ownerId = schedule.getUser().getId();
         scheduleRepository.delete(schedule);
+        scheduleEmbeddingService.deleteScheduleEmbedding(id);
         evictScheduleCacheForUser(ownerId);
     }
 

@@ -15,6 +15,7 @@ import com.example.schedule_manager.domain.mandalart.repository.MandalartBoardRe
 import com.example.schedule_manager.domain.mandalart.repository.MandalartCellRepository;
 import com.example.schedule_manager.domain.mandalart.service.MandalartAiService;
 import com.example.schedule_manager.domain.schedule.dto.ScheduleResponseDto;
+import com.example.schedule_manager.domain.schedule.service.ScheduleEmbeddingService;
 import com.example.schedule_manager.domain.schedule.service.ScheduleService;
 import com.example.schedule_manager.domain.user.entity.User;
 import com.example.schedule_manager.domain.user.repository.UserRepository;
@@ -33,9 +34,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -48,9 +53,20 @@ public class AiService {
     // 토큰 비용 때문에 일정 컨텍스트는 최근 2주 + 향후 2주로 제한한다(AI_STRATEGY.md 3단계)
     private static final int CONTEXT_WINDOW_WEEKS = 2;
 
+    // 고정 윈도우 밖(더 예전/훨씬 나중) 일정 중, 지금 대화와 의미적으로 비슷한 것만 보강으로 몇 개
+    // 더 보여준다 - 프롬프트 크기/비용을 제한하기 위해 작게 잡는다
+    private static final int RAG_SCHEDULE_TOP_K = 5;
+
     // 대화가 길어질수록 매 턴 다시 실어 보내는 토큰이 늘어나므로, LLM에 넘기는 과거 대화는
     // 최근 이만큼만으로 제한한다(채팅창 자체의 표시 기록은 이 제한과 무관하게 전부 보여준다)
     private static final int MAX_HISTORY_MESSAGES = 20;
+
+    // 만다라트 중앙 3x3 블록 좌표 - (4,4)는 핵심 목표, 나머지 8칸은 세부 목표(MandalartAiService의
+    // OUTER_BLOCKS 계산과 같은 "핵심 목표를 둘러싼 중앙 블록" 정의). 일정 추천 컨텍스트는 토큰 비용 때문에
+    // 실행항목 64칸까지는 넣지 않고 이 9칸까지만 사용한다
+    private static final int[][] SUB_GOAL_COORDS = {
+            {3, 3}, {3, 4}, {3, 5}, {4, 3}, {4, 5}, {5, 3}, {5, 4}, {5, 5},
+    };
 
     private static final String SYSTEM_PROMPT = """
             당신은 일정 관리 도우미입니다. 사용자의 기존 일정과 카테고리, 그리고 이전 대화 맥락을 참고해
@@ -85,6 +101,10 @@ public class AiService {
                채우고, targetScheduleId/targetMandalartBoardId는 null로 두세요.
                - categoryId는 [사용 가능한 카테고리]에 나열된 id 중 하나만 쓰고, 적절한 카테고리가 없으면 null로 두세요.
                - 종료 시각이 필요 없는 알림형 일정이면 endAt을 null로 두세요.
+               - [나의 목표(만다라트)]가 주어져 있으면, 사용자의 요청과 관련이 있는 범위에서 그 핵심
+                 목표/세부 목표를 달성하는 데 도움이 되는 일정을 우선 추천하고, reason에 어느 목표와
+                 관련 있는지 짧게 언급하세요. 다만 사용자가 이미 구체적으로 무엇을 원하는지 말했다면
+                 그 요청을 우선하고, 목표와 무관해 보여도 억지로 끼워 맞추지 마세요.
                - reason에는 왜 이 일정을 추천하는지 한두 문장으로 설명하세요.
             4) 그 외 모든 경우(기존 일정 조회/설명, 잡담, 대상을 특정할 수 없는 수정/채우기 요청 등)는
                GENERAL로 분류하세요. targetScheduleId/targetMandalartBoardId와
@@ -103,6 +123,7 @@ public class AiService {
     private final MandalartBoardRepository mandalartBoardRepository;
     private final MandalartCellRepository mandalartCellRepository;
     private final MandalartAiService mandalartAiService;
+    private final ScheduleEmbeddingService scheduleEmbeddingService;
 
     @Transactional(readOnly = true)
     public List<AiChatMessageDto> getConversation(String requesterEmail) {
@@ -144,24 +165,50 @@ public class AiService {
                 .findByUserIdOrderByCreatedAtDesc(requester.getId(), PageRequest.of(0, MAX_HISTORY_MESSAGES));
         Collections.reverse(recentHistory); // 최신순으로 가져온 걸 시간순으로 뒤집는다
 
-        List<ScheduleResponseDto> windowedSchedules = getWindowedSchedules(requesterEmail, requester.getId());
+        List<ScheduleResponseDto> allSchedules = scheduleService.getSchedules(requesterEmail, requester.getId(), null);
+        List<ScheduleResponseDto> windowedSchedules = filterToWindow(allSchedules);
         String scheduleContext = buildScheduleContext(windowedSchedules);
         Set<Long> windowedScheduleIds = windowedSchedules.stream().map(ScheduleResponseDto::id).collect(Collectors.toSet());
+
+        // 고정 윈도우 밖이라도 지금 대화 내용과 의미적으로 비슷한 과거/예정 일정을 보강으로 찾는다
+        // (예: "저번 달에 했던 것처럼" 같은 요청은 2주 윈도우만으론 절대 못 찾음). 실패해도 빈 목록이라
+        // 조용히 원래 흐름(고정 윈도우만)으로 진행된다(fail-open, ScheduleEmbeddingService 참고)
+        List<Long> ragScheduleIds = scheduleEmbeddingService.findSimilarScheduleIds(
+                requester.getId(), userText, windowedScheduleIds, RAG_SCHEDULE_TOP_K);
+        Map<Long, ScheduleResponseDto> scheduleById = allSchedules.stream()
+                .collect(Collectors.toMap(ScheduleResponseDto::id, dto -> dto, (a, b) -> a));
+        List<ScheduleResponseDto> ragSchedules = ragScheduleIds.stream()
+                .map(scheduleById::get)
+                .filter(Objects::nonNull)
+                .toList();
+        String ragScheduleContext = ragSchedules.isEmpty()
+                ? ""
+                : "\n\n[참고: 의미상 비슷한 과거/예정 일정]\n" + buildScheduleContext(ragSchedules);
+
+        // SCHEDULE_UPDATE의 targetScheduleId 검증(환각 방지)에 쓰는 "이번 턴에 실제로 보여준 일정" 집합에
+        // RAG로 찾은 것도 포함시킨다 - 윈도우 밖 일정도 이제 "그거 옮겨줘" 식으로 참조할 수 있어야 하므로
+        Set<Long> trustedScheduleIds = new HashSet<>(windowedScheduleIds);
+        trustedScheduleIds.addAll(ragSchedules.stream().map(ScheduleResponseDto::id).toList());
+
         List<CategoryResponseDto> categories = categoryService.getCategories(requesterEmail);
         String categoryContext = buildCategoryContext(categories);
         List<MandalartBoard> mandalartBoards = mandalartBoardRepository.findByUserIdOrderByCreatedAtDesc(requester.getId());
         String mandalartContext = buildMandalartContext(mandalartBoards);
         Set<Long> ownedMandalartBoardIds = mandalartBoards.stream().map(MandalartBoard::getId).collect(Collectors.toSet());
+        String activeGoalContext = buildActiveMandalartGoalContext(requester);
 
         List<Message> conversationHistory = recentHistory.stream().map(this::toSpringAiMessage).toList();
+
+        String userPrompt = userText + "\n\n[기존 일정]\n" + scheduleContext + ragScheduleContext + "\n\n[사용 가능한 카테고리]\n" + categoryContext
+                + "\n\n[만다라트 보드]\n" + mandalartContext
+                + (activeGoalContext != null ? "\n\n[나의 목표(만다라트)]\n" + activeGoalContext : "");
 
         AiScheduleSuggestion suggestion;
         try {
             suggestion = chatClient.prompt()
                     .system(SYSTEM_PROMPT)
                     .messages(conversationHistory)
-                    .user(userText + "\n\n[기존 일정]\n" + scheduleContext + "\n\n[사용 가능한 카테고리]\n" + categoryContext
-                            + "\n\n[만다라트 보드]\n" + mandalartContext)
+                    .user(userPrompt)
                     .call()
                     .entity(AiScheduleSuggestion.class);
         } catch (Exception e) {
@@ -208,7 +255,7 @@ public class AiService {
             // 모델이 [기존 일정] 컨텍스트에 없는(또는 지어낸) id를 targetScheduleId로 줄 수 있으므로,
             // 실제로 이번 턴에 컨텍스트로 보여준 id 집합에 있을 때만 신뢰한다 - 검증에 실패하면 targetScheduleId가
             // null로 남아 프론트가 "수정 반영" 버튼을 아예 보여주지 않는다(엉뚱한 일정을 덮어쓸 위험 차단)
-            targetScheduleId = suggestion.targetScheduleId() != null && windowedScheduleIds.contains(suggestion.targetScheduleId())
+            targetScheduleId = suggestion.targetScheduleId() != null && trustedScheduleIds.contains(suggestion.targetScheduleId())
                     ? suggestion.targetScheduleId()
                     : null;
 
@@ -280,6 +327,38 @@ public class AiService {
                 .collect(Collectors.joining("\n"));
     }
 
+    // 유저가 "적용 중"으로 지정한 보드(User.activeMandalartBoardId)의 핵심 목표 + 세부 목표 8개만 골라
+    // SCHEDULE_RECOMMENDATION 프롬프트에 참고 컨텍스트로 얹는다 - buildMandalartContext([만다라트 보드])와
+    // 달리 실행항목 64칸은 넣지 않고(토큰 비용), 적용된 보드 하나만 다룬다. 적용된 보드가 없거나(null),
+    // 있어도 이미 삭제됐거나 더 이상 본인 소유가 아니면(끊긴 포인터 방어) null을 반환해 프롬프트에서
+    // 이 블록 자체를 생략한다
+    private String buildActiveMandalartGoalContext(User requester) {
+        Long activeBoardId = requester.getActiveMandalartBoardId();
+        if (activeBoardId == null) {
+            return null;
+        }
+
+        MandalartBoard board = mandalartBoardRepository.findById(activeBoardId).orElse(null);
+        if (board == null || !board.getUser().getId().equals(requester.getId())) {
+            return null;
+        }
+
+        List<MandalartCell> cells = mandalartCellRepository.findByBoardIdOrderByRowIndexAscColIndexAsc(activeBoardId);
+        Map<String, String> contentByCoord = cells.stream()
+                .collect(Collectors.toMap(c -> c.getRowIndex() + "-" + c.getColIndex(), MandalartCell::getContent, (a, b) -> a));
+
+        String mainGoal = contentByCoord.getOrDefault("4-4", "");
+        String subGoals = Arrays.stream(SUB_GOAL_COORDS)
+                .map(coord -> contentByCoord.getOrDefault(coord[0] + "-" + coord[1], ""))
+                .filter(content -> content != null && !content.isBlank())
+                .collect(Collectors.joining(", "));
+
+        return "- 보드: %s\n- 핵심 목표: %s\n- 세부 목표: %s".formatted(
+                board.getTitle(),
+                mainGoal != null && !mainGoal.isBlank() ? mainGoal : "(핵심 목표 미입력)",
+                subGoals.isBlank() ? "(세부 목표 미입력)" : subGoals);
+    }
+
     // 과거 ASSISTANT 턴을 LLM에 그대로 재현하기보다(구조화된 필드를 다시 JSON으로 만들어 넣는 건 과함),
     // 모델이 대화 맥락을 이해할 정도로만 요약해서 넣는다
     private Message toSpringAiMessage(AiChatMessage message) {
@@ -320,12 +399,10 @@ public class AiService {
         }
     }
 
-    // 항상 요청자 본인의 일정만 컨텍스트로 쓴다 - ADMIN 이 호출하더라도 전체 유저 일정이 아니라 본인 일정
-    // 기준으로 추천해야 하므로, ScheduleService.getSchedules 의 "USER 는 본인 id 로 강제" 규칙에 기대지 않고
-    // 여기서 직접 requester.getId() 를 명시적으로 넘긴다
-    private List<ScheduleResponseDto> getWindowedSchedules(String requesterEmail, Long requesterId) {
-        List<ScheduleResponseDto> schedules = scheduleService.getSchedules(requesterEmail, requesterId, null);
-
+    // 이미 불러온 전체 일정 목록(sendMessage에서 requester.getId()를 명시적으로 넘겨 조회한 것 - ADMIN이
+    // 호출하더라도 전체 유저 일정이 아니라 본인 일정 기준으로 추천해야 하므로 ScheduleService.getSchedules의
+    // "USER는 본인 id로 강제" 규칙에 기대지 않음)에서 고정 윈도우(최근 2주~향후 2주)만 걸러낸다
+    private List<ScheduleResponseDto> filterToWindow(List<ScheduleResponseDto> schedules) {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime windowStart = now.minusWeeks(CONTEXT_WINDOW_WEEKS);
         LocalDateTime windowEnd = now.plusWeeks(CONTEXT_WINDOW_WEEKS);
