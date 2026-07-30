@@ -24,6 +24,72 @@ const categoryListEl = document.getElementById("category-list");
 const categoryCountEl = document.getElementById("category-count");
 const categorySelect = document.getElementById("category-select");
 
+// 보드 카드 접기: 제목만 남기고 본문/카테고리/시간/상태변경 영역을 감춘다. 카드별 .collapsed 클래스는
+// scheduleCardHtml()이 board.compact 여부(+ forceExpandedCardIds)를 보고 렌더링 시점에 계산하므로,
+// 이 토글이 바뀌면 재렌더링을 해줘야 카드들이 새 기본값을 반영한다(isCardVisuallyCollapsed 참고).
+// 사이드바 접힘(sidebar.js)과 같은 이유로 로그인 계정과 무관한 순수 레이아웃 취향이라 이메일별로
+// 나누지 않고 브라우저 localStorage에 그대로 저장해둔다
+const BOARD_COMPACT_KEY = "board-cards-compact";
+(function initBoardCompactToggle() {
+  const toggleBtn = document.getElementById("board-compact-toggle-btn");
+  if (!toggleBtn) return;
+
+  const applyCompact = (compact) => {
+    board.classList.toggle("compact", compact);
+    toggleBtn.textContent = compact ? "▤ 펼치기" : "▤ 접기";
+    toggleBtn.title = compact ? "일정 카드 펼치기" : "일정 카드 접기";
+  };
+
+  applyCompact(localStorage.getItem(BOARD_COMPACT_KEY) === "true");
+
+  toggleBtn.addEventListener("click", () => {
+    const next = !board.classList.contains("compact");
+    applyCompact(next);
+    localStorage.setItem(BOARD_COMPACT_KEY, String(next));
+    renderBoard();
+  });
+})();
+
+// 일정 카드 하나씩 개별로 접기: 전체 접기(위 BOARD_COMPACT_KEY)와 달리 카드별로 켜고 끌 수 있다.
+// renderBoard()가 SSE 이벤트 등으로 board.innerHTML을 통째로 다시 그리기 때문에, 접힘 여부를 DOM
+// 클래스만으로 들고 있으면 재렌더링될 때마다 사라진다 - 접힌 일정 id를 따로 기억해두고
+// scheduleCardHtml()이 카드를 만들 때마다 다시 반영한다
+const CARD_COLLAPSED_KEY = "board-card-collapsed-ids";
+
+function loadCollapsedCardIds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(CARD_COLLAPSED_KEY)) || []);
+  } catch (err) {
+    return new Set();
+  }
+}
+
+const collapsedCardIds = loadCollapsedCardIds();
+
+function saveCollapsedCardIds() {
+  localStorage.setItem(CARD_COLLAPSED_KEY, JSON.stringify([...collapsedCardIds]));
+}
+
+// 전체 접기(board.compact)가 켜진 상태에서 카드 하나만 예외로 펼쳐두고 싶을 때 쓴다. collapsedCardIds와
+// 반대 의미(집합에 있으면 "펼침")로 따로 둔 이유: 전체 접기가 꺼져 있을 땐 기본이 펼침이라 collapsedCardIds
+// 하나로 충분했지만, 전체 접기가 켜지면 기본이 접힘으로 뒤집히므로 "이 카드는 예외"를 표현하려면
+// 별도의 집합이 필요하다 - scheduleCardHtml()이 board.compact 여부에 따라 둘 중 하나만 참조한다
+const CARD_FORCE_EXPANDED_KEY = "board-card-force-expanded-ids";
+
+function loadForceExpandedCardIds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(CARD_FORCE_EXPANDED_KEY)) || []);
+  } catch (err) {
+    return new Set();
+  }
+}
+
+const forceExpandedCardIds = loadForceExpandedCardIds();
+
+function saveForceExpandedCardIds() {
+  localStorage.setItem(CARD_FORCE_EXPANDED_KEY, JSON.stringify([...forceExpandedCardIds]));
+}
+
 function showToast(message) {
   toast.textContent = message;
   toast.classList.add("show");
@@ -126,9 +192,12 @@ function renderUserChip() {
   document.getElementById("user-email").textContent = email;
 }
 
+// 보드 뷰에서는 today-nav 화살표로 옮겨다니는 viewDate 기준 날짜를, 그 외 뷰에서는 실제 오늘
+// 날짜를 보여준다(일/주/월/년 뷰는 이미 위쪽 view-nav/calendar-nav에 자기 날짜 범위를 보여주고 있어서,
+// 여기서는 원래 의미인 "오늘"을 그대로 유지한다)
 function renderToday() {
-  const now = new Date();
-  document.getElementById("today-label").textContent = now.toLocaleDateString("ko-KR", {
+  const d = viewMode === "board" ? viewDate : new Date();
+  document.getElementById("today-label").textContent = d.toLocaleDateString("ko-KR", {
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -247,7 +316,8 @@ function renderCategorySidebar() {
   categoryCountEl.textContent = categories.length ? `(${categories.length})` : "";
 
   const allItem = `
-    <li data-category-id="" class="${activeCategoryId === "" ? "active" : ""}">
+    <li data-category-id="" class="${activeCategoryId === "" ? "active" : ""}" title="전체 일정">
+      <span class="cat-icon">전</span>
       <span><span class="dot"></span>전체 일정</span>
       <span class="cat-count" data-count-for="">0</span>
     </li>`;
@@ -255,7 +325,8 @@ function renderCategorySidebar() {
   const items = categories
     .map(
       (c) => `
-      <li draggable="true" data-category-id="${c.id}" class="${String(activeCategoryId) === String(c.id) ? "active" : ""}">
+      <li draggable="true" data-category-id="${c.id}" class="${String(activeCategoryId) === String(c.id) ? "active" : ""}" title="${escapeHtml(c.name)}">
+        <span class="cat-icon">${escapeHtml(c.name.slice(0, 1))}</span>
         <span><span class="drag-handle">&#8942;&#8942;</span><span class="dot"></span>${escapeHtml(c.name)}</span>
         <span class="cat-right">
           <span class="cat-actions">
@@ -461,10 +532,10 @@ function getViewScheduleWindow() {
       end: new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1),
     };
   }
-  // board: 카드 목록(renderBoard)도 오늘 일정만 보여주도록 바뀌었으니, 레이더/카테고리별 카운트도
-  // 같은 기준(오늘)으로 맞춘다
-  const todayStart = startOfDay(new Date());
-  return { start: todayStart, end: addDays(todayStart, 1) };
+  // board: 카드 목록(renderBoard)도 viewDate 하루치만 보여주므로(today-nav 화살표로 전날/다음날
+  // 이동 가능), 레이더/카테고리별 카운트도 같은 기준으로 맞춘다
+  const boardDayStart = startOfDay(viewDate);
+  return { start: boardDayStart, end: addDays(boardDayStart, 1) };
 }
 
 // 카테고리 필터와 무관하게 오늘 시계와 같은 원칙으로 항상 전체 일정(schedules) 기준으로 집계하되,
@@ -1070,11 +1141,21 @@ document.getElementById("achievement-widget").addEventListener("click", () => {
   renderAchievementWidget();
 });
 
+// 전체 접기(board.compact)가 꺼져 있으면 기본 펼침 + collapsedCardIds(개별로 접은 것만) 반영,
+// 켜져 있으면 기본 접힘 + forceExpandedCardIds(개별로 펼친 것만) 반영 - 두 모드에서 기본값이
+// 반대라 어느 쪽 예외 집합을 볼지도 바뀐다
+function isCardVisuallyCollapsed(id) {
+  const key = String(id);
+  return board.classList.contains("compact") ? !forceExpandedCardIds.has(key) : collapsedCardIds.has(key);
+}
+
 function scheduleCardHtml(s) {
+  const isCollapsed = isCardVisuallyCollapsed(s.id);
   return `
-    <div class="schedule-card ${s.status}" data-id="${s.id}" draggable="true">
+    <div class="schedule-card ${s.status}${isCollapsed ? " collapsed" : ""}" data-id="${s.id}" draggable="true">
       <div class="card-top">
         <div class="card-title">${escapeHtml(s.title)}</div>
+        <button type="button" class="card-collapse-btn" data-card-collapse="${s.id}" title="${isCollapsed ? "일정 카드 펼치기" : "일정 카드 접기"}">${isCollapsed ? "▸" : "▾"}</button>
       </div>
       ${s.content ? `<p class="card-content">${escapeHtml(s.content)}</p>` : ""}
       <div class="card-meta">
@@ -1093,12 +1174,18 @@ function scheduleCardHtml(s) {
     </div>`;
 }
 
-// 보드 상태 컬럼 하나를 서버에서 페이징 조회한다 - "오늘" 범위 필터링/카테고리 필터는 서버가 담당하고
+// 보드 상태 컬럼 하나를 서버에서 페이징 조회한다 - 하루 범위(date)/카테고리 필터는 서버가 담당하고
 // (ScheduleService.getBoardSchedules 참고), size 는 boardColumnVisibleCount(컬럼별로 "더보기"를 누른
 // 만큼 커지는 값)를 그대로 실어 보낸다. offset 은 항상 0으로 두고 size 만 키우는 방식이라 별도의 클라이언트
-// 배열 이어붙이기 없이 매번 "지금까지 펼친 만큼"을 정확히 다시 받아온다
+// 배열 이어붙이기 없이 매번 "지금까지 펼친 만큼"을 정확히 다시 받아온다. date 는 today-nav 화살표로
+// 옮겨다니는 viewDate를 그대로 실어 보낸다(전날/다음날 이동)
+function toDateOnlyValue(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 async function fetchBoardColumnPage(statusKey, size) {
-  const params = new URLSearchParams({ status: statusKey, page: "0", size: String(size) });
+  const params = new URLSearchParams({ status: statusKey, page: "0", size: String(size), date: toDateOnlyValue(viewDate) });
   if (activeCategoryId !== "") params.set("categoryId", activeCategoryId);
   return API.get(`/api/schedules/board?${params.toString()}`);
 }
@@ -1128,7 +1215,10 @@ function renderBoard() {
       <div class="board-column ${col.key}" data-status-column="${col.key}">
         <div class="board-column-header">
           <div class="title"><span class="status-dot ${col.key}"></span>${col.label}</div>
-          <span class="count-badge">${data.totalElements}</span>
+          <div class="board-column-header-right">
+            <span class="count-badge">${data.totalElements}</span>
+            <button type="button" class="board-column-add-btn" data-create-in-column="${col.key}" title="${col.label}에 새 일정 추가">+</button>
+          </div>
         </div>
         <div class="board-column-body">
           ${items.length ? items.map(scheduleCardHtml).join("") : `<div class="empty-hint">일정이 없습니다</div>`}
@@ -1158,10 +1248,36 @@ function renderBoard() {
     });
   });
 
+  board.querySelectorAll("[data-create-in-column]").forEach((btn) => {
+    btn.addEventListener("click", () => openCreateModal(btn.dataset.createInColumn));
+  });
+
   board.querySelectorAll("[data-status-for]").forEach((sel) => {
     sel.addEventListener("change", async () => {
       const id = sel.dataset.statusFor;
       await updateScheduleStatus(id, sel.value);
+    });
+  });
+
+  board.querySelectorAll("[data-card-collapse]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = String(btn.dataset.cardCollapse);
+      const card = btn.closest(".schedule-card");
+      const collapsed = !card.classList.contains("collapsed");
+      card.classList.toggle("collapsed", collapsed);
+      btn.textContent = collapsed ? "▸" : "▾";
+      btn.title = collapsed ? "일정 카드 펼치기" : "일정 카드 접기";
+      // 전체 접기(board.compact)가 켜져 있을 땐 기본이 접힘이라 "펼침 예외"를 forceExpandedCardIds에,
+      // 꺼져 있을 땐 기본이 펼침이라 "접힘 예외"를 collapsedCardIds에 반영한다(isCardVisuallyCollapsed와 동일 기준)
+      if (board.classList.contains("compact")) {
+        if (collapsed) forceExpandedCardIds.delete(id);
+        else forceExpandedCardIds.add(id);
+        saveForceExpandedCardIds();
+      } else {
+        if (collapsed) collapsedCardIds.add(id);
+        else collapsedCardIds.delete(id);
+        saveCollapsedCardIds();
+      }
     });
   });
 
@@ -1226,6 +1342,7 @@ const viewRangeLabelEl = document.getElementById("view-range-label");
 const calendarNavEl = document.getElementById("calendar-nav");
 const calendarRangeLabelEl = document.getElementById("calendar-range-label");
 const calendarViewEl = document.getElementById("calendar-view");
+const todayNavEl = document.getElementById("today-nav");
 
 function startOfDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -1288,6 +1405,7 @@ function switchView(mode) {
   });
   viewNavEl.classList.toggle("show", mode !== "board");
   calendarNavEl.classList.toggle("show", mode !== "board");
+  todayNavEl.classList.toggle("show", mode === "board");
   board.classList.toggle("hide", mode !== "board");
   calendarViewEl.classList.toggle("show", mode !== "board");
   refreshVisibleView();
@@ -1306,6 +1424,7 @@ function refreshVisibleView() {
   // 레이더/카테고리별 카운트/시계 위젯 모두 뷰·날짜 전환마다 그 시점의 집계 범위로 다시 그려야 한다.
   // 성취도 위젯은 뷰 모드와 무관하게 항상 "오늘" 기준이지만, 일정이 새로 생기거나 상태가 바뀔 때(=
   // refreshVisibleView가 호출될 때)마다 최신 완료율을 반영해야 하므로 여기서 같이 갱신한다
+  renderToday();
   renderScheduleRadar();
   renderCategoryCounts();
   renderTodayClock();
@@ -1601,6 +1720,17 @@ document.getElementById("view-nav-today").addEventListener("click", () => {
   refreshVisibleView();
 });
 
+// 보드 뷰 전용 전날/다음날 이동 - viewDate를 하루씩 옮기고 나머지는 refreshVisibleView()가
+// (오늘 라벨/레이더/카테고리 카운트/보드 컬럼 재조회까지) 그대로 처리한다
+document.getElementById("today-nav-prev").addEventListener("click", () => {
+  viewDate = addDays(viewDate, -1);
+  refreshVisibleView();
+});
+document.getElementById("today-nav-next").addEventListener("click", () => {
+  viewDate = addDays(viewDate, 1);
+  refreshVisibleView();
+});
+
 // 달력 그리드 바로 위 중앙 네비게이션 - 툴바의 이전/오늘/다음과 동일하게 동작한다
 document.getElementById("calendar-nav-prev").addEventListener("click", () => navigateView(-1));
 document.getElementById("calendar-nav-next").addEventListener("click", () => navigateView(1));
@@ -1726,7 +1856,10 @@ function roundUpToQuarterHour(date) {
   return new Date(Math.ceil(date.getTime() / ms) * ms);
 }
 
-function openCreateModal() {
+// initialStatus: 보드 컬럼 헤더의 "+"(data-create-in-column, renderBoard())로 열면 그 컬럼의 상태를
+// 미리 선택해둔다 - 상단 "+ 새 일정"처럼 전체 어디서든 열 수 있는 경로는 인자 없이 호출되어 기본값
+// PENDING("대기")으로 열린다
+function openCreateModal(initialStatus) {
   // AI 채팅에서 "수동 등록"으로 열었을 때만 openCreateModalFromAiSuggestion()이 바로 뒤에서 다시
   // 채워준다 - "+"로 직접 연 경우처럼 그 외의 모든 경로는 여기서 항상 초기화해 이전에 남아있던
   // 값이 엉뚱한 일정에 잘못 연결되지 않게 한다
@@ -1734,7 +1867,7 @@ function openCreateModal() {
   modalTitle.textContent = "새 일정";
   scheduleForm.reset();
   document.getElementById("schedule-id").value = "";
-  document.getElementById("status-select").value = "PENDING";
+  document.getElementById("status-select").value = initialStatus || "PENDING";
   document.getElementById("user-id-input").value = (API.getCurrentUser() && API.getCurrentUser().id) || "";
   // 사이드바에서 특정 카테고리로 필터링해둔 채로 "+"를 눌러 새 일정을 만들면, 그 필터와 무관하게
   // 항상 목록 맨 위 카테고리로 기본 선택돼 있어서 저장 후 필터된 화면엔 안 보이는(전체 일정에서만
@@ -1842,7 +1975,9 @@ function closeModal() {
   modalOverlay.classList.remove("show");
 }
 
-document.getElementById("open-create-modal").addEventListener("click", openCreateModal);
+// openCreateModal(event)로 그대로 넘기면 클릭 Event 객체가 initialStatus 자리에 들어가버리므로
+// (진리값이라 "PENDING" 기본값 폴백도 안 먹는다) 인자 없이 명시적으로 호출한다
+document.getElementById("open-create-modal").addEventListener("click", () => openCreateModal());
 document.getElementById("cancel-modal-btn").addEventListener("click", closeModal);
 modalOverlay.addEventListener("click", (e) => {
   if (e.target === modalOverlay) closeModal();
@@ -2402,6 +2537,7 @@ document.addEventListener("keydown", (e) => {
   if (detailModalOverlay.classList.contains("show")) closeDetailModal();
   if (recurringModalOverlay.classList.contains("show")) closeRecurringModal();
   if (aiChatPanel.classList.contains("show")) closeAiSuggestModal();
+  if (mandalartPreviewModalOverlay.classList.contains("show")) closeMandalartPreviewModal();
   if (clockFilterPopover.classList.contains("show")) clockFilterPopover.classList.remove("show");
   if (radarFilterPopover.classList.contains("show")) radarFilterPopover.classList.remove("show");
 });
@@ -2457,37 +2593,94 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
 });
 
 // ---------- 만다라트 위젯(미리보기) ----------
-// 대시보드에는 실제 만다라트 데이터를 불러오지 않고, 항상 비어 있는 9x9 칸만 보여주는 정적 미리보기다.
-// 클릭하면 /mandalart 로 이동해 실제 생성/수정은 그 화면에서 이뤄진다(MandalartController 참고)
-function renderMandalartWidgetPreview() {
-  const gridEl = document.getElementById("mandalart-widget-grid");
-  if (!gridEl) return;
-
-  for (let row = 0; row < 9; row++) {
-    for (let col = 0; col < 9; col++) {
+// 만다라트를 가장 잘 요약하는 중앙 3x3 블록(핵심 목표(4,4) + 세부목표 8개)을 실제 텍스트로 그린다 -
+// 81칸 전부(특히 실행항목 64개)를 넣기엔 위젯도 모달도 공간이 부족해 이 9칸만 보여준다. 대시보드
+// 홈 위젯과 미리보기 모달 둘 다 같은 모양(.mandalart-goal-preview-grid)을 그리므로 공용 함수로 뺐고,
+// 위젯 쪽은 카드에 맞게 .compact 클래스로 칸 크기만 CSS에서 줄인다. cellsByCoord가 없으면(적용된
+// 보드가 아직 없음) 전부 빈 칸으로 그린다
+function buildMandalartGoalPreview(gridEl, cellsByCoord) {
+  gridEl.innerHTML = "";
+  for (let row = 3; row <= 5; row++) {
+    for (let col = 3; col <= 5; col++) {
       const cell = document.createElement("div");
-      cell.className = "mandalart-widget-cell";
-      if (col % 3 === 2 && col !== 8) cell.classList.add("edge-right");
-      if (row % 3 === 2 && row !== 8) cell.classList.add("edge-bottom");
+      cell.className = "mandalart-goal-preview-cell";
       if (row === 4 && col === 4) cell.classList.add("main-goal");
-      else if (row % 3 === 1 && col % 3 === 1) cell.classList.add("sub-goal");
+
+      const content = cellsByCoord ? cellsByCoord.get(`${row}-${col}`) : null;
+      if (content && content.trim()) {
+        // 칸 자체를 flex로 두어 가운데 정렬하고, 줄임(line-clamp)은 안쪽 span에만 적용한다 -
+        // display:-webkit-box(line-clamp에 필요)와 display:flex(가운데 정렬에 필요)를 같은
+        // 요소에 동시에 줄 수 없어서 텍스트를 감싸는 요소를 하나 더 둔다
+        const textEl = document.createElement("span");
+        textEl.className = "mandalart-goal-preview-text";
+        textEl.textContent = content;
+        cell.appendChild(textEl);
+      } else {
+        cell.classList.add("empty");
+      }
+
       gridEl.appendChild(cell);
     }
   }
 }
 
-// 이미 만들어둔 만다라트가 있으면 가장 최근 것(목록 맨 위)의 제목을 위젯에 작게 보여준다.
-// 실패하거나 하나도 없으면 조용히 비워둔다 - 위젯 자체는 어차피 정적 미리보기라 이 텍스트 없이도 동작한다
-async function loadMandalartWidgetSubtitle() {
+// "적용 중"인 만다라트(mandalart.js의 적용/해제 토글, AiService가 추천 시 참고하는 그 보드)가 있으면
+// 그 실제 데이터로 위젯/미리보기 모달 둘 다에 그린다. 제목은 위젯 부제로 보여준다. 적용된 게 없거나
+// (하나도 안 만들었거나 전부 해제) 조회에 실패하면 조용히 빈 상태로 대체한다(위젯은 어차피 보조
+// 정보라 에러를 따로 알릴 필요는 없다)
+async function loadMandalartWidgetPreview() {
+  const gridEl = document.getElementById("mandalart-widget-grid");
+  const modalGridEl = document.getElementById("mandalart-preview-modal-grid");
   const subtitleEl = document.getElementById("mandalart-widget-subtitle");
-  if (!subtitleEl) return;
 
+  let cellsByCoord = null;
+  let title = "";
   try {
     const boards = await API.get("/api/mandalart");
-    subtitleEl.textContent = boards.length > 0 ? boards[0].title : "";
+    const activeBoard = boards.find((b) => b.active);
+    if (activeBoard) {
+      title = activeBoard.title;
+      const board = await API.get(`/api/mandalart/${activeBoard.id}`);
+      cellsByCoord = new Map(board.cells.map((c) => [`${c.row}-${c.col}`, c.content]));
+    }
   } catch (err) {
-    subtitleEl.textContent = "";
+    cellsByCoord = null;
+    title = "";
   }
+
+  if (subtitleEl) subtitleEl.textContent = title;
+  if (gridEl) buildMandalartGoalPreview(gridEl, cellsByCoord);
+  if (modalGridEl) buildMandalartGoalPreview(modalGridEl, cellsByCoord);
+}
+
+// 만다라트 위젯을 누르면 바로 /mandalart 로 이동하지 않고, 가이드처럼 미리보기 모달부터 보여준다.
+// 배경(오버레이 자체)을 누르면 닫히고, 미리보기 링크(mandalart-preview-link)를 누르면 그 실제
+// href("/mandalart")를 따라 이동한다 - 위젯의 현재 부제(있으면 최근 만다라트 제목)를 그대로 복사해
+// 모달에도 보여주므로 별도로 다시 조회하지 않는다
+const mandalartWidgetEl = document.getElementById("mandalart-widget");
+const mandalartPreviewModalOverlay = document.getElementById("mandalart-preview-modal-overlay");
+
+function openMandalartPreviewModal() {
+  const widgetSubtitle = document.getElementById("mandalart-widget-subtitle").textContent;
+  document.getElementById("mandalart-preview-modal-subtitle").textContent = widgetSubtitle;
+  mandalartPreviewModalOverlay.classList.add("show");
+}
+
+function closeMandalartPreviewModal() {
+  mandalartPreviewModalOverlay.classList.remove("show");
+}
+
+if (mandalartWidgetEl) {
+  mandalartWidgetEl.addEventListener("click", (e) => {
+    e.preventDefault();
+    openMandalartPreviewModal();
+  });
+}
+
+if (mandalartPreviewModalOverlay) {
+  mandalartPreviewModalOverlay.addEventListener("click", (e) => {
+    if (e.target === mandalartPreviewModalOverlay) closeMandalartPreviewModal();
+  });
 }
 
 // 일정 생성 폼에서 "작성자 User ID" 수동 입력칸을 없앴기 때문에, 본인 id 를 항상 신뢰성 있게
@@ -2543,14 +2736,16 @@ function seedKnownScheduleStatuses() {
   schedules.forEach((s) => knownStatusById.set(s.id, s.status));
 }
 
-function showScheduleReminder(schedule) {
+// type: "start"(기본, 지금 시작하는 일정) | "completed"(방금 완료된 일정) - 배지 문구와 강조색만 다르고
+// 카드 구조·자동 닫힘·클릭 시 상세보기 동작은 동일하다
+function showScheduleReminder(schedule, type = "start") {
   const card = document.createElement("div");
-  card.className = "schedule-reminder";
+  card.className = type === "completed" ? "schedule-reminder completed" : "schedule-reminder";
   card.setAttribute("role", "alert");
 
   const badge = document.createElement("div");
   badge.className = "schedule-reminder-badge";
-  badge.textContent = "지금 시작하는 일정";
+  badge.textContent = type === "completed" ? "완료된 일정" : "지금 시작하는 일정";
 
   const titleEl = document.createElement("div");
   titleEl.className = "schedule-reminder-title";
@@ -2593,15 +2788,19 @@ function showScheduleReminder(schedule) {
 }
 
 // 서버가 이 유저의 일정에 변화가 생길 때(생성/수정/삭제/자동 상태 전환) 보내는 이벤트를 받으면
-// refreshAll()로 최신 상태를 받아온 뒤, 방금 진행중으로 바뀐 일정에만 알림을 띄운다
+// refreshAll()로 최신 상태를 받아온 뒤, 방금 진행중으로 바뀐 일정과 방금 완료된 일정에만 알림을 띄운다
 async function handleScheduleChangeEvent() {
   await refreshAll();
 
   schedules.forEach((s) => {
     const prevStatus = knownStatusById.get(s.id);
     knownStatusById.set(s.id, s.status);
-    if (s.status !== "IN_PROGRESS" || prevStatus === undefined || prevStatus === "IN_PROGRESS") return;
-    showScheduleReminder(s);
+    if (prevStatus === undefined || prevStatus === s.status) return;
+    if (s.status === "IN_PROGRESS") {
+      showScheduleReminder(s, "start");
+    } else if (s.status === "COMPLETED") {
+      showScheduleReminder(s, "completed");
+    }
   });
 }
 
@@ -2662,8 +2861,7 @@ function scheduleStreamReconnect() {
   if (!requireAuth()) return;
   renderUserChip();
   renderToday();
-  renderMandalartWidgetPreview();
-  loadMandalartWidgetSubtitle();
+  loadMandalartWidgetPreview();
   await syncCurrentUserId();
   applyAdminVisibility();
   activeCategoryId = loadStoredActiveCategoryId();

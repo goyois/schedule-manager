@@ -38,7 +38,7 @@ import static org.mockito.Mockito.when;
 /**
  * ScheduleService.getBoardSchedules() - 보드 뷰 "더보기" 전용 페이징 조회.
  * getSchedules()와 같은 권한 규칙(USER는 본인 id 강제, ADMIN은 요청 userId 그대로)을 따르는지,
- * 그리고 조회 범위가 항상 "오늘 00:00 ~ 내일 00:00"으로 고정되는지를 검증한다.
+ * 그리고 조회 범위가 하루(date 파라미터, 없으면 오늘) 00:00 ~ 다음날 00:00으로 좁혀지는지를 검증한다.
  */
 @ExtendWith(MockitoExtension.class)
 class ScheduleServiceBoardScheduleTest {
@@ -55,6 +55,8 @@ class ScheduleServiceBoardScheduleTest {
     private ScheduleCacheQueryService scheduleCacheQueryService;
     @Mock
     private ScheduleEventPublisher scheduleEventPublisher;
+    @Mock
+    private ScheduleEmbeddingService scheduleEmbeddingService;
 
     @InjectMocks
     private ScheduleService scheduleService;
@@ -83,7 +85,7 @@ class ScheduleServiceBoardScheduleTest {
 
         // 다른 유저(999L)의 id를 요청 파라미터로 넘겨도 USER는 무시되고 본인 id로 강제된다
         PageResponseDto<ScheduleResponseDto> result = scheduleService.getBoardSchedules(
-                user.getEmail(), 999L, category.getId(), ScheduleStatus.PENDING, pageable);
+                user.getEmail(), 999L, category.getId(), ScheduleStatus.PENDING, null, pageable);
 
         verify(scheduleRepository).searchBoardSchedules(eq(user.getId()), eq(category.getId()),
                 eq(ScheduleStatus.PENDING), any(), any(), eq(pageable));
@@ -100,15 +102,15 @@ class ScheduleServiceBoardScheduleTest {
         when(scheduleRepository.searchBoardSchedules(isNull(), any(), eq(ScheduleStatus.COMPLETED), any(), any(), eq(pageable)))
                 .thenReturn(emptyPage);
 
-        scheduleService.getBoardSchedules(admin.getEmail(), null, null, ScheduleStatus.COMPLETED, pageable);
+        scheduleService.getBoardSchedules(admin.getEmail(), null, null, ScheduleStatus.COMPLETED, null, pageable);
 
         verify(scheduleRepository).searchBoardSchedules(isNull(), isNull(), eq(ScheduleStatus.COMPLETED),
                 any(), any(), eq(pageable));
     }
 
     @Test
-    @DisplayName("조회 범위는 항상 오늘 00:00부터 내일 00:00까지로 고정된다")
-    void rangeIsAlwaysToday() {
+    @DisplayName("date를 생략하면 조회 범위는 오늘 00:00부터 내일 00:00까지로 고정된다")
+    void rangeDefaultsToTodayWhenDateOmitted() {
         when(userRepository.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
         Pageable pageable = PageRequest.of(0, 5);
         Page<ScheduleResponseDto> emptyPage = new PageImpl<>(List.of(), pageable, 0);
@@ -117,11 +119,32 @@ class ScheduleServiceBoardScheduleTest {
         ArgumentCaptor<LocalDateTime> rangeStartCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
         ArgumentCaptor<LocalDateTime> rangeEndCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
 
-        scheduleService.getBoardSchedules(user.getEmail(), null, null, ScheduleStatus.PENDING, pageable);
+        scheduleService.getBoardSchedules(user.getEmail(), null, null, ScheduleStatus.PENDING, null, pageable);
 
         verify(scheduleRepository).searchBoardSchedules(any(), any(), any(),
                 rangeStartCaptor.capture(), rangeEndCaptor.capture(), any());
         LocalDateTime expectedStart = LocalDate.now().atStartOfDay();
+        assertThat(rangeStartCaptor.getValue()).isEqualTo(expectedStart);
+        assertThat(rangeEndCaptor.getValue()).isEqualTo(expectedStart.plusDays(1));
+    }
+
+    @Test
+    @DisplayName("date를 지정하면 조회 범위가 그 날짜 00:00부터 다음날 00:00까지로 좁혀진다(전날/다음날 이동)")
+    void rangeUsesGivenDateWhenProvided() {
+        when(userRepository.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
+        Pageable pageable = PageRequest.of(0, 5);
+        Page<ScheduleResponseDto> emptyPage = new PageImpl<>(List.of(), pageable, 0);
+        when(scheduleRepository.searchBoardSchedules(any(), any(), any(), any(), any(), any())).thenReturn(emptyPage);
+
+        ArgumentCaptor<LocalDateTime> rangeStartCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        ArgumentCaptor<LocalDateTime> rangeEndCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+
+        LocalDate requestedDate = LocalDate.now().minusDays(1);
+        scheduleService.getBoardSchedules(user.getEmail(), null, null, ScheduleStatus.PENDING, requestedDate, pageable);
+
+        verify(scheduleRepository).searchBoardSchedules(any(), any(), any(),
+                rangeStartCaptor.capture(), rangeEndCaptor.capture(), any());
+        LocalDateTime expectedStart = requestedDate.atStartOfDay();
         assertThat(rangeStartCaptor.getValue()).isEqualTo(expectedStart);
         assertThat(rangeEndCaptor.getValue()).isEqualTo(expectedStart.plusDays(1));
     }

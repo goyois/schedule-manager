@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -17,6 +18,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -47,17 +49,19 @@ public class ScheduleController {
         return ResponseEntity.ok(ApiResponse.success(scheduleService.getSchedules(principal.getUsername(), userId, categoryId)));
     }
 
-    // 보드 뷰 상태 컬럼(status) 하나를 "오늘" 범위로 좁혀 서버에서 페이징 조회한다 - 컬럼별 "더보기"
-    // 클릭마다 size 를 늘려가며 이 엔드포인트를 다시 호출한다(dashboard.js loadBoardColumns 참고)
+    // 보드 뷰 상태 컬럼(status) 하나를 하루 범위(기본값 오늘, date 로 다른 날짜 지정 가능)로 좁혀
+    // 서버에서 페이징 조회한다 - 컬럼별 "더보기" 클릭마다 size 를 늘려가며, 전날/다음날 이동 시엔 date 를
+    // 바꿔가며 이 엔드포인트를 다시 호출한다(dashboard.js loadBoardColumns/today-nav 참고)
     @GetMapping("/board")
     public ResponseEntity<ApiResponse<PageResponseDto<ScheduleResponseDto>>> getBoardSchedules(
             @AuthenticationPrincipal UserDetails principal,
             @RequestParam(required = false) Long userId,
             @RequestParam(required = false) Long categoryId,
             @RequestParam ScheduleStatus status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @PageableDefault(size = 5) Pageable pageable) {
         return ResponseEntity.ok(ApiResponse.success(
-                scheduleService.getBoardSchedules(principal.getUsername(), userId, categoryId, status, pageable)));
+                scheduleService.getBoardSchedules(principal.getUsername(), userId, categoryId, status, date, pageable)));
     }
 
     @PutMapping("/{id}")

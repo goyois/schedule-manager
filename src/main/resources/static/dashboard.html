@@ -10,15 +10,23 @@
   <div class="shell-page">
   <div class="quote-bar">
     <div id="quote-banner" class="quote-banner"></div>
-    <a class="btn btn-ghost btn-sm" href="/settings" title="자동화 설정">설정</a>
+    <a class="btn btn-ghost btn-sm" id="settings-link" href="/settings" title="자동화 설정">설정</a>
     <button class="btn btn-ghost btn-sm" id="logout-btn">로그아웃</button>
   </div>
   <div class="app-shell">
     <aside class="sidebar">
-      <a class="auth-brand" href="/dashboard">
-        <div class="logo-mark">S</div>
-        <div class="logo-text">Schedule Manager</div>
-      </a>
+      <div class="sidebar-brand-row">
+        <a class="auth-brand" href="/dashboard">
+          <div class="logo-mark">S</div>
+          <div class="logo-text">AI 갓생비서</div>
+        </a>
+        <button type="button" class="sidebar-toggle-btn" id="sidebar-toggle-btn" title="사이드바 접기/펼치기">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="16" rx="3"></rect>
+            <line x1="9" y1="4" x2="9" y2="20"></line>
+          </svg>
+        </button>
+      </div>
 
       <div class="sidebar-section sidebar-section-scroll">
         <h3>카테고리 <span id="category-count"></span></h3>
@@ -72,7 +80,7 @@
       <div class="main-header">
         <div class="header-widgets">
           <a class="mandalart-widget" id="mandalart-widget" href="/mandalart" title="만다라트 만들기/수정">
-            <div class="mandalart-widget-grid" id="mandalart-widget-grid"></div>
+            <div class="mandalart-goal-preview-grid compact" id="mandalart-widget-grid"></div>
             <div class="mandalart-widget-label">만다라트</div>
             <div class="mandalart-widget-subtitle" id="mandalart-widget-subtitle"></div>
           </a>
@@ -115,9 +123,14 @@
       <div class="board-title-center">
         <div class="board-title-text">
           <h1 id="board-title">전체 일정</h1>
-          <div class="today" id="today-label"></div>
+          <div class="today-nav show" id="today-nav">
+            <button type="button" class="icon-btn" id="today-nav-prev" title="전날">‹</button>
+            <div class="today" id="today-label"></div>
+            <button type="button" class="icon-btn" id="today-nav-next" title="다음날">›</button>
+          </div>
         </div>
         <div class="board-title-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="board-compact-toggle-btn" title="일정 카드 접기">▤ 접기</button>
           <button type="button" class="btn btn-ghost btn-sm" id="open-recurring-modal" title="반복 일정 추가">🔁 반복 일정</button>
           <button type="button" class="btn btn-primary btn-sm" id="open-create-modal" title="새 일정 추가">+ 새 일정</button>
         </div>
@@ -139,6 +152,14 @@
       </div>
     </main>
   </div>
+  </div>
+
+  <!-- 도움말 버튼 - AI 챗봇 아이콘 바로 위에 쌓인다. 마우스를 올리면(:hover/:focus-within, css)
+       짧은 설명 말풍선이 뜨고, 누르면 첫 로그인 때 봤던 기능 가이드 투어(js/onboarding.js)를
+       언제든 다시 볼 수 있다 -->
+  <div class="help-widget" id="help-widget">
+    <div class="help-widget-tooltip">기능 가이드를 다시 볼 수 있어요</div>
+    <button type="button" class="help-widget-btn" id="restart-tour-btn" title="가이드 다시 보기" aria-label="가이드 다시 보기">❓</button>
   </div>
 
   <!-- 오른쪽 상단에 고정된 챗봇 캐릭터 - 말풍선으로 "AI에게 추천받을 수 있다"는 걸 먼저 알려주고,
@@ -178,6 +199,19 @@
       <textarea id="ai-suggest-prompt" rows="1" placeholder="무엇을 추천받고 싶으신가요?" required></textarea>
       <button type="submit" class="btn btn-primary" style="width: auto" id="ai-suggest-submit-btn">전송</button>
     </form>
+  </div>
+
+  <!-- 만다라트 위젯을 누르면 바로 이동하지 않고 이 미리보기 모달부터 보여준다 - 배경(오버레이)을
+       누르면 닫히고, 미리보기 자체(mandalart-preview-link)를 누르면 그때 /mandalart 로 이동한다 -->
+  <div class="modal-overlay" id="mandalart-preview-modal-overlay">
+    <div class="modal mandalart-preview-modal">
+      <h2>만다라트</h2>
+      <a class="mandalart-preview-link" id="mandalart-preview-link" href="/mandalart" title="만다라트 페이지로 이동">
+        <div class="mandalart-goal-preview-grid" id="mandalart-preview-modal-grid"></div>
+        <div class="mandalart-widget-subtitle" id="mandalart-preview-modal-subtitle"></div>
+      </a>
+      <p class="mandalart-preview-hint">눌러서 만다라트 페이지로 이동하세요</p>
+    </div>
   </div>
 
   <div class="modal-overlay" id="schedule-detail-modal-overlay">
@@ -351,7 +385,10 @@
   <div class="schedule-reminder-container" id="schedule-reminder-container"></div>
 
   <script src="/js/quotes.js"></script>
+  <script src="/js/sidebar.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/dashboard.js"></script>
+  <script src="/js/tour.js"></script>
+  <script src="/js/onboarding.js"></script>
 </body>
 </html>

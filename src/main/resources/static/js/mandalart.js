@@ -55,15 +55,40 @@ function renderBoardList() {
       (b) => `
       <li data-board-id="${b.id}" class="${String(activeBoardId) === String(b.id) ? "active" : ""}">
         <span><span class="dot"></span>${escapeHtml(b.title)}</span>
-        <span class="remove-cat" data-remove-board="${b.id}">&times;</span>
+        <span class="cat-right">
+          <span class="apply-board ${b.active ? "applied" : ""}" data-apply-board="${b.id}">${b.active ? "적용 중" : "적용"}</span>
+          <span class="remove-cat" data-remove-board="${b.id}">&times;</span>
+        </span>
       </li>`
     )
     .join("");
 
   boardListEl.querySelectorAll("li").forEach((li) => {
     li.addEventListener("click", (e) => {
-      if (e.target.dataset.removeBoard) return;
+      if (e.target.dataset.removeBoard || e.target.dataset.applyBoard) return;
       loadBoard(li.dataset.boardId);
+    });
+  });
+
+  // "현재 내게 적용된 만다라트" - 유저당 하나만 적용 가능하다. AiService가 일정을 추천할 때
+  // 이 보드의 핵심/세부 목표를 참고하므로, 여기서 지정/해제한 결과가 곧바로 AI 추천에 반영된다
+  boardListEl.querySelectorAll("[data-apply-board]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.applyBoard;
+      const board = boards.find((b) => String(b.id) === String(id));
+      try {
+        if (board && board.active) {
+          await API.post("/api/mandalart/deactivate", {});
+          showToast("만다라트 적용을 해제했습니다.");
+        } else {
+          await API.post(`/api/mandalart/${id}/activate`, {});
+          showToast("이 만다라트를 적용했습니다.");
+        }
+        await loadBoards();
+      } catch (err) {
+        showToast(`적용 상태 변경에 실패했습니다. ${err.message}`);
+      }
     });
   });
 
@@ -83,9 +108,10 @@ function renderBoardList() {
           aiFillBtn.style.display = "none";
         }
         await loadBoards();
-        // 지우고 나서도 빈 화면 대신, 남아있다면 목록 맨 위 것을 바로 보여준다(초기 진입과 동일한 원칙)
-        if (!activeBoardId && boards.length > 0) {
-          await loadBoard(boards[0].id);
+        // 지우고 나서도 빈 화면 대신, 남아있다면 기본 보드를 바로 보여준다(초기 진입과 동일한 원칙)
+        if (!activeBoardId) {
+          const fallbackId = pickDefaultBoardId(boards);
+          if (fallbackId) await loadBoard(fallbackId);
         }
         showToast("만다라트를 삭제했습니다.");
       } catch (err) {
@@ -93,6 +119,15 @@ function renderBoardList() {
       }
     });
   });
+}
+
+// 화면에 아무 만다라트도 없을 때 대신 보여줄 기본 보드를 고른다 - "적용 중"(대시보드 위젯/미리보기가
+// 참고하는 것과 같은 보드, AiService 추천에도 쓰임)인 게 있으면 그걸 최우선으로 보여주고, 적용된 게
+// 하나도 없을 때만 목록 맨 위(가장 최근에 만든) 것으로 대신한다
+function pickDefaultBoardId(list) {
+  const active = list.find((b) => b.active);
+  if (active) return active.id;
+  return list.length > 0 ? list[0].id : null;
 }
 
 async function loadBoard(id) {
@@ -228,25 +263,27 @@ function renderGrid() {
 // 경계선에 걸치도록 grid-row/grid-column 을 셀 좌표(0-indexed) 그대로 두 트랙에 걸쳐 배치한다
 // (0-indexed 트랙 i 는 CSS grid line (i+1)~(i+2)). 81개 칸을 다 그린 "뒤에" 추가해야 같은 grid 안에서
 // 자연스럽게 칸들 위로 그려지고(z-index 도 보험으로 명시), pointer-events: none 이라 클릭은 그대로
-// 밑에 있는 textarea 로 전달된다 - 화살표가 칸 편집을 가로막지 않는다
+// 밑에 있는 textarea 로 전달된다 - 화살표가 칸 편집을 가로막지 않는다.
+// 화살표 모양은 유니코드 글자(얇다) 대신 CSS clip-path 로 그린 두꺼운 화살표 하나를 방향별 각도만큼
+// 회전시켜 쓴다(style.css .mandalart-arrow::before) - deg는 "위쪽"을 0으로 시계방향 각도
 const CENTER_ARROWS = [
-  { row: [2, 4], col: [4, 5], glyph: "↑" },
-  { row: [5, 7], col: [4, 5], glyph: "↓" },
-  { row: [4, 5], col: [2, 4], glyph: "←" },
-  { row: [4, 5], col: [5, 7], glyph: "→" },
-  { row: [2, 4], col: [2, 4], glyph: "↖" },
-  { row: [2, 4], col: [5, 7], glyph: "↗" },
-  { row: [5, 7], col: [2, 4], glyph: "↙" },
-  { row: [5, 7], col: [5, 7], glyph: "↘" },
+  { row: [2, 4], col: [4, 5], deg: 0 }, // ↑
+  { row: [5, 7], col: [4, 5], deg: 180 }, // ↓
+  { row: [4, 5], col: [2, 4], deg: 270 }, // ←
+  { row: [4, 5], col: [5, 7], deg: 90 }, // →
+  { row: [2, 4], col: [2, 4], deg: 315 }, // ↖
+  { row: [2, 4], col: [5, 7], deg: 45 }, // ↗
+  { row: [5, 7], col: [2, 4], deg: 225 }, // ↙
+  { row: [5, 7], col: [5, 7], deg: 135 }, // ↘
 ];
 
 function renderCenterArrows() {
-  for (const { row, col, glyph } of CENTER_ARROWS) {
+  for (const { row, col, deg } of CENTER_ARROWS) {
     const arrow = document.createElement("div");
     arrow.className = "mandalart-arrow";
     arrow.style.gridRow = `${row[0] + 1} / ${row[1] + 1}`;
     arrow.style.gridColumn = `${col[0] + 1} / ${col[1] + 1}`;
-    arrow.textContent = glyph;
+    arrow.style.setProperty("--arrow-rotate", `${deg}deg`);
     gridEl.appendChild(arrow);
   }
 }
@@ -307,8 +344,9 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
   if (!requireAuth()) return;
   renderUserChip();
   await loadBoards();
-  // 빈 화면 대신 목록 맨 위(가장 최근에 만든) 만다라트를 바로 보여준다
-  if (boards.length > 0) {
-    await loadBoard(boards[0].id);
+  // 빈 화면 대신 기본 보드(적용 중인 게 있으면 그것, 없으면 가장 최근에 만든 것)를 바로 보여준다
+  const defaultBoardId = pickDefaultBoardId(boards);
+  if (defaultBoardId) {
+    await loadBoard(defaultBoardId);
   }
 })();
