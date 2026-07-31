@@ -54,6 +54,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: enable pgvector/uuid-ossp extensions
         run: |
@@ -128,14 +129,21 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: build and push image
-        run: |
-          docker build \
-            -t "${{ env.ECR_REPOSITORY_URI }}:${{ steps.vars.outputs.image_tag }}" \
-            -t "${{ env.ECR_REPOSITORY_URI }}:latest" \
-            .
-          docker push "${{ env.ECR_REPOSITORY_URI }}:${{ steps.vars.outputs.image_tag }}"
-          docker push "${{ env.ECR_REPOSITORY_URI }}:latest"
+      - uses: docker/setup-buildx-action@v3
+
+      # cache-from/to: type=gha가 Dockerfile의 --mount=type=cache(~/.gradle)까지 포함해 GitHub
+      # Actions 캐시에 저장/복원한다 - src가 바뀌어도 매 실행마다 Gradle 의존성을 통째로 새로 받지
+      # 않는다. plain "docker build"/"docker push"였을 때는 이 캐시 백엔드를 쓸 방법이 없어
+      # docker/build-push-action으로 바꿨다
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.ECR_REPOSITORY_URI }}:${{ steps.vars.outputs.image_tag }}
+            ${{ env.ECR_REPOSITORY_URI }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     needs: build-and-push
