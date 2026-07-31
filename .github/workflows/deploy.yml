@@ -14,9 +14,9 @@ on:
 
 env:
   AWS_REGION: ap-northeast-2
-  AWS_ROLE_ARN: arn:aws:iam::123456789012:role/gh-actions-deploy-role
-  ECR_REPOSITORY_URI: 123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/schedule-manager
-  APP_SERVER_HOST: 203.0.113.10
+  AWS_ROLE_ARN: arn:aws:iam::489023881839:role/gh-actions-deploy-role
+  ECR_REPOSITORY_URI: 489023881839.dkr.ecr.ap-northeast-2.amazonaws.com/schedule-manager
+  APP_SERVER_HOST: 3.34.129.83
 
 permissions:
   contents: read
