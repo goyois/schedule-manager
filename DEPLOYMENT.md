@@ -125,8 +125,8 @@ aws ecr create-repository \
 1. AMI: Amazon Linux 2023, 타입 `t3.small`, 보안 그룹 `sm-app-sg`
 2. IAM 역할 `sm-app-role`을 새로 만들어 연결합니다 — 정책:
    - `AmazonEC2ContainerRegistryReadOnly` (ECR pull)
-   - `AmazonSSMReadOnlyAccess` (운영 비밀값을 SSM Parameter Store에서 읽어오는 배포 스크립트용 —
-     [운영 비밀값 준비](#운영-비밀값-준비) 참고)
+   - `AmazonSSMReadOnlyAccess` (선택 — 운영 비밀값을 SSM Parameter Store로 관리하기로 하면 필요합니다.
+     기본 경로인 [운영 비밀값 준비](#운영-비밀값-준비)의 수동 `.env` 작성 방식만 쓸 거면 없어도 됩니다)
 3. Docker 설치:
    ```bash
    sudo dnf install -y docker
@@ -282,38 +282,43 @@ GitHub Actions가 ECR에 이미지를 푸시하려면 AWS 자격증명이 필요
 
 ## 운영 비밀값 준비
 
-`deploy/app.env.example`에 필요한 환경변수 목록이 있습니다. 실제 값은 AWS Systems Manager
-**Parameter Store**에 `SecureString`으로 저장하고, 앱 서버 EC2에서 배포 직전에 받아와 로컬 파일로만
-존재하게 합니다 (GitHub이나 Git 어디에도 평문으로 남기지 않기 위해).
+`deploy/app.env.example`에 필요한 환경변수 목록이 있습니다. 값이 자주 바뀌지 않는 1인 프로젝트
+규모라, AWS Systems Manager Parameter Store 같은 별도 서비스를 거치지 않고 **앱 서버 EC2에
+`.env` 파일을 한 번 손으로 작성**하는 방식을 씁니다 — GitHub이나 Git 어디에도 평문으로 남기지
+않으면서(값은 EC2 로컬 파일로만 존재) 가장 단순한 경로입니다.
+
+앱 서버 EC2에 SSH 접속해서:
 
 ```bash
-aws ssm put-parameter --name "/schedule-manager/DB_PASSWORD" --type SecureString --value "..."
-aws ssm put-parameter --name "/schedule-manager/ANTHROPIC_API_KEY" --type SecureString --value "..."
-# JWT_SECRET, OPENAI_API_KEY, GOOGLE_OAUTH_CLIENT_ID 등도 동일하게
+nano /home/ec2-user/schedule-manager.env
 ```
 
-앱 서버 EC2에서 최초 1회, `deploy/app.env.example`을 참고해 파라미터들을 실제 `.env` 파일로
-받아옵니다 (이 스크립트는 저장소에 포함하지 않고 앱 서버에만 둡니다):
+`deploy/app.env.example`의 항목들을 실제 값으로 채워 저장합니다:
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-PREFIX="/schedule-manager"
-OUT="/home/ec2-user/schedule-manager.env"
-> "$OUT"
-for name in DB_HOST DB_PORT DB_NAME DB_USERNAME DB_PASSWORD \
-            REDIS_HOST REDIS_PORT \
-            ANTHROPIC_API_KEY ANTHROPIC_MODEL OPENAI_API_KEY \
-            JWT_SECRET JWT_EXPIRATION JWT_REFRESH_EXPIRATION \
-            GOOGLE_OAUTH_CLIENT_ID; do
-  value=$(aws ssm get-parameter --name "$PREFIX/$name" --with-decryption --query 'Parameter.Value' --output text)
-  echo "$name=$value" >> "$OUT"
-done
-chmod 600 "$OUT"
+DB_HOST=schedule-manager-db.cctpabcwfz7d.ap-northeast-2.rds.amazonaws.com
+DB_PORT=5432
+DB_NAME=api
+DB_USERNAME=schedule_manager_app
+DB_PASSWORD=<4단계에서 만든 앱 DB 계정 비밀번호>
+REDIS_HOST=<ElastiCache 기본 엔드포인트>
+REDIS_PORT=6379
+ANTHROPIC_API_KEY=<실제 Anthropic API 키>
+ANTHROPIC_MODEL=claude-opus-4-8
+OPENAI_API_KEY=<실제 OpenAI API 키>
+JWT_SECRET=<256bit 이상 임의 문자열>
+JWT_EXPIRATION=1800000
+JWT_REFRESH_EXPIRATION=1209600000
+GOOGLE_OAUTH_CLIENT_ID=<실제 구글 OAuth 클라이언트 ID>
 ```
 
-값이 바뀌면 이 스크립트를 다시 실행한 뒤 `deploy/deploy.sh`를 재실행(또는 다음 GitHub Actions 배포가
-자동으로 새 컨테이너를 띄울 때 반영)합니다.
+```bash
+chmod 600 /home/ec2-user/schedule-manager.env
+```
+
+값이 바뀌면 이 파일을 다시 수동으로 고친 뒤 `deploy/deploy.sh`를 재실행(또는 다음 GitHub Actions
+배포가 자동으로 새 컨테이너를 띄울 때 반영)합니다. 값이 자주 바뀌거나 여러 서버로 늘어나면 SSM
+Parameter Store/Secrets Manager로 옮기는 걸 고려하세요 ([알려진 한계](#알려진-한계-및-다음-단계) 참고).
 
 ---
 
@@ -394,5 +399,7 @@ scrape_configs:
 - **단일 인스턴스, Auto Scaling 없음**: 앱 서버가 1대뿐이라 배포 중 짧은 다운타임이 있고(컨테이너
   교체 방식), 트래픽이 늘면 수직 확장(인스턴스 타입 업)부터 고려하게 됩니다. 더 크게 가려면 ECS
   Fargate + ALB로 전환하는 편이 무중단 배포/오토스케일링을 자연스럽게 얻을 수 있습니다.
-- **DB 계정 로테이션**: `deploy/app.env.example`의 값들은 한번 SSM에 넣으면 수동으로만 갱신됩니다.
-  주기적 로테이션이 필요하면 AWS Secrets Manager로 옮기고 자동 로테이션을 붙이는 걸 고려하세요.
+- **비밀값이 EC2 로컬 파일 하나에만 존재**: 지금은 `schedule-manager.env`를 손으로 작성해 앱 서버에만
+  둡니다 — 값이 바뀌면 수동으로 다시 고쳐야 하고, 서버가 여러 대로 늘어나면 매번 각 서버에 똑같이
+  반영해야 합니다. 값이 자주 바뀌거나 서버가 늘어나면 SSM Parameter Store(중앙 저장 + 배포 스크립트가
+  자동으로 받아오기)나, 주기적 로테이션까지 필요하면 AWS Secrets Manager로 옮기는 걸 고려하세요.
