@@ -39,7 +39,6 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.data.domain.Pageable;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -171,7 +170,7 @@ class AiServiceTest {
         when(categoryService.getCategories("tester@example.com"))
                 .thenReturn(List.of(new CategoryResponseDto(10L, "운동")));
 
-        // 모델이 다른 날짜(2026-07-29)를 추천해도, 실제 등록되는 startAt/endAt은 항상 오늘 날짜여야 한다
+        // SCHEDULE_UPDATE와 마찬가지로 모델이 계산한 날짜를 그대로 신뢰한다(오늘로 바꿔치기하지 않는다)
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
                 null, null, null, null, null,
                 List.of(new AiScheduleSuggestion.ScheduleItemSuggestion(
@@ -191,8 +190,8 @@ class AiServiceTest {
         AiChatMessageDto.SuggestedScheduleItemDto item = exchange.assistantMessage().suggestedItems().get(0);
         assertThat(item.title()).isEqualTo("저녁 러닝");
         assertThat(item.content()).isEqualTo("30분 조깅");
-        assertThat(item.startAt()).isEqualTo(LocalDate.now().atTime(19, 0));
-        assertThat(item.endAt()).isEqualTo(LocalDate.now().atTime(19, 30));
+        assertThat(item.startAt()).isEqualTo(LocalDateTime.of(2026, 7, 29, 19, 0));
+        assertThat(item.endAt()).isEqualTo(LocalDateTime.of(2026, 7, 29, 19, 30));
         assertThat(item.categoryId()).isEqualTo(10L);
 
         ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
@@ -249,17 +248,19 @@ class AiServiceTest {
         when(categoryService.getCategories("tester@example.com"))
                 .thenReturn(List.of(new CategoryResponseDto(10L, "일상")));
 
+        // 모델이 같은 날짜에 종료 시각만 시작 시각보다 이르게(자정을 걸치는 시간대를 같은 날짜로) 줬다면
+        // 순서가 뒤집힌 것이므로 종료를 다음날로 하루 밀어야 한다
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
                 null, null, null, null, null,
                 List.of(new AiScheduleSuggestion.ScheduleItemSuggestion(
-                        "야간 근무", "당직", "2026-07-29T23:00:00", "2026-07-30T00:30:00", 10L)),
+                        "야간 근무", "당직", "2026-07-29T23:00:00", "2026-07-29T00:30:00", 10L)),
                 "추천 이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "추천해줘");
 
         AiChatMessageDto.SuggestedScheduleItemDto item = exchange.assistantMessage().suggestedItems().get(0);
-        assertThat(item.startAt()).isEqualTo(LocalDate.now().atTime(23, 0));
-        assertThat(item.endAt()).isEqualTo(LocalDate.now().plusDays(1).atTime(0, 30));
+        assertThat(item.startAt()).isEqualTo(LocalDateTime.of(2026, 7, 29, 23, 0));
+        assertThat(item.endAt()).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 30));
     }
 
     @Test
@@ -313,9 +314,10 @@ class AiServiceTest {
         assertThat(items.get(1).categoryId()).isEqualTo(20L);
         assertThat(items.get(2).title()).isEqualTo("병원 예약");
         assertThat(items.get(2).categoryId()).isNull(); // categoryId 없음 -> null 그대로
-        // 각 원소는 개별 시각을 가지므로 "오늘로 강제"는 그대로 적용되되, 서로 다른 원본 날짜였어도 항목별로 독립적으로 처리된다
-        assertThat(items.get(0).startAt().toLocalDate()).isEqualTo(LocalDate.now());
-        assertThat(items.get(2).startAt().toLocalDate()).isEqualTo(LocalDate.now());
+        // 각 원소는 독립적으로 처리되며, 서로 다른(미래) 날짜를 요청했다면 항목마다 그 날짜가 그대로 유지된다
+        assertThat(items.get(0).startAt()).isEqualTo(LocalDateTime.of(2026, 7, 31, 7, 0));
+        assertThat(items.get(1).startAt()).isEqualTo(LocalDateTime.of(2026, 7, 31, 14, 0));
+        assertThat(items.get(2).startAt()).isEqualTo(LocalDateTime.of(2026, 8, 1, 10, 0));
     }
 
     @Test

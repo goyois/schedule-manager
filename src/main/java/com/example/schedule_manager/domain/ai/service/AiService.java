@@ -33,7 +33,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
@@ -113,6 +112,9 @@ public class AiService {
                - 각 원소의 categoryId는 [사용 가능한 카테고리]에 나열된 id 중 하나만 쓰고, 적절한
                  카테고리가 없으면 null로 두세요.
                - 종료 시각이 필요 없는 알림형 일정이면 그 원소의 endAt을 null로 두세요.
+               - 각 원소의 startAt/endAt 날짜는 사용자가 말한 실제 날짜를 그대로 반영하세요(오늘로
+                 바꿔치기하지 마세요) - 예를 들어 "다음 주 월/화/수요일"이면 실제 그 요일들의 날짜를,
+                 항목마다 날짜가 다르면 각 원소에 서로 다른 날짜를 그대로 쓰세요.
                - [나의 목표(만다라트)]가 주어져 있으면, 사용자의 요청과 관련이 있는 범위에서 그 핵심
                  목표/세부 목표를 달성하는 데 도움이 되는 일정을 우선 추천하고, reason에 어느 목표와
                  관련 있는지 짧게 언급하세요. 다만 사용자가 이미 구체적으로 무엇을 원하는지 말했다면
@@ -429,12 +431,11 @@ public class AiService {
         return new AssistantMessage(summary);
     }
 
-    private LocalDateTime toToday(LocalDateTime value) {
-        return value == null ? null : value.toLocalTime().atDate(LocalDate.now());
-    }
-
-    // scheduleItems 원소 하나를 검증/보정한다 - 단일 추천이던 시절의 로직(오늘 날짜 강제, categoryId 검증,
-    // endAt이 startAt보다 앞서면 다음날로 보정)을 항목 개수와 무관하게 그대로 적용한다
+    // scheduleItems 원소 하나를 검증/보정한다. 단일 추천이던 시절엔 시각을 항상 "오늘"로 강제했지만, 여러
+    // 항목을 한 번에 요청하는 시나리오(예: "다음 주 월/화/수/금/토/일 3분할 루틴 등록해줘")는 애초에 항목마다
+    // 서로 다른(대개 미래) 날짜를 의도한 것이므로 그 강제를 걷어내고 SCHEDULE_UPDATE와 같은 방식으로 모델이
+    // 계산한 날짜를 시:분뿐 아니라 날짜까지 그대로 신뢰한다 - categoryId 검증, endAt이 startAt보다 앞서면
+    // 다음날로 보정하는 나머지 로직은 그대로 유지한다
     private record SanitizedScheduleItem(String title, String content, LocalDateTime startAt, LocalDateTime endAt, Long categoryId) {
     }
 
@@ -444,12 +445,8 @@ public class AiService {
                 ? item.categoryId()
                 : null;
 
-        // 모델은 컨텍스트로 준 최근 2주~향후 2주 일정을 보고 다른 날짜(예: "이번 주 목요일")를 추천할 수도
-        // 있는데, 실제로 등록될 일정은 항상 오늘 날짜여야 한다는 요구사항이 있어 시각(시:분)만 남기고
-        // 날짜는 오늘로 강제한다 - reason 텍스트는 원래 추천 맥락(다른 요일 언급 등)을 그대로 담고 있을 수
-        // 있지만, 실제로 등록되는 startAt/endAt은 항상 오늘 기준이다
-        LocalDateTime startAt = toToday(parseDateTimeSafely(item.startAt()));
-        LocalDateTime endAt = toToday(parseDateTimeSafely(item.endAt()));
+        LocalDateTime startAt = parseDateTimeSafely(item.startAt());
+        LocalDateTime endAt = parseDateTimeSafely(item.endAt());
         if (startAt != null && endAt != null && !endAt.isAfter(startAt)) {
             endAt = endAt.plusDays(1);
         }
