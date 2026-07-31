@@ -193,8 +193,8 @@ function renderUserChip() {
 }
 
 // 보드 뷰에서는 today-nav 화살표로 옮겨다니는 viewDate 기준 날짜를, 그 외 뷰에서는 실제 오늘
-// 날짜를 보여준다(일/주/월/년 뷰는 이미 위쪽 view-nav/calendar-nav에 자기 날짜 범위를 보여주고 있어서,
-// 여기서는 원래 의미인 "오늘"을 그대로 유지한다)
+// 날짜를 보여준다(일/주/월/년 뷰는 같은 자리에 뜨는 view-nav가 이미 자기 날짜/범위를 보여주고
+// 있어서, 여기서는 원래 의미인 "오늘"을 그대로 유지한다)
 function renderToday() {
   const d = viewMode === "board" ? viewDate : new Date();
   document.getElementById("today-label").textContent = d.toLocaleDateString("ko-KR", {
@@ -1339,8 +1339,6 @@ const HOUR_PX = 48; // 타임그리드(일/주간)에서 1시간이 차지하는
 const viewSwitcherEl = document.getElementById("view-switcher");
 const viewNavEl = document.getElementById("view-nav");
 const viewRangeLabelEl = document.getElementById("view-range-label");
-const calendarNavEl = document.getElementById("calendar-nav");
-const calendarRangeLabelEl = document.getElementById("calendar-range-label");
 const calendarViewEl = document.getElementById("calendar-view");
 const todayNavEl = document.getElementById("today-nav");
 
@@ -1404,7 +1402,6 @@ function switchView(mode) {
     btn.classList.toggle("active", btn.dataset.view === mode);
   });
   viewNavEl.classList.toggle("show", mode !== "board");
-  calendarNavEl.classList.toggle("show", mode !== "board");
   todayNavEl.classList.toggle("show", mode === "board");
   board.classList.toggle("hide", mode !== "board");
   calendarViewEl.classList.toggle("show", mode !== "board");
@@ -1440,7 +1437,19 @@ function refreshVisibleView() {
   else if (viewMode === "year") renderYearView();
 }
 
+// 뷰 단위에 맞춰 화살표 title(hover 툴팁)도 "전날/다음날", "지난주/다음주"처럼 바뀐다
+const VIEW_NAV_ARROW_TITLES = {
+  day: ["전날", "다음날"],
+  week: ["지난주", "다음주"],
+  month: ["지난달", "다음달"],
+  year: ["작년", "내년"],
+};
+
 function updateViewRangeLabel() {
+  const [prevTitle, nextTitle] = VIEW_NAV_ARROW_TITLES[viewMode] || ["이전", "다음"];
+  document.getElementById("view-nav-prev").title = prevTitle;
+  document.getElementById("view-nav-next").title = nextTitle;
+
   if (viewMode === "day") {
     viewRangeLabelEl.textContent = viewDate.toLocaleDateString("ko-KR", {
       year: "numeric",
@@ -1460,7 +1469,6 @@ function updateViewRangeLabel() {
   } else if (viewMode === "year") {
     viewRangeLabelEl.textContent = `${viewDate.getFullYear()}년`;
   }
-  calendarRangeLabelEl.textContent = viewRangeLabelEl.textContent;
 }
 
 // -- 월간: 7x6 날짜 그리드 --
@@ -1715,10 +1723,6 @@ viewSwitcherEl.querySelectorAll(".view-tab").forEach((btn) => {
 });
 document.getElementById("view-nav-prev").addEventListener("click", () => navigateView(-1));
 document.getElementById("view-nav-next").addEventListener("click", () => navigateView(1));
-document.getElementById("view-nav-today").addEventListener("click", () => {
-  viewDate = new Date();
-  refreshVisibleView();
-});
 
 // 보드 뷰 전용 전날/다음날 이동 - viewDate를 하루씩 옮기고 나머지는 refreshVisibleView()가
 // (오늘 라벨/레이더/카테고리 카운트/보드 컬럼 재조회까지) 그대로 처리한다
@@ -1728,14 +1732,6 @@ document.getElementById("today-nav-prev").addEventListener("click", () => {
 });
 document.getElementById("today-nav-next").addEventListener("click", () => {
   viewDate = addDays(viewDate, 1);
-  refreshVisibleView();
-});
-
-// 달력 그리드 바로 위 중앙 네비게이션 - 툴바의 이전/오늘/다음과 동일하게 동작한다
-document.getElementById("calendar-nav-prev").addEventListener("click", () => navigateView(-1));
-document.getElementById("calendar-nav-next").addEventListener("click", () => navigateView(1));
-document.getElementById("calendar-nav-today").addEventListener("click", () => {
-  viewDate = new Date();
   refreshVisibleView();
 });
 

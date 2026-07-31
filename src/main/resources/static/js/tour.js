@@ -59,12 +59,29 @@ function createSpotlightTour(steps, storageKeyPrefix) {
     teardownOverlay();
   }
 
+  // step.target은 셀렉터 문자열 하나 또는 여러 개를 묶은 배열일 수 있다(예: "반복 일정"+"새 일정"
+  // 버튼처럼 서로 다른 두 요소를 한 스포트라이트 안에 같이 강조하고 싶은 경우) - 배열이면 각 요소의
+  // 사각형을 모두 포함하는 최소 사각형을 구한다
+  function resolveTargetElements(target) {
+    const selectors = Array.isArray(target) ? target : [target];
+    return selectors.map((sel) => document.querySelector(sel)).filter(Boolean);
+  }
+
+  function unionRect(elements) {
+    const rects = elements.map((el) => el.getBoundingClientRect());
+    const top = Math.min(...rects.map((r) => r.top));
+    const left = Math.min(...rects.map((r) => r.left));
+    const right = Math.max(...rects.map((r) => r.right));
+    const bottom = Math.max(...rects.map((r) => r.bottom));
+    return { top, left, right, bottom, width: right - left, height: bottom - top };
+  }
+
   // display:none 이거나(예: 보드를 아직 안 골라 숨겨진 "AI로 채우기" 버튼) 아직 내용이 없어 높이가
   // 0인 컨테이너(예: 보드가 하나도 없을 때의 빈 9x9 격자)는 하이라이트할 수 없으므로 건너뛴다
   function isStepUsable(step) {
-    const el = document.querySelector(step.target);
-    if (!el) return false;
-    const rect = el.getBoundingClientRect();
+    const elements = resolveTargetElements(step.target);
+    if (elements.length === 0) return false;
+    const rect = unionRect(elements);
     return rect.width > 4 && rect.height > 4;
   }
 
@@ -72,11 +89,11 @@ function createSpotlightTour(steps, storageKeyPrefix) {
   // position:fixed 라, getBoundingClientRect()(뷰포트 기준 좌표)를 그대로 top/left 로 써도
   // 스크롤 오프셋을 따로 계산할 필요가 없다
   function positionForStep(step) {
-    const target = document.querySelector(step.target);
-    if (!target) return false;
+    const elements = resolveTargetElements(step.target);
+    if (elements.length === 0) return false;
 
-    target.scrollIntoView({ block: "center", inline: "nearest" });
-    const rect = target.getBoundingClientRect();
+    elements[0].scrollIntoView({ block: "center", inline: "nearest" });
+    const rect = unionRect(elements);
     const pad = 8;
 
     spotlightEl.style.top = `${rect.top - pad}px`;

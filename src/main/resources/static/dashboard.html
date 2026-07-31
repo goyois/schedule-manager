@@ -17,7 +17,7 @@
     <aside class="sidebar">
       <div class="sidebar-brand-row">
         <a class="auth-brand" href="/dashboard">
-          <div class="logo-mark">S</div>
+          <img class="logo-mark" src="/images/logo.png" alt="AI 갓생비서 로고" />
           <div class="logo-text">AI 갓생비서</div>
         </a>
         <button type="button" class="sidebar-toggle-btn" id="sidebar-toggle-btn" title="사이드바 접기/펼치기">
@@ -68,12 +68,6 @@
           <button type="button" class="view-tab" data-view="week">주</button>
           <button type="button" class="view-tab" data-view="month">월</button>
           <button type="button" class="view-tab" data-view="year">년</button>
-        </div>
-        <div class="view-nav" id="view-nav">
-          <button type="button" class="icon-btn" id="view-nav-prev" title="이전">‹</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="view-nav-today">오늘</button>
-          <button type="button" class="icon-btn" id="view-nav-next" title="다음">›</button>
-          <span class="view-range-label" id="view-range-label"></span>
         </div>
       </div>
 
@@ -128,6 +122,11 @@
             <div class="today" id="today-label"></div>
             <button type="button" class="icon-btn" id="today-nav-next" title="다음날">›</button>
           </div>
+          <div class="today-nav" id="view-nav">
+            <button type="button" class="icon-btn" id="view-nav-prev" title="이전">‹</button>
+            <div class="today" id="view-range-label"></div>
+            <button type="button" class="icon-btn" id="view-nav-next" title="다음">›</button>
+          </div>
         </div>
         <div class="board-title-actions">
           <button type="button" class="btn btn-ghost btn-sm" id="board-compact-toggle-btn" title="일정 카드 접기">▤ 접기</button>
@@ -138,13 +137,6 @@
 
       <div class="board" id="board">
         <!-- 컬럼은 dashboard.js 가 렌더링합니다 -->
-      </div>
-
-      <div class="calendar-nav" id="calendar-nav">
-        <button type="button" class="icon-btn" id="calendar-nav-prev" title="이전">‹</button>
-        <button type="button" class="btn btn-ghost btn-sm" id="calendar-nav-today">오늘</button>
-        <button type="button" class="icon-btn" id="calendar-nav-next" title="다음">›</button>
-        <span class="view-range-label" id="calendar-range-label"></span>
       </div>
 
       <div class="calendar-view" id="calendar-view">

@@ -145,13 +145,8 @@ button {
   width: 34px;
   height: 34px;
   border-radius: 9px;
-  background: var(--color-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 15px;
+  object-fit: cover;
+  display: block;
 }
 
 .auth-brand .logo-text {
@@ -737,25 +732,25 @@ button {
   font-size: 13px;
 }
 
-/* 보드 뷰에서만 today-label 좌우에 전날/다음날 화살표를 보여준다(switchView가 .show 토글) -
-   일/주/월/년 뷰는 이미 위쪽 view-nav/calendar-nav로 날짜를 이동하므로 여기선 숨겨둔다 */
+/* 보드 뷰에서는 #today-nav(실제 오늘/viewDate 기준 전날·다음날 이동), 일/주/월/년 뷰에서는
+   #view-nav(현재 보고 있는 날짜/주/월/년 단위 이동)가 이 자리에서 서로 자리를 바꿔가며 나온다
+   (switchView가 .show 토글) - 같은 자리·같은 스타일을 공유하도록 둘 다 .today-nav 클래스를 쓴다 */
 .today-nav {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   gap: 8px;
   margin-top: 4px;
 }
 
+.today-nav.show {
+  display: flex;
+}
+
 .today-nav .icon-btn {
-  display: none;
   padding: 2px 8px;
   font-size: 13px;
   line-height: 1.4;
-}
-
-.today-nav.show .icon-btn {
-  display: inline-block;
 }
 
 .board-title-actions {
@@ -1694,9 +1689,6 @@ button {
 .view-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
   margin-bottom: 16px;
 }
 
@@ -1727,41 +1719,6 @@ button {
   background: var(--color-surface);
   color: var(--color-primary-dark);
   box-shadow: var(--shadow-card);
-}
-
-.view-nav {
-  display: none;
-  align-items: center;
-  gap: 8px;
-}
-
-.view-nav.show {
-  display: flex;
-}
-
-.view-range-label {
-  font-size: 13.5px;
-  font-weight: 700;
-  margin-left: 4px;
-  min-width: 120px;
-}
-
-/* 일/주/월/년 그리드 바로 위, 가운데 정렬된 이전/오늘/다음 네비게이션 */
-.calendar-nav {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
-.calendar-nav.show {
-  display: flex;
-}
-
-.calendar-nav .view-range-label {
-  margin-left: 6px;
-  min-width: 0;
 }
 
 /* ---------- Calendar views (일 / 주 / 월 / 년) ---------- */

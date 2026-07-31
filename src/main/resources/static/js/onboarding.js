@@ -35,7 +35,7 @@
       placement: "left",
     },
     {
-      target: "#open-create-modal",
+      target: ["#open-recurring-modal", "#open-create-modal"],
       title: "새 일정 추가",
       text: "여기를 눌러 새 일정을 만들거나, 반복되는 일정을 한 번에 등록할 수 있어요.",
       placement: "bottom",

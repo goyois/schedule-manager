@@ -60,7 +60,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/", "/login", "/signup", "/dashboard", "/mandalart", "/settings",
                                 "/index.html", "/signup.html", "/dashboard.html", "/mandalart.html", "/settings.html",
-                                "/css/**", "/js/**"
+                                "/css/**", "/js/**", "/images/**"
                         ).permitAll()
                         // 모니터링용 actuator 는 인증 없이 스크레이핑 가능해야 함
                         .requestMatchers("/actuator/**").permitAll()
