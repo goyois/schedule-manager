@@ -171,8 +171,15 @@ aws ecr create-repository \
    CREATE USER schedule_manager_app WITH PASSWORD '...';
    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO schedule_manager_app;
    GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO schedule_manager_app;
+   -- PgVectorStore(spring.ai.vectorstore.pgvector.initialize-schema: true)가 부팅할 때마다
+   -- "CREATE TABLE IF NOT EXISTS vector_store (...)"를 시도한다 - 테이블이 이미 있어도 이 문장
+   -- 자체를 실행하려면 스키마에 대한 CREATE 권한이 필요하다. 안 주면 "permission denied for
+   -- schema public"으로 부팅이 실패한다
+   GRANT CREATE ON SCHEMA public TO schedule_manager_app;
    ```
-   이 계정 정보가 `DB_USERNAME`/`DB_PASSWORD`가 됩니다.
+   이 계정 정보가 `DB_USERNAME`/`DB_PASSWORD`가 됩니다. 위 GRANT들은 반드시 3번(스키마 복원)이 끝난
+   **뒤에** 실행하세요 — `GRANT ... ON ALL TABLES`는 그 시점에 존재하는 테이블에만 적용되므로, 테이블이
+   생기기 전에 먼저 GRANT부터 하면 아무 효과가 없습니다.
 5. 이후 스키마 변경(새 컬럼/테이블 추가)은 로컬에서 검증한 DDL을 같은 방식으로 RDS에도 수동 적용합니다
    — `ddl-auto: validate`는 운영에서도 유지합니다 (Hibernate가 스키마를 건드리지 않게).
 
