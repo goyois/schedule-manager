@@ -83,11 +83,17 @@ jobs:
             ai:
               anthropic:
                 api-key: dummy-ci-key
+                # ScheduleEmbeddingService/MandalartGoalEmbeddingService 등은 fail-open이라 예외를
+                # 삼키긴 하지만, 더미 키로 진짜 api.anthropic.com에 접속을 "시도"하면 그 자체(DNS/TCP
+                # 연결/응답 대기)가 느려서 여러 테스트에 걸쳐 누적되면 :test가 몇 분씩 멈춘 것처럼
+                # 보인다 - 아무도 안 듣는 주소로 돌려 밀리초 안에 연결 거부로 실패하게 만든다
+                base-url: http://localhost:1
                 chat:
                   options:
                     model: claude-opus-4-8
               openai:
                 api-key: dummy-ci-key
+                base-url: http://localhost:1
             jwt:
               secret: ci-only-dummy-secret-key-must-be-at-least-256-bits-long
               expiration: 1800000
