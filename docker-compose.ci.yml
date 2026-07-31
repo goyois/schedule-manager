@@ -1,0 +1,33 @@
+# Jenkins Test 스테이지 전용 - 매 빌드마다 비어 있는 상태로 떴다가 빌드가 끝나면 버려지는 임시
+# Postgres/Redis다. 운영 DB(RDS)나 로컬 개발용 docker-compose가 아니다 - DEPLOYMENT.md의
+# "테스트 스테이지" 절 참고. 호스트 포트를 5432/6379가 아닌 5433/6380에 매핑해 Jenkins 에이전트
+# 자체에 다른 Postgres/Redis가 떠 있어도 충돌하지 않게 한다.
+services:
+  ci-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: schedule-manager-ci-postgres
+    environment:
+      POSTGRES_USER: ci
+      POSTGRES_PASSWORD: ci
+      POSTGRES_DB: api
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ci -d api"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      # 테스트 데이터는 매 빌드 끝에 버려지므로 디스크에 쓸 필요가 없다 - I/O도 줄고 정리도 필요 없다
+      - /var/lib/postgresql/data
+
+  ci-redis:
+    image: redis:7-alpine
+    container_name: schedule-manager-ci-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

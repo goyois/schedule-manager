@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -38,6 +39,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 조회 성능 차이를 체감할 수 있는 수준의 일정 데이터를 만든 뒤 측정한다.
  * 캐시 적용 후 동일한 방식으로 측정해 두 결과를 비교하기 위한 기준값을 남기는 것이 목적이다.
  */
+// CI(Jenkins)의 임시 컨테이너 DB는 매 빌드마다 비어 있는 상태로 시작해 이 벤치마크가 요구하는
+// 사전 시드 카테고리(업무/일상/운동·건강/자기계발/식단)가 없다 - build.gradle이 -PciBuild일 때만
+// 이 태그를 제외하므로, 로컬에서 시드 데이터를 갖춘 채 돌리는 './gradlew test'는 그대로 영향받지 않는다
+@Tag("performance")
 @Slf4j
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ScheduleServiceTest {

@@ -1,0 +1,41 @@
+# EC2에서 docker run 시 --env-file로 주입되는 환경변수로 채워진다 (DEPLOYMENT.md 참고).
+# 여기엔 실제 비밀값을 두지 않는다 - 전부 ${...} 플레이스홀더뿐이라 이 파일 자체는 커밋해도 안전하다.
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME:api}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      # 스키마는 배포 파이프라인이 아니라 DEPLOYMENT.md의 수동 부트스트랩 절차로 미리 만들어둔다 -
+      # CLAUDE.md의 "ddl-auto: validate" 규칙과 동일하게 운영 DB에서도 절대 update/create를 쓰지 않는다
+      ddl-auto: validate
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+  session:
+    store-type: jdbc
+    jdbc:
+      # 세션 테이블은 최초 배포 시 스키마 부트스트랩 단계에서 이미 만들어져 있으므로, local과 달리
+      # 매 기동마다 다시 만들려고 시도하지 않는다
+      initialize-schema: never
+  ai:
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY}
+      chat:
+        options:
+          model: ${ANTHROPIC_MODEL:claude-opus-4-8}
+    openai:
+      api-key: ${OPENAI_API_KEY}
+  jwt:
+    secret: ${JWT_SECRET}
+    # local(application-local.yml)의 8000(=8초)은 리프레시 흐름을 자주 테스트하기 위한 개발용 값이다 -
+    # 운영에서 그 값을 그대로 쓰면 8초마다 로그아웃되므로, 기본값을 30분으로 둔다
+    expiration: ${JWT_EXPIRATION:1800000}
+    refresh-expiration: ${JWT_REFRESH_EXPIRATION:1209600000}
+
+google:
+  oauth:
+    client-id: ${GOOGLE_OAUTH_CLIENT_ID}
