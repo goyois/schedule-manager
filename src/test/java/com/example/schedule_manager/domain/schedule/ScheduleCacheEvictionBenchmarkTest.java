@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -48,6 +49,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 유저별 타겟 evict로 바꾼 뒤 실행하면 생존 키 전부 유지 / 재조회 전부 캐시 히트(빠름)가 나와야 한다.
  * 같은 테스트를 코드 변경 전/후로 두 번 돌려서 비교하는 용도.
  */
+// ScheduleIndexPerformanceTest와 같은 이유로 CI(-PciBuild)에서만 제외한다 - "코드 변경 전/후로 두 번
+// 돌려서 비교하는 용도"라는 클래스 설명 자체가 수동 벤치마크임을 말해준다. 로컬 './gradlew test'는 그대로 돈다
+@Tag("performance")
 @Slf4j
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ScheduleCacheEvictionBenchmarkTest {

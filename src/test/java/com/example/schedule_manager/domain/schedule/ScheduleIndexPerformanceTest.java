@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -34,6 +35,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 순수 DB 쿼리 비용만 측정한다. 대량 insert 는 IDENTITY 채번이라 JPA saveAll 이 배치되지 않으므로
  * JdbcTemplate 배치 insert 로 시딩한다.
  */
+// CI(GitHub Actions)의 임시 컨테이너 DB/공유 러너에서 대량 insert(수백~수천 행) + 23라운드 측정을
+// 그대로 돌리면 몇 분씩 걸려 배포 파이프라인을 느리게 만든다 - ScheduleServiceTest.apiPerformance와
+// 같은 이유로 CI에서만 제외한다(-PciBuild, build.gradle 참고). 로컬 './gradlew test'는 그대로 돈다
+@Tag("performance")
 @Slf4j
 @SpringBootTest
 class ScheduleIndexPerformanceTest {
