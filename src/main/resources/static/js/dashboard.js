@@ -1864,6 +1864,7 @@ function openCreateModal(initialStatus) {
   // 채워준다 - "+"로 직접 연 경우처럼 그 외의 모든 경로는 여기서 항상 초기화해 이전에 남아있던
   // 값이 엉뚱한 일정에 잘못 연결되지 않게 한다
   pendingAiChatRegisterMessageId = null;
+  pendingAiChatRegisterItemId = null;
   modalTitle.textContent = "새 일정";
   scheduleForm.reset();
   document.getElementById("schedule-id").value = "";
@@ -2016,8 +2017,9 @@ scheduleForm.addEventListener("submit", async (e) => {
     // AI 채팅의 "수동 등록"으로 채워 넣은 폼이었다면(id 없이 새로 만든 경우만), 방금 저장된 일정과
     // 그 채팅 메시지를 서버에 연결해둔다 - 실패해도 일정 저장 자체는 이미 끝난 뒤라 조용히 무시한다
     if (!id && pendingAiChatRegisterMessageId) {
-      await linkAiChatMessageToSchedule(pendingAiChatRegisterMessageId, Number(savedId));
+      await linkAiChatMessageToSchedule(pendingAiChatRegisterMessageId, Number(savedId), pendingAiChatRegisterItemId);
       pendingAiChatRegisterMessageId = null;
+      pendingAiChatRegisterItemId = null;
     }
     closeModal();
     showToast(id ? "일정을 수정했습니다." : "일정을 추가했습니다.");
@@ -2124,11 +2126,19 @@ let aiChatMessages = [];
 // (scheduleForm submit 핸들러) 이 값으로 방금 만든 일정과 채팅 메시지를 서버에 연결해 "등록됨" 표시를 남긴다
 let pendingAiChatRegisterMessageId = null;
 
+// SCHEDULE_RECOMMENDATION이 여러 항목을 제안했을 때, 그중 어느 항목을 "수동 등록"으로 열었는지 -
+// message 단위(하위호환 경로)로 열었으면 null로 남는다
+let pendingAiChatRegisterItemId = null;
+
 // 자동 등록이 가능하려면 제목/시작시각/카테고리가 전부 있어야 한다(ScheduleRequestDto의 필수값과 동일) -
 // 하나라도 없으면(AI가 형식을 어겼거나 적절한 카테고리를 못 찾은 경우) 자동 등록 버튼을 비활성화하고
-// 수동 등록으로 유도한다
+// 수동 등록으로 유도한다. canAutoRegisterItem은 suggestedItems 원소 하나에 대한 같은 판단이다
 function canAutoRegister(message) {
   return !!(message && message.suggestedTitle && message.suggestedStartAt && message.suggestedCategoryId);
+}
+
+function canAutoRegisterItem(item) {
+  return !!(item && item.title && item.startAt && item.categoryId);
 }
 
 // /settings 페이지의 "AI 추천 일정 자동 등록" 토글 - 꺼져 있으면 "자동 등록" 버튼 자체를 보여주지 않고
@@ -2142,16 +2152,50 @@ function aiChatUserBubbleHtml(message) {
   return `<div class="ai-chat-bubble ai-chat-bubble-user">${escapeHtml(message.message)}</div>`;
 }
 
+// SCHEDULE_RECOMMENDATION 말풍선 안에서 제안 항목 하나(AiChatMessageDto.SuggestedScheduleItemDto)를
+// 카드 하나로 그린다 - 여러 개를 한 번에 추천받아도 항목마다 독립적으로 수동/자동 등록할 수 있게 한다
+function aiChatSuggestionItemHtml(message, item) {
+  const parts = [`<div class="ai-chat-bubble-title">${escapeHtml(item.title)}</div>`];
+  if (item.startAt) {
+    parts.push(`<div class="ai-chat-bubble-time">${escapeHtml(formatTimeRange(item.startAt, item.endAt))}</div>`);
+  }
+  if (item.content) {
+    parts.push(`<div class="ai-chat-bubble-content">${escapeHtml(item.content)}</div>`);
+  }
+  if (item.registeredScheduleId) {
+    parts.push(`<div class="ai-chat-bubble-actions"><span class="ai-chat-registered-badge">✅ 일정으로 등록됨</span></div>`);
+  } else {
+    const autoEligible = canAutoRegisterItem(item);
+    const autoTitle = autoEligible ? "" : "AI가 시작 시각/카테고리 등 충분한 정보를 주지 않아 자동 등록할 수 없어요.";
+    const autoBtnHtml = isAiAutoRegisterSettingEnabled()
+      ? `<button type="button" class="btn btn-primary btn-sm" data-action="auto-item" data-message-id="${message.id}" data-item-id="${item.id}" ${autoEligible ? "" : "disabled"} title="${escapeHtml(autoTitle)}">자동 등록</button>`
+      : "";
+    parts.push(`<div class="ai-chat-bubble-actions">
+      <button type="button" class="btn btn-ghost btn-sm" data-action="manual-item" data-message-id="${message.id}" data-item-id="${item.id}">수동 등록</button>
+      ${autoBtnHtml}
+    </div>`);
+  }
+  return `<div class="ai-chat-suggestion-item">${parts.join("")}</div>`;
+}
+
 // AiChatMessageDto.category가 "SCHEDULE_RECOMMENDATION"(새 일정 추천)이나 "SCHEDULE_UPDATE"(기존 일정
 // 수정 제안)인 메시지만 제목/시간/내용 + 등록·수정 UI를 보여주고, "MANDALART_FILL"(만다라트 채우기)은
 // 서버가 이미 채우기까지 끝낸 뒤라 결과 안내 + 바로가기만 보여준다. 그 외(category === "GENERAL" - 잡담,
 // 일정 조회/설명 등)는 답변 텍스트만 본문 하나로 보여준다. suggestedTitle 유무가 아니라 서버가 명시적으로
-// 분류한 category로 판단한다(AiService.SYSTEM_PROMPT 참고)
+// 분류한 category로 판단한다(AiService.SYSTEM_PROMPT 참고).
+//
+// SCHEDULE_RECOMMENDATION은 한 번에 여러 일정을 제안할 수 있어(message.suggestedItems) 항목마다 카드
+// 하나씩 그린다. suggestedItems가 비어 있는데 message.suggestedTitle이 있는 경우는 이 기능 이전에
+// 저장된 옛 메시지뿐이라(AiService가 새 메시지는 항상 suggestedItems만 채운다) 그때만 예전 방식(단일
+// 필드)으로 그린다
 function aiChatAssistantBubbleHtml(message) {
   const isRecommendation = message.category === "SCHEDULE_RECOMMENDATION";
   const isUpdate = message.category === "SCHEDULE_UPDATE";
   const isMandalartFill = message.category === "MANDALART_FILL";
-  const showSuggestionFields = isRecommendation || isUpdate;
+  const items = isRecommendation ? (message.suggestedItems || []) : [];
+  const hasItemList = items.length > 0;
+  const isLegacyRecommendation = isRecommendation && !hasItemList && !!message.suggestedTitle;
+  const showSuggestionFields = isUpdate || isLegacyRecommendation;
   const parts = [];
 
   if (showSuggestionFields) {
@@ -2172,7 +2216,7 @@ function aiChatAssistantBubbleHtml(message) {
     parts.push(`<div class="ai-chat-bubble-tag">🧩 만다라트 채우기</div>`);
   }
   if (message.message) {
-    const textClass = showSuggestionFields ? "ai-chat-bubble-reason" : "ai-chat-bubble-content";
+    const textClass = (showSuggestionFields || hasItemList) ? "ai-chat-bubble-reason" : "ai-chat-bubble-content";
     parts.push(`<div class="${textClass}">${escapeHtml(message.message)}</div>`);
   }
   if (isMandalartFill && message.targetMandalartBoardId) {
@@ -2181,7 +2225,16 @@ function aiChatAssistantBubbleHtml(message) {
     </div>`);
   }
 
-  if (isRecommendation) {
+  if (hasItemList) {
+    parts.push(`<div class="ai-chat-suggestion-items">${items.map((item) => aiChatSuggestionItemHtml(message, item)).join("")}</div>`);
+    // 항목이 하나뿐이면 카드 안의 "자동 등록" 버튼과 중복이라, 여러 개일 때만 일괄 버튼을 보여준다
+    const unregisteredEligible = items.filter((item) => !item.registeredScheduleId && canAutoRegisterItem(item));
+    if (items.length > 1 && isAiAutoRegisterSettingEnabled() && unregisteredEligible.length > 0) {
+      parts.push(`<div class="ai-chat-bulk-actions">
+        <button type="button" class="btn btn-primary btn-sm" data-action="auto-all-items" data-message-id="${message.id}">전체 자동 등록</button>
+      </div>`);
+    }
+  } else if (isLegacyRecommendation) {
     if (message.registeredScheduleId) {
       parts.push(`<div class="ai-chat-bubble-actions"><span class="ai-chat-registered-badge">✅ 일정으로 등록됨</span></div>`);
     } else {
@@ -2211,7 +2264,7 @@ function aiChatAssistantBubbleHtml(message) {
     }
   }
 
-  return `<div class="ai-chat-bubble ai-chat-bubble-assistant${showSuggestionFields ? " has-suggestion" : ""}">${parts.join("")}</div>`;
+  return `<div class="ai-chat-bubble ai-chat-bubble-assistant${(showSuggestionFields || hasItemList) ? " has-suggestion" : ""}">${parts.join("")}</div>`;
 }
 
 function renderAiChatMessages() {
@@ -2370,6 +2423,33 @@ function openCreateModalFromAiSuggestion(message) {
   }
 }
 
+// openCreateModalFromAiSuggestion과 같은 목적이지만, SCHEDULE_RECOMMENDATION이 한 번에 여러 일정을
+// 제안했을 때 그중 항목 하나(AiChatMessageDto.SuggestedScheduleItemDto)의 값으로 폼을 채운다
+function openCreateModalFromAiSuggestionItem(message, item) {
+  openCreateModal();
+  pendingAiChatRegisterMessageId = message.id;
+  pendingAiChatRegisterItemId = item.id;
+
+  if (item.title) document.getElementById("title").value = item.title;
+  if (item.content) document.getElementById("content").value = item.content;
+
+  if (item.startAt) {
+    startAtInput.value = toDatetimeLocalValue(item.startAt);
+    startAtSync.syncVisibleFromHidden();
+    lastStartValue = startAtInput.value;
+  }
+  noEndTimeToggle.checked = !!item.startAt && !item.endAt;
+  if (item.endAt) {
+    endAtInput.value = toDatetimeLocalValue(item.endAt);
+  }
+  applyEndTimeToggleUI();
+  if (!noEndTimeToggle.checked) endAtSync.syncVisibleFromHidden();
+
+  if (item.categoryId && categories.some((c) => String(c.id) === String(item.categoryId))) {
+    categorySelect.value = String(item.categoryId);
+  }
+}
+
 // AI의 "수정 제안"으로 기존 일정의 수정 폼을 연다 - openEditModal()로 그 일정의 현재 값을 먼저 채운 뒤,
 // AI가 제안한 값이 있는 필드만 덮어쓴다(제안에 없는 필드는 기존 값 그대로 유지). 저장은 여기서 하지 않고,
 // 사용자가 검토/수정한 뒤 폼의 "저장" 버튼을 눌러야 실제로 PUT /api/schedules/{id}가 호출된다
@@ -2396,10 +2476,15 @@ function openEditModalFromAiSuggestion(message) {
   }
 }
 
-// 일정 저장/수정 자체는 이미 끝난 뒤라, 이 연결이 실패해도 조용히 무시한다(채팅창에 "등록됨"/"수정됨" 표시만 안 남을 뿐)
-async function linkAiChatMessageToSchedule(messageId, scheduleId) {
+// 일정 저장/수정 자체는 이미 끝난 뒤라, 이 연결이 실패해도 조용히 무시한다(채팅창에 "등록됨"/"수정됨" 표시만 안 남을 뿐).
+// itemId가 있으면 SCHEDULE_RECOMMENDATION의 특정 항목을, 없으면 메시지 자체(SCHEDULE_UPDATE 또는
+// 하위호환 단일 추천)를 연결한다
+async function linkAiChatMessageToSchedule(messageId, scheduleId, itemId) {
   try {
-    const updated = await API.patch(`/api/ai/chat/messages/${messageId}/register`, { scheduleId });
+    const url = itemId
+      ? `/api/ai/chat/messages/${messageId}/items/${itemId}/register`
+      : `/api/ai/chat/messages/${messageId}/register`;
+    const updated = await API.patch(url, { scheduleId });
     const idx = aiChatMessages.findIndex((m) => m.id === messageId);
     if (idx !== -1) aiChatMessages[idx] = updated;
   } catch (err) {
@@ -2407,8 +2492,9 @@ async function linkAiChatMessageToSchedule(messageId, scheduleId) {
   }
 }
 
-// AI 추천 값을 그대로 새 일정으로 저장하고 채팅 메시지와 연결한다 - 검토 없이 바로 반영되는 두 경로
-// (버튼으로 누른 "자동 등록", 설정이 켜져 있을 때 응답을 받자마자 자동으로 반영하는 경로)가 공유한다
+// AI 추천 값을 그대로 새 일정으로 저장하고 채팅 메시지와 연결한다(하위호환: 이 기능 이전 방식의 단일
+// suggestedTitle 필드 메시지 전용) - 검토 없이 바로 반영되는 두 경로(버튼으로 누른 "자동 등록", 설정이
+// 켜져 있을 때 응답을 받자마자 자동으로 반영하는 경로)가 공유한다
 async function saveAiRecommendationAsSchedule(message) {
   const currentUser = API.getCurrentUser();
   const userId = currentUser && currentUser.id;
@@ -2425,6 +2511,27 @@ async function saveAiRecommendationAsSchedule(message) {
   const saved = await API.post("/api/schedules", payload);
   scheduleMeta.set(String(saved.id), { categoryId: payload.categoryId, userId });
   await linkAiChatMessageToSchedule(message.id, saved.id);
+  return saved;
+}
+
+// saveAiRecommendationAsSchedule과 같은 목적이지만, message.suggestedItems의 항목 하나를 새 일정으로
+// 저장한다 - 한 번에 여러 일정을 제안받았을 때 항목별 자동/일괄 등록이 공유해서 쓴다
+async function saveAiRecommendationAsScheduleItem(message, item) {
+  const currentUser = API.getCurrentUser();
+  const userId = currentUser && currentUser.id;
+  const payload = {
+    title: item.title,
+    content: item.content || "",
+    startAt: item.startAt,
+    endAt: item.endAt,
+    status: "PENDING",
+    userId,
+    categoryId: item.categoryId,
+  };
+
+  const saved = await API.post("/api/schedules", payload);
+  scheduleMeta.set(String(saved.id), { categoryId: payload.categoryId, userId });
+  await linkAiChatMessageToSchedule(message.id, saved.id, item.id);
   return saved;
 }
 
@@ -2446,13 +2553,80 @@ async function autoRegisterAiChatMessage(message, buttonEl) {
   }
 }
 
+// "자동 등록" 카드 버튼을 항목 하나에 대해 눌렀을 때 - 여러 항목이 있을 수 있는 말풍선이라, 메시지
+// 버전(autoRegisterAiChatMessage)과 달리 패널을 닫거나 상세 팝업으로 이동하지 않고 그 자리에서 배지만
+// 갱신한다(다른 항목을 마저 등록할 수 있게)
+async function autoRegisterAiChatItem(message, item, buttonEl) {
+  buttonEl.disabled = true;
+  try {
+    await saveAiRecommendationAsScheduleItem(message, item);
+    renderAiChatMessages();
+    showToast(`"${item.title}" 일정을 자동 등록했습니다.`);
+    await refreshAll();
+  } catch (err) {
+    showToast(`자동 등록에 실패했습니다. ${err.message}`);
+    buttonEl.disabled = false;
+  }
+}
+
+// "전체 자동 등록" 버튼 - 아직 등록되지 않았고 자동 등록 조건(제목/시작시각/카테고리)을 만족하는 항목만
+// 순서대로 등록한다. 일부가 실패해도 나머지는 계속 진행하고, 실패한 항목만 토스트로 따로 알려준다
+async function autoRegisterAllAiChatItems(message, buttonEl) {
+  buttonEl.disabled = true;
+  const current = aiChatMessages.find((m) => m.id === message.id) || message;
+  const eligible = (current.suggestedItems || []).filter((item) => !item.registeredScheduleId && canAutoRegisterItem(item));
+
+  let successCount = 0;
+  for (const item of eligible) {
+    try {
+      await saveAiRecommendationAsScheduleItem(message, item);
+      successCount++;
+    } catch (err) {
+      showToast(`"${item.title}" 등록에 실패했습니다. ${err.message}`);
+    }
+  }
+
+  renderAiChatMessages();
+  if (successCount > 0) {
+    showToast(`일정 ${successCount}개를 자동 등록했습니다.`);
+    await refreshAll();
+  } else {
+    buttonEl.disabled = false;
+  }
+}
+
 // /settings의 "AI 추천 일정 자동 등록"이 켜져 있으면, 방금 받은 답변이 등록 가능한 추천일 때 버튼
 // 클릭 없이 바로 등록한다 - 채팅 중이라 채팅 패널은 닫지 않고, 결과는 말풍선의 "✅ 등록됨" 배지와
-// 토스트로만 알려준다(자동 등록 버튼을 눌렀을 때처럼 패널을 닫고 상세 팝업으로 이동하진 않는다)
+// 토스트로만 알려준다(자동 등록 버튼을 눌렀을 때처럼 패널을 닫고 상세 팝업으로 이동하진 않는다).
+// SCHEDULE_RECOMMENDATION이 여러 항목을 제안했으면 조건을 만족하는 항목을 전부 순서대로 등록하고,
+// suggestedItems가 비어 있으면(이 기능 이전 방식의 메시지) 하위호환 경로로 처리한다
 async function maybeAutoRegisterAfterSend(message) {
-  if (message.category !== "SCHEDULE_RECOMMENDATION" || !canAutoRegister(message)) return;
+  if (message.category !== "SCHEDULE_RECOMMENDATION") return;
   if (!isAiAutoRegisterSettingEnabled()) return;
 
+  const items = message.suggestedItems || [];
+  if (items.length > 0) {
+    const eligible = items.filter((item) => !item.registeredScheduleId && canAutoRegisterItem(item));
+    if (eligible.length === 0) return;
+
+    let successCount = 0;
+    for (const item of eligible) {
+      try {
+        await saveAiRecommendationAsScheduleItem(message, item);
+        successCount++;
+      } catch (err) {
+        showToast(`"${item.title}" 자동 등록에 실패했습니다. ${err.message}`);
+      }
+    }
+    if (successCount > 0) {
+      renderAiChatMessages();
+      showToast(`AI 추천 일정 ${successCount}개를 자동으로 등록했습니다.`);
+      await refreshAll();
+    }
+    return;
+  }
+
+  if (!canAutoRegister(message)) return;
   try {
     await saveAiRecommendationAsSchedule(message);
     renderAiChatMessages(); // linkAiChatMessageToSchedule이 aiChatMessages를 이미 갱신해뒀으므로 다시 그리기만 하면 된다
@@ -2514,12 +2688,24 @@ aiChatMessagesEl.addEventListener("click", (e) => {
   if (!btn) return;
   const message = aiChatMessages.find((m) => String(m.id) === btn.dataset.messageId);
   if (!message) return;
+  const item = btn.dataset.itemId
+    ? (message.suggestedItems || []).find((it) => String(it.id) === btn.dataset.itemId)
+    : null;
 
   if (btn.dataset.action === "manual") {
     closeAiSuggestModal();
     openCreateModalFromAiSuggestion(message);
   } else if (btn.dataset.action === "auto") {
     autoRegisterAiChatMessage(message, btn);
+  } else if (btn.dataset.action === "manual-item") {
+    if (!item) return;
+    closeAiSuggestModal();
+    openCreateModalFromAiSuggestionItem(message, item);
+  } else if (btn.dataset.action === "auto-item") {
+    if (!item) return;
+    autoRegisterAiChatItem(message, item, btn);
+  } else if (btn.dataset.action === "auto-all-items") {
+    autoRegisterAllAiChatItems(message, btn);
   } else if (btn.dataset.action === "edit-update") {
     closeAiSuggestModal();
     openEditModalFromAiSuggestion(message);

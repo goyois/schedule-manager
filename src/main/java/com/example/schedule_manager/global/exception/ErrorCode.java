@@ -23,6 +23,7 @@ public enum ErrorCode {
     RECURRING_SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 반복 일정입니다."),
     MANDALART_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 만다라트입니다."),
     AI_CHAT_MESSAGE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 채팅 메시지입니다."),
+    AI_CHAT_SUGGESTED_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 추천 항목입니다."),
 
     MANDALART_ACCESS_DENIED(HttpStatus.FORBIDDEN, "본인의 만다라트만 접근할 수 있습니다."),
     MANDALART_INVALID_POSITION(HttpStatus.BAD_REQUEST, "만다라트 셀 위치는 0~8 범위여야 합니다."),

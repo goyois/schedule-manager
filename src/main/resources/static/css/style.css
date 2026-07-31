@@ -2659,6 +2659,31 @@ button {
   font-weight: 600;
 }
 
+/* SCHEDULE_RECOMMENDATION이 한 번에 여러 일정을 제안했을 때, 항목마다 카드 하나씩 세로로 쌓아 보여준다 */
+.ai-chat-suggestion-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-chat-suggestion-item {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.ai-chat-suggestion-item .ai-chat-bubble-actions {
+  margin-top: 6px;
+  justify-content: flex-start;
+}
+
+.ai-chat-bulk-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
 .ai-chat-input-row {
   display: flex;
   align-items: flex-end;

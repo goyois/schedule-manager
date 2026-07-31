@@ -2,6 +2,8 @@ package com.example.schedule_manager.domain.ai.dto;
 
 import com.example.schedule_manager.domain.ai.entity.AiResponseCategory;
 
+import java.util.List;
+
 // ChatClient.entity()가 이 레코드의 필드로 JSON 스키마를 만들어 모델 응답 포맷을 강제하고, 받은 JSON을
 // 이 타입으로 역직렬화한다. startAt/endAt을 LocalDateTime이 아닌 String으로 받는 이유: 모델이 형식을
 // 어겨도(예: 다른 구분자) 여기서 예외로 죽지 않고, AiService에서 파싱 성공 여부를 직접 제어해 실패 시
@@ -21,6 +23,12 @@ import com.example.schedule_manager.domain.ai.entity.AiResponseCategory;
 //
 // targetMandalartBoardId: MANDALART_FILL일 때만 의미가 있다 - [만다라트 보드] 컨텍스트에 함께 실어 보낸
 // id 중 사용자가 채워달라는 보드의 id. targetScheduleId와 같은 이유로 요청자 소유인지 검증한 뒤에만 신뢰한다.
+//
+// title/content/startAt/endAt/categoryId: SCHEDULE_UPDATE일 때만 쓴다("바뀐 뒤의 최종 값" 하나뿐이라
+// 리스트가 필요 없다). SCHEDULE_RECOMMENDATION은 대신 아래 scheduleItems를 쓴다.
+//
+// scheduleItems: SCHEDULE_RECOMMENDATION일 때만 의미가 있다 - 한 번에 여러 일정을 추천할 수 있으므로
+// 항목마다 하나씩 담는 리스트(하나만 추천하는 경우에도 원소 1개짜리 리스트로 채운다).
 public record AiScheduleSuggestion(
         AiResponseCategory category,
         Long targetScheduleId,
@@ -30,6 +38,15 @@ public record AiScheduleSuggestion(
         String startAt,
         String endAt,
         Long categoryId,
+        List<ScheduleItemSuggestion> scheduleItems,
         String reason
 ) {
+    public record ScheduleItemSuggestion(
+            String title,
+            String content,
+            String startAt,
+            String endAt,
+            Long categoryId
+    ) {
+    }
 }

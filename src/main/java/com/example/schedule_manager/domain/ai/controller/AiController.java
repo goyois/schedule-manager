@@ -43,6 +43,17 @@ public class AiController {
         return ResponseEntity.ok(ApiResponse.success(aiService.markRegistered(principal.getUsername(), id, request.scheduleId())));
     }
 
+    // SCHEDULE_RECOMMENDATION이 한 번에 여러 일정을 제안했을 때, 그중 특정 항목(itemId)이 등록됐음을 기록한다
+    @PatchMapping("/messages/{id}/items/{itemId}/register")
+    public ResponseEntity<ApiResponse<AiChatMessageDto>> markItemRegistered(
+            @AuthenticationPrincipal UserDetails principal,
+            @PathVariable Long id,
+            @PathVariable Long itemId,
+            @Valid @RequestBody AiChatRegisterRequestDto request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                aiService.markItemRegistered(principal.getUsername(), id, itemId, request.scheduleId())));
+    }
+
     @DeleteMapping("/messages")
     public ResponseEntity<ApiResponse<Void>> clearConversation(@AuthenticationPrincipal UserDetails principal) {
         aiService.clearConversation(principal.getUsername());

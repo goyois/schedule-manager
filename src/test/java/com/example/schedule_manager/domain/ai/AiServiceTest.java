@@ -5,8 +5,10 @@ import com.example.schedule_manager.domain.ai.dto.AiChatMessageDto;
 import com.example.schedule_manager.domain.ai.dto.AiScheduleSuggestion;
 import com.example.schedule_manager.domain.ai.entity.AiChatMessage;
 import com.example.schedule_manager.domain.ai.entity.AiChatRole;
+import com.example.schedule_manager.domain.ai.entity.AiChatSuggestedSchedule;
 import com.example.schedule_manager.domain.ai.entity.AiResponseCategory;
 import com.example.schedule_manager.domain.ai.repository.AiChatMessageRepository;
+import com.example.schedule_manager.domain.ai.repository.AiChatSuggestedScheduleRepository;
 import com.example.schedule_manager.domain.ai.service.AiRateLimiter;
 import com.example.schedule_manager.domain.ai.service.AiService;
 import com.example.schedule_manager.domain.category.dto.CategoryResponseDto;
@@ -78,6 +80,9 @@ class AiServiceTest {
     private AiChatMessageRepository aiChatMessageRepository;
 
     @Mock
+    private AiChatSuggestedScheduleRepository aiChatSuggestedScheduleRepository;
+
+    @Mock
     private AiRateLimiter aiRateLimiter;
 
     @Mock
@@ -101,8 +106,26 @@ class AiServiceTest {
     // 실제로 쓰이지 않는데, MockitoExtension의 기본 strict stubbing이 "쓰이지 않은 스텁"을 오류로
     // 보기 때문
     @BeforeEach
-    void stubNoMandalartBoardsByDefault() {
+    void stubDefaults() {
         lenient().when(mandalartBoardRepository.findByUserIdOrderByCreatedAtDesc(anyLong())).thenReturn(List.of());
+        // 실제 DB의 IDENTITY 채번을 흉내내 저장할 때마다 새 id를 붙여 돌려준다 - markItemRegistered 등이
+        // 항목 id로 찾아야 하는 흐름을 테스트하려면 저장 직후에도 id가 있어야 한다
+        java.util.concurrent.atomic.AtomicLong nextItemId = new java.util.concurrent.atomic.AtomicLong(1);
+        lenient().when(aiChatSuggestedScheduleRepository.save(any(AiChatSuggestedSchedule.class)))
+                .thenAnswer(invocation -> {
+                    AiChatSuggestedSchedule arg = invocation.getArgument(0);
+                    return arg.getId() != null ? arg : AiChatSuggestedSchedule.builder()
+                            .id(nextItemId.getAndIncrement())
+                            .message(arg.getMessage())
+                            .itemOrder(arg.getItemOrder())
+                            .title(arg.getTitle())
+                            .content(arg.getContent())
+                            .startAt(arg.getStartAt())
+                            .endAt(arg.getEndAt())
+                            .categoryId(arg.getCategoryId())
+                            .registeredScheduleId(arg.getRegisteredScheduleId())
+                            .build();
+                });
     }
 
     private User user(Long id) {
@@ -150,7 +173,10 @@ class AiServiceTest {
 
         // 모델이 다른 날짜(2026-07-29)를 추천해도, 실제 등록되는 startAt/endAt은 항상 오늘 날짜여야 한다
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
-                "저녁 러닝", "30분 조깅", "2026-07-29T19:00:00", "2026-07-29T19:30:00", 10L, "추천 이유"));
+                null, null, null, null, null,
+                List.of(new AiScheduleSuggestion.ScheduleItemSuggestion(
+                        "저녁 러닝", "30분 조깅", "2026-07-29T19:00:00", "2026-07-29T19:30:00", 10L)),
+                "추천 이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "이번 주 운동 일정 추천해줘");
 
@@ -159,11 +185,15 @@ class AiServiceTest {
         assertThat(exchange.assistantMessage().role()).isEqualTo("ASSISTANT");
         assertThat(exchange.assistantMessage().category()).isEqualTo("SCHEDULE_RECOMMENDATION");
         assertThat(exchange.assistantMessage().message()).isEqualTo("추천 이유");
-        assertThat(exchange.assistantMessage().suggestedTitle()).isEqualTo("저녁 러닝");
-        assertThat(exchange.assistantMessage().suggestedContent()).isEqualTo("30분 조깅");
-        assertThat(exchange.assistantMessage().suggestedStartAt()).isEqualTo(LocalDate.now().atTime(19, 0));
-        assertThat(exchange.assistantMessage().suggestedEndAt()).isEqualTo(LocalDate.now().atTime(19, 30));
-        assertThat(exchange.assistantMessage().suggestedCategoryId()).isEqualTo(10L);
+        // 단일 필드(suggestedTitle 등)는 더 이상 SCHEDULE_RECOMMENDATION에 쓰이지 않고 suggestedItems로 대체됐다
+        assertThat(exchange.assistantMessage().suggestedTitle()).isNull();
+        assertThat(exchange.assistantMessage().suggestedItems()).hasSize(1);
+        AiChatMessageDto.SuggestedScheduleItemDto item = exchange.assistantMessage().suggestedItems().get(0);
+        assertThat(item.title()).isEqualTo("저녁 러닝");
+        assertThat(item.content()).isEqualTo("30분 조깅");
+        assertThat(item.startAt()).isEqualTo(LocalDate.now().atTime(19, 0));
+        assertThat(item.endAt()).isEqualTo(LocalDate.now().atTime(19, 30));
+        assertThat(item.categoryId()).isEqualTo(10L);
 
         ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
         verify(chatClientRequest).user(userPromptCaptor.capture());
@@ -193,7 +223,10 @@ class AiServiceTest {
         when(aiChatMessageRepository.save(any(AiChatMessage.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null, "제목", "내용", null, null, null, "이유"));
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
+                null, null, null, null, null,
+                List.of(new AiScheduleSuggestion.ScheduleItemSuggestion("제목", "내용", null, null, null)),
+                "이유"));
 
         aiService.sendMessage("tester@example.com", "그거 말고 다른 거 추천해줘");
 
@@ -217,12 +250,16 @@ class AiServiceTest {
                 .thenReturn(List.of(new CategoryResponseDto(10L, "일상")));
 
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
-                "야간 근무", "당직", "2026-07-29T23:00:00", "2026-07-30T00:30:00", 10L, "추천 이유"));
+                null, null, null, null, null,
+                List.of(new AiScheduleSuggestion.ScheduleItemSuggestion(
+                        "야간 근무", "당직", "2026-07-29T23:00:00", "2026-07-30T00:30:00", 10L)),
+                "추천 이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "추천해줘");
 
-        assertThat(exchange.assistantMessage().suggestedStartAt()).isEqualTo(LocalDate.now().atTime(23, 0));
-        assertThat(exchange.assistantMessage().suggestedEndAt()).isEqualTo(LocalDate.now().plusDays(1).atTime(0, 30));
+        AiChatMessageDto.SuggestedScheduleItemDto item = exchange.assistantMessage().suggestedItems().get(0);
+        assertThat(item.startAt()).isEqualTo(LocalDate.now().atTime(23, 0));
+        assertThat(item.endAt()).isEqualTo(LocalDate.now().plusDays(1).atTime(0, 30));
     }
 
     @Test
@@ -236,13 +273,95 @@ class AiServiceTest {
                 .thenReturn(List.of(new CategoryResponseDto(10L, "운동")));
 
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
-                "제목", "내용", "이상한 형식", null, 999L, "추천 이유"));
+                null, null, null, null, null,
+                List.of(new AiScheduleSuggestion.ScheduleItemSuggestion("제목", "내용", "이상한 형식", null, 999L)),
+                "추천 이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "추천해줘");
 
-        assertThat(exchange.assistantMessage().suggestedStartAt()).isNull();
-        assertThat(exchange.assistantMessage().suggestedEndAt()).isNull();
-        assertThat(exchange.assistantMessage().suggestedCategoryId()).isNull();
+        AiChatMessageDto.SuggestedScheduleItemDto item = exchange.assistantMessage().suggestedItems().get(0);
+        assertThat(item.startAt()).isNull();
+        assertThat(item.endAt()).isNull();
+        assertThat(item.categoryId()).isNull();
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - 한 번에 여러 일정을 요청하면 scheduleItems 각 원소가 순서대로 항목화되어 저장/응답된다")
+    void sendMessage_success_scheduleRecommendation_multipleItemsInOrder() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com"))
+                .thenReturn(List.of(new CategoryResponseDto(10L, "운동"), new CategoryResponseDto(20L, "업무")));
+
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
+                null, null, null, null, null,
+                List.of(
+                        new AiScheduleSuggestion.ScheduleItemSuggestion("헬스장 운동", null, "2026-07-31T07:00:00", "2026-07-31T08:00:00", 10L),
+                        new AiScheduleSuggestion.ScheduleItemSuggestion("팀 회의", "주간 회의", "2026-07-31T14:00:00", "2026-07-31T15:00:00", 20L),
+                        new AiScheduleSuggestion.ScheduleItemSuggestion("병원 예약", null, "2026-08-01T10:00:00", "2026-08-01T10:30:00", null)),
+                "요청하신 3개 일정을 추천드려요"));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "운동, 팀 회의, 병원 예약 등록해줘");
+
+        List<AiChatMessageDto.SuggestedScheduleItemDto> items = exchange.assistantMessage().suggestedItems();
+        assertThat(items).hasSize(3);
+        assertThat(items.get(0).title()).isEqualTo("헬스장 운동");
+        assertThat(items.get(0).categoryId()).isEqualTo(10L);
+        assertThat(items.get(1).title()).isEqualTo("팀 회의");
+        assertThat(items.get(1).categoryId()).isEqualTo(20L);
+        assertThat(items.get(2).title()).isEqualTo("병원 예약");
+        assertThat(items.get(2).categoryId()).isNull(); // categoryId 없음 -> null 그대로
+        // 각 원소는 개별 시각을 가지므로 "오늘로 강제"는 그대로 적용되되, 서로 다른 원본 날짜였어도 항목별로 독립적으로 처리된다
+        assertThat(items.get(0).startAt().toLocalDate()).isEqualTo(LocalDate.now());
+        assertThat(items.get(2).startAt().toLocalDate()).isEqualTo(LocalDate.now());
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - scheduleItems 중 title이 빈 항목은 방어적으로 버려진다")
+    void sendMessage_success_scheduleRecommendation_dropsBlankTitleItems() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
+                null, null, null, null, null,
+                List.of(
+                        new AiScheduleSuggestion.ScheduleItemSuggestion("정상 제목", null, null, null, null),
+                        new AiScheduleSuggestion.ScheduleItemSuggestion("  ", null, null, null, null),
+                        new AiScheduleSuggestion.ScheduleItemSuggestion(null, null, null, null, null)),
+                "이유"));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "추천해줘");
+
+        assertThat(exchange.assistantMessage().suggestedItems())
+                .hasSize(1)
+                .extracting(AiChatMessageDto.SuggestedScheduleItemDto::title)
+                .containsExactly("정상 제목");
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - scheduleItems가 상한(10개)을 넘으면 앞에서부터 10개만 저장한다")
+    void sendMessage_success_scheduleRecommendation_truncatesOverCapItems() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+
+        List<AiScheduleSuggestion.ScheduleItemSuggestion> elevenItems = java.util.stream.IntStream.rangeClosed(1, 11)
+                .mapToObj(i -> new AiScheduleSuggestion.ScheduleItemSuggestion("일정 " + i, null, null, null, null))
+                .toList();
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
+                null, null, null, null, null, elevenItems, "이유"));
+
+        AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "일정 11개 등록해줘");
+
+        assertThat(exchange.assistantMessage().suggestedItems()).hasSize(10);
+        assertThat(exchange.assistantMessage().suggestedItems().get(9).title()).isEqualTo("일정 10");
     }
 
     @Test
@@ -255,7 +374,7 @@ class AiServiceTest {
         when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
 
         stubChatClient(new AiScheduleSuggestion(
-                AiResponseCategory.GENERAL, null, null, null, null, null, null, null, "오늘은 회의가 2건 있어요."));
+                AiResponseCategory.GENERAL, null, null, null, null, null, null, null, null, "오늘은 회의가 2건 있어요."));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "오늘 일정 몇 개야?");
 
@@ -280,7 +399,7 @@ class AiServiceTest {
 
         // category는 GENERAL인데 모델이 지시를 어기고 title/startAt/categoryId를 채워 보낸 경우
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.GENERAL, null, null,
-                "저녁 러닝", "30분 조깅", "2026-07-29T19:00:00", "2026-07-29T19:30:00", 10L, "참고로 이런 것도 있어요"));
+                "저녁 러닝", "30분 조깅", "2026-07-29T19:00:00", "2026-07-29T19:30:00", 10L, null, "참고로 이런 것도 있어요"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "운동 종류 뭐가 있어?");
 
@@ -289,6 +408,7 @@ class AiServiceTest {
         assertThat(exchange.assistantMessage().suggestedStartAt()).isNull();
         assertThat(exchange.assistantMessage().suggestedEndAt()).isNull();
         assertThat(exchange.assistantMessage().suggestedCategoryId()).isNull();
+        assertThat(exchange.assistantMessage().suggestedItems()).isEmpty();
     }
 
     @Test
@@ -300,7 +420,7 @@ class AiServiceTest {
         when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
         when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
 
-        stubChatClient(new AiScheduleSuggestion(null, null, null, "제목", null, null, null, null, "답변"));
+        stubChatClient(new AiScheduleSuggestion(null, null, null, "제목", null, null, null, null, null, "답변"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "질문");
 
@@ -327,7 +447,7 @@ class AiServiceTest {
         String movedStartAt = now.plusDays(2).withHour(15).withMinute(0).withSecond(0).withNano(0).toString();
         String movedEndAt = now.plusDays(2).withHour(16).withMinute(0).withSecond(0).withNano(0).toString();
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_UPDATE, 5L, null,
-                "팀 회의", "주간 회의", movedStartAt, movedEndAt, 10L, "모레 오후로 옮겼어요"));
+                "팀 회의", "주간 회의", movedStartAt, movedEndAt, 10L, null, "모레 오후로 옮겼어요"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "그 회의 모레 오후 3시로 옮겨줘");
 
@@ -352,7 +472,7 @@ class AiServiceTest {
 
         // 컨텍스트로 보여준 적 없는(지어낸) id
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_UPDATE, 999L, null,
-                "제목", "내용", null, null, null, "이유"));
+                "제목", "내용", null, null, null, null, "이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "그 일정 바꿔줘");
 
@@ -377,7 +497,9 @@ class AiServiceTest {
                 .thenReturn(List.of(7L));
 
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
-                "제목", "내용", null, null, 10L, "추천 이유"));
+                null, null, null, null, null,
+                List.of(new AiScheduleSuggestion.ScheduleItemSuggestion("제목", "내용", null, null, 10L)),
+                "추천 이유"));
 
         aiService.sendMessage("tester@example.com", "저번 분기 킥오프처럼 잡아줘");
 
@@ -399,7 +521,9 @@ class AiServiceTest {
         // scheduleEmbeddingService.findSimilarScheduleIds는 스텁하지 않음 - Mockito 기본값(빈 리스트)을 그대로 씀
 
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
-                "제목", "내용", null, null, null, "이유"));
+                null, null, null, null, null,
+                List.of(new AiScheduleSuggestion.ScheduleItemSuggestion("제목", "내용", null, null, null)),
+                "이유"));
 
         aiService.sendMessage("tester@example.com", "추천해줘");
 
@@ -427,7 +551,7 @@ class AiServiceTest {
 
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_UPDATE, 7L, null,
                 "저번 분기 킥오프", "분기 목표 논의", now.minusMonths(3).toString(), now.minusMonths(3).plusHours(1).toString(),
-                10L, "그거 다음 주로 옮겼어요"));
+                10L, null, "그거 다음 주로 옮겼어요"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "저번 분기 킥오프 다음 주로 옮겨줘");
 
@@ -448,7 +572,7 @@ class AiServiceTest {
         when(mandalartCellRepository.findByBoardIdAndRowIndexAndColIndex(50L, 4, 4)).thenReturn(Optional.empty());
 
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.MANDALART_FILL, null, 50L,
-                null, null, null, null, null, "이 보드를 채워드릴게요"));
+                null, null, null, null, null, null, "이 보드를 채워드릴게요"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "이 만다라트 채워줘");
 
@@ -468,7 +592,7 @@ class AiServiceTest {
         // mandalartBoardRepository는 @BeforeEach 기본값(빈 목록)을 그대로 쓴다 - 컨텍스트에 어떤 보드도 없는 상태
 
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.MANDALART_FILL, null, 999L,
-                null, null, null, null, null, "이유"));
+                null, null, null, null, null, null, "이유"));
 
         AiChatExchangeDto exchange = aiService.sendMessage("tester@example.com", "만다라트 채워줘");
 
@@ -498,7 +622,10 @@ class AiServiceTest {
         when(mandalartCellRepository.findByBoardIdOrderByRowIndexAscColIndexAsc(10L)).thenReturn(cells);
 
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
-                "저녁 러닝", "30분 조깅", "2026-07-29T19:00:00", "2026-07-29T19:30:00", 10L, "추천 이유"));
+                null, null, null, null, null,
+                List.of(new AiScheduleSuggestion.ScheduleItemSuggestion(
+                        "저녁 러닝", "30분 조깅", "2026-07-29T19:00:00", "2026-07-29T19:30:00", 10L)),
+                "추천 이유"));
 
         aiService.sendMessage("tester@example.com", "운동 일정 추천해줘");
 
@@ -521,7 +648,9 @@ class AiServiceTest {
         when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
 
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
-                "제목", "내용", null, null, null, "이유"));
+                null, null, null, null, null,
+                List.of(new AiScheduleSuggestion.ScheduleItemSuggestion("제목", "내용", null, null, null)),
+                "이유"));
 
         aiService.sendMessage("tester@example.com", "추천해줘");
 
@@ -543,7 +672,9 @@ class AiServiceTest {
         when(mandalartBoardRepository.findById(999L)).thenReturn(Optional.empty());
 
         stubChatClient(new AiScheduleSuggestion(AiResponseCategory.SCHEDULE_RECOMMENDATION, null, null,
-                "제목", "내용", null, null, null, "이유"));
+                null, null, null, null, null,
+                List.of(new AiScheduleSuggestion.ScheduleItemSuggestion("제목", "내용", null, null, null)),
+                "이유"));
 
         aiService.sendMessage("tester@example.com", "추천해줘");
 
@@ -667,6 +798,57 @@ class AiServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.AI_CHAT_MESSAGE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("항목 등록 표시 성공 - SCHEDULE_RECOMMENDATION 메시지의 특정 항목에만 등록된 일정 id를 남긴다")
+    void markItemRegistered_success() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        AiChatMessage message = savedMessage(5L, requester, AiChatRole.ASSISTANT);
+        AiChatSuggestedSchedule item1 = AiChatSuggestedSchedule.builder().id(50L).message(message).itemOrder(0).title("헬스장 운동").build();
+        AiChatSuggestedSchedule item2 = AiChatSuggestedSchedule.builder().id(51L).message(message).itemOrder(1).title("팀 회의").build();
+        message.addSuggestedSchedule(item1);
+        message.addSuggestedSchedule(item2);
+        when(aiChatMessageRepository.findById(5L)).thenReturn(Optional.of(message));
+
+        AiChatMessageDto result = aiService.markItemRegistered("tester@example.com", 5L, 50L, 100L);
+
+        assertThat(item1.getRegisteredScheduleId()).isEqualTo(100L);
+        assertThat(item2.getRegisteredScheduleId()).isNull(); // 다른 항목은 그대로 미등록 상태
+        assertThat(result.suggestedItems())
+                .filteredOn(dto -> dto.id().equals(50L))
+                .extracting(AiChatMessageDto.SuggestedScheduleItemDto::registeredScheduleId)
+                .containsExactly(100L);
+    }
+
+    @Test
+    @DisplayName("항목 등록 표시 실패 - 다른 유저 소유 메시지면 존재하지 않는 것처럼 예외가 발생한다")
+    void markItemRegistered_otherUsersMessage_throwsNotFound() {
+        User requester = user(1L);
+        User owner = user(2L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        AiChatMessage message = savedMessage(5L, owner, AiChatRole.ASSISTANT);
+        when(aiChatMessageRepository.findById(5L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> aiService.markItemRegistered("tester@example.com", 5L, 50L, 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AI_CHAT_MESSAGE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("항목 등록 표시 실패 - 메시지에 없는 itemId면 예외가 발생한다")
+    void markItemRegistered_itemNotFound_throws() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        AiChatMessage message = savedMessage(5L, requester, AiChatRole.ASSISTANT);
+        when(aiChatMessageRepository.findById(5L)).thenReturn(Optional.of(message));
+
+        assertThatThrownBy(() -> aiService.markItemRegistered("tester@example.com", 5L, 999L, 100L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AI_CHAT_SUGGESTED_ITEM_NOT_FOUND);
     }
 
     @Test
