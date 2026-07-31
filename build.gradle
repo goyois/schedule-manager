@@ -64,7 +64,7 @@ dependencyManagement {
 
 tasks.named('test') {
 	useJUnitPlatform {
-		// Jenkins가 './gradlew test -PciBuild'로 호출할 때만 @Tag("performance") 테스트를 제외한다.
+		// GitHub Actions가 './gradlew test -PciBuild'로 호출할 때만 @Tag("performance") 테스트를 제외한다.
 		// CI의 임시 컨테이너 DB는 매 빌드마다 비어 있어 ScheduleServiceTest의 수동 벤치마크가 요구하는
 		// 사전 시드 카테고리가 없으므로 - 로컬 './gradlew test'(플래그 없음)는 지금까지와 동일하게 전부 돈다
 		if (project.hasProperty('ciBuild')) {

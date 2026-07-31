@@ -1,8 +1,9 @@
-# 배포 프로세스 (AWS + Docker + Jenkins)
+# 배포 프로세스 (AWS + Docker + GitHub Actions)
 
-이 문서는 `schedule-manager`를 AWS 위에 Docker 컨테이너로 띄우고, Jenkins로 빌드/테스트/배포를
+이 문서는 `schedule-manager`를 AWS 위에 Docker 컨테이너로 띄우고, GitHub Actions로 빌드/테스트/배포를
 자동화하는 절차를 설명합니다. 1인 포트폴리오 프로젝트 규모를 기준으로, 비용과 구성 복잡도를
-최소화하는 방향(EC2 단일 인스턴스 + RDS/ElastiCache 관리형 서비스)으로 설계했습니다.
+최소화하는 방향(앱 서버 EC2 단일 인스턴스 + RDS/ElastiCache 관리형 서비스 + GitHub 호스팅 러너)으로
+설계했습니다.
 
 ## 목차
 
@@ -11,8 +12,8 @@
 3. [AWS 인프라 만들기](#aws-인프라-만들기)
 4. [DB 스키마 준비](#db-스키마-준비)
 5. [애플리케이션 컨테이너화](#애플리케이션-컨테이너화)
-6. [Jenkins 설치](#jenkins-설치)
-7. [Jenkins 파이프라인 구성](#jenkins-파이프라인-구성)
+6. [GitHub Actions용 IAM 역할](#github-actions용-iam-역할)
+7. [GitHub Actions 워크플로 구성](#github-actions-워크플로-구성)
 8. [운영 비밀값 준비](#운영-비밀값-준비)
 9. [첫 배포 실행 및 검증](#첫-배포-실행-및-검증)
 10. [모니터링 연계](#모니터링-연계)
@@ -25,20 +26,18 @@
 
 ```mermaid
 flowchart LR
-    Dev[개발자] -->|git push| GitHub
-    GitHub -->|webhook| Jenkins["Jenkins EC2\n(Docker)"]
+    Dev[개발자] -->|git push main| GitHub
 
-    subgraph CI["Jenkins 파이프라인"]
+    subgraph CI["GitHub Actions (.github/workflows/deploy.yml)"]
         direction TB
-        T[Test\n(docker-compose.ci.yml 임시 Postgres/Redis)]
-        B[Docker Build]
-        P[ECR Push]
-        D[SSH Deploy]
-        T --> B --> P --> D
+        T["test\n(서비스 컨테이너로 임시 Postgres/Redis)"]
+        B[build-and-push]
+        D[deploy]
+        T --> B --> D
     end
 
-    Jenkins --> CI
-    P -->|docker push| ECR[(Amazon ECR)]
+    GitHub --> CI
+    B -->|OIDC로 임시 자격증명 발급받아 push| ECR[(Amazon ECR)]
     D -->|ssh + docker pull/run| App["앱 서버 EC2\n(Docker, :8080)"]
     App --> RDS[(RDS PostgreSQL 16\n+ pgvector)]
     App --> Redis[(ElastiCache Redis 7.x)]
@@ -47,26 +46,29 @@ flowchart LR
     User[사용자 브라우저] -->|:8080 또는 :443| App
 ```
 
+Jenkins 같은 별도 CI 서버가 없습니다 — GitHub이 러너를 그때그때 띄워주므로 Jenkins EC2 자체가
+필요 없고, 그만큼 인프라가 단순합니다. 대신 AWS 인증은 장기 액세스 키를 GitHub Secrets에 저장하는
+대신 **GitHub OIDC**로 매 실행마다 임시 자격증명을 발급받습니다.
+
 구성 요소 요약:
 
 | 구성 요소 | 역할 | 비고 |
 |---|---|---|
-| Jenkins EC2 | 빌드/테스트/이미지 푸시/배포 트리거 | `t3.small` 권장 (Docker 데몬 + Jenkins 컨테이너) |
 | 앱 서버 EC2 | 실제 애플리케이션 컨테이너 실행 | `t3.small` 권장, 포트 8080 |
 | Amazon ECR | Docker 이미지 레지스트리 | 프라이빗 리포지토리 1개 |
 | RDS PostgreSQL 16 | 메인 DB + pgvector(Mandalart/Schedule RAG) | `db.t4g.micro`로 충분 |
 | ElastiCache Redis 7.x | 캐시/JWT 블랙리스트/AI rate limit | `cache.t4g.micro` |
+| GitHub Actions | 빌드/테스트/이미지 푸시/배포 (GitHub 호스팅 러너) | 별도 서버 불필요 |
 
 ---
 
 ## 사전 준비물
 
 - AWS 계정 (이 문서는 리전 `ap-northeast-2`(서울) 기준)
-- AWS CLI 로컬 설치 및 자격 증명 설정 (`aws configure`) — 최초 인프라 생성 작업용. Jenkins 자체는
-  아래에서 IAM 역할을 붙여 별도 액세스 키 없이 동작하게 만듭니다.
+- AWS CLI 로컬 설치 및 자격 증명 설정 (`aws configure`) — 최초 인프라 생성 작업용
 - 도메인(선택) — 없어도 EC2 퍼블릭 IP/Elastic IP로 배포까지는 가능합니다. HTTPS는
-  [알려진 한계](#알려진-한계-및-다음-단계) 참고.
-- GitHub 저장소에 대한 접근 권한 (Jenkins가 체크아웃할 수 있어야 함)
+  [알려진 한계](#알려진-한계-및-다음-단계) 참고
+- GitHub 저장소 관리자 권한 (Actions Secrets 등록, 워크플로 실행 확인용)
 - 유효한 Anthropic API 키, OpenAI API 키(임베딩용), Google OAuth 클라이언트 ID (README.md
   "application-local.yml 설정" 절 참고 — 운영에서도 동일한 값들이 필요합니다)
 
@@ -76,16 +78,18 @@ flowchart LR
 
 ### 1. 보안 그룹
 
-콘솔에서 아래 3개를 만듭니다 (기본 VPC 사용 가정).
+콘솔에서 아래 2개를 만듭니다 (기본 VPC 사용 가정).
 
 | 보안 그룹 | 인바운드 규칙 |
 |---|---|
-| `sm-jenkins-sg` | TCP 22 (내 IP만), TCP 8080 (내 IP만 — Jenkins 웹 UI) |
-| `sm-app-sg` | TCP 22 (`sm-jenkins-sg`에서만), TCP 8080 (0.0.0.0/0 — 사용자 접근용) |
+| `sm-app-sg` | TCP 22 (0.0.0.0/0 — 아래 참고), TCP 8080 (0.0.0.0/0 — 사용자 접근용) |
 | `sm-data-sg` | TCP 5432 (`sm-app-sg`에서만), TCP 6379 (`sm-app-sg`에서만) |
 
-> 22번 포트를 0.0.0.0/0으로 열어두지 마세요. Jenkins→앱 서버 SSH는 `sm-jenkins-sg`를 소스로 지정해
-> 그 인스턴스에서만 들어오게 제한합니다.
+> **왜 22번이 0.0.0.0/0인가요?** GitHub 호스팅 러너는 고정 IP가 없어서(매 실행마다 IP 대역이 바뀜)
+> 소스를 특정 IP/보안그룹으로 좁힐 수 없습니다. 대신 반드시 키 기반 인증만 허용하고
+> (`PasswordAuthentication no`), 비밀번호 로그인은 꺼둡니다. 이 타협이 불편하면
+> [알려진 한계](#알려진-한계-및-다음-단계)의 SSM Session Manager 전환을 참고하세요 — SSH 포트 자체를
+> 열지 않아도 되는 더 안전한 대안입니다.
 
 ### 2. RDS PostgreSQL
 
@@ -113,32 +117,30 @@ aws ecr create-repository \
   --image-scanning-configuration scanOnPush=true
 ```
 
-출력된 `repositoryUri`를 `Jenkinsfile`의 `ECR_REPOSITORY_URI`와 `deploy/deploy.sh` 호출부에 씁니다.
+출력된 `repositoryUri`를 `.github/workflows/deploy.yml`의 `ECR_REPOSITORY_URI`와
+`deploy/deploy.sh` 호출부에 씁니다.
 
-### 5. Jenkins EC2
+### 5. 앱 서버 EC2
 
-1. AMI: Amazon Linux 2023, 타입 `t3.small`, 보안 그룹 `sm-jenkins-sg`
-2. IAM 역할을 새로 만들어 이 인스턴스에 연결합니다 (`sm-jenkins-role`) — 정책:
-   - `AmazonEC2ContainerRegistryPowerUser` (ECR push/pull)
+1. AMI: Amazon Linux 2023, 타입 `t3.small`, 보안 그룹 `sm-app-sg`
+2. IAM 역할 `sm-app-role`을 새로 만들어 연결합니다 — 정책:
+   - `AmazonEC2ContainerRegistryReadOnly` (ECR pull)
    - `AmazonSSMReadOnlyAccess` (운영 비밀값을 SSM Parameter Store에서 읽어오는 배포 스크립트용 —
      [운영 비밀값 준비](#운영-비밀값-준비) 참고)
-
-   → 이렇게 하면 Jenkins 컨테이너/파이프라인 어디에도 AWS 액세스 키를 저장할 필요가 없습니다.
-3. 접속 후 Docker 설치:
+3. Docker 설치:
    ```bash
    sudo dnf install -y docker
    sudo systemctl enable --now docker
    sudo usermod -aG docker ec2-user
    ```
    (그룹 반영을 위해 재접속)
-
-### 6. 앱 서버 EC2
-
-1. AMI: Amazon Linux 2023, 타입 `t3.small`, 보안 그룹 `sm-app-sg`
-2. IAM 역할 `sm-app-role` 연결 — 정책: `AmazonEC2ContainerRegistryReadOnly`, `AmazonSSMReadOnlyAccess`
-3. Docker 설치는 Jenkins EC2와 동일
-4. Jenkins EC2의 SSH 공개키를 이 인스턴스의 `~/.ssh/authorized_keys`에 등록 (또는 처음부터 동일한
-   키 페어로 두 인스턴스를 생성)
+4. GitHub Actions가 배포에 쓸 SSH 키 페어를 만들고, 공개키를 `~/.ssh/authorized_keys`에 등록합니다.
+   개인키는 [운영 비밀값 준비](#운영-비밀값-준비)에서 GitHub Secrets에 등록합니다.
+5. 비밀번호 로그인을 꺼서 22번 포트를 열어둔 리스크를 최소화합니다:
+   ```bash
+   sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+   sudo systemctl restart sshd
+   ```
 
 ---
 
@@ -182,7 +184,7 @@ aws ecr create-repository \
 
 1. **build 스테이지** (`eclipse-temurin:17-jdk-jammy`): `./gradlew bootJar -x test`로 실행 가능한 jar만
    만듭니다. 테스트를 여기서 돌리지 않는 이유는 로컬 Postgres/Redis가 필요한데 격리된 이미지 빌드
-   컨테이너 안에는 그게 없기 때문입니다 — 테스트는 Jenkins의 별도 Test 스테이지가 담당합니다.
+   컨테이너 안에는 그게 없기 때문입니다 — 테스트는 GitHub Actions의 별도 `test` 잡이 담당합니다.
 2. **런타임 스테이지** (`eclipse-temurin:17-jre-jammy`): jar만 복사해 넣고, non-root 유저(`spring`)로
    실행합니다.
 
@@ -199,70 +201,82 @@ docker build -t schedule-manager:local .
 
 ---
 
-## Jenkins 설치
+## GitHub Actions용 IAM 역할
 
-Jenkins EC2에서:
+GitHub Actions가 ECR에 이미지를 푸시하려면 AWS 자격증명이 필요한데, 액세스 키를 GitHub Secrets에
+장기 저장하는 대신 **OIDC(OpenID Connect)**로 매 실행마다 임시 자격증명을 발급받습니다.
 
-```bash
-docker volume create jenkins_home
+1. AWS에 GitHub의 OIDC 공급자를 등록합니다 (계정당 최초 1회):
+   ```bash
+   aws iam create-open-id-connect-provider \
+     --url https://token.actions.githubusercontent.com \
+     --client-id-list sts.amazonaws.com \
+     --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+   ```
+   (thumbprint는 GitHub가 공개한 값입니다 — [GitHub Actions OIDC 문서](https://docs.github.com/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect)에서 최신값을 다시 확인하세요.)
 
-docker run -d \
-  --name jenkins \
-  --restart unless-stopped \
-  -p 8080:8080 -p 50000:50000 \
-  -v jenkins_home:/var/jenkins_home \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v $(which docker):/usr/bin/docker \
-  jenkins/jenkins:lts
-```
+2. 이 저장소(`goyois/schedule-manager`)의 `main` 브랜치에서만 assume 가능한 역할을 만듭니다.
+   신뢰 정책(`trust-policy.json`):
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Principal": {
+           "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
+         },
+         "Action": "sts:AssumeRoleWithWebIdentity",
+         "Condition": {
+           "StringEquals": {
+             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+           },
+           "StringLike": {
+             "token.actions.githubusercontent.com:sub": "repo:goyois/schedule-manager:ref:refs/heads/main"
+           }
+         }
+       }
+     ]
+   }
+   ```
+   ```bash
+   aws iam create-role \
+     --role-name gh-actions-deploy-role \
+     --assume-role-policy-document file://trust-policy.json
 
-`-v /var/run/docker.sock:/var/run/docker.sock`로 Jenkins 컨테이너 안에서 호스트의 Docker 데몬을 그대로
-쓸 수 있게 합니다(Docker-in-Docker 대신 "Docker outside of Docker" 방식 — 이미지 빌드/`docker compose`
-실행이 훨씬 가볍습니다).
+   aws iam attach-role-policy \
+     --role-name gh-actions-deploy-role \
+     --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+   ```
+3. 생성된 역할의 ARN을 `.github/workflows/deploy.yml`의 `AWS_ROLE_ARN`에 씁니다.
 
-초기 관리자 비밀번호 확인 후 `http://<jenkins-ec2-ip>:8080`으로 접속해 설정 마법사를 진행합니다:
-
-```bash
-docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
-```
-
-설치할 플러그인: **Pipeline**, **Git**, **SSH Agent**, **Docker Pipeline**, **AWS Credentials**(선택 —
-IAM 역할만 쓰면 필수는 아님), **JUnit**.
-
-컨테이너 안에도 `aws` CLI가 있어야 `deploy/deploy.sh`가 호출하는 `aws ecr get-login-password` 등이
-동작합니다. 이미지에 기본 포함돼 있지 않으므로 한 번 설치해둡니다:
-
-```bash
-docker exec -u root jenkins bash -c "apt-get update && apt-get install -y awscli"
-```
+배포(`deploy`) 잡 자체는 AWS 자격증명이 필요 없습니다 — SSH로 앱 서버에 접속해 스크립트를 실행할
+뿐이고, 실제 `docker pull`/ECR 로그인은 앱 서버 EC2 자신의 IAM 역할(`sm-app-role`)로 이뤄집니다.
 
 ---
 
-## Jenkins 파이프라인 구성
+## GitHub Actions 워크플로 구성
 
-1. Jenkins → **새 아이템** → **Pipeline** → 이름 `schedule-manager-deploy`
-2. **Pipeline** 섹션 → Definition: `Pipeline script from SCM` → SCM: `Git` → 저장소 URL/자격증명 입력 →
-   Script Path: `Jenkinsfile`
-3. **Credentials** 등록 (Jenkins → Manage Jenkins → Credentials):
-   - `app-server-ssh-key` (SSH Username with private key, username `ec2-user`) — 앱 서버 EC2 접속용
-   - Git 저장소가 프라이빗이면 GitHub 접근용 자격증명도 별도 등록
-4. `Jenkinsfile` 상단의 `ECR_REPOSITORY_URI`와 `APP_SERVER_HOST`를 실제 값으로 바꿔 커밋합니다.
-5. GitHub 웹훅(또는 폴링)으로 `main` 브랜치 push 시 자동 빌드하도록 트리거를 설정합니다
-   (Jenkins 잡 설정 → Build Triggers → GitHub hook trigger for GITScm polling).
+`.github/workflows/deploy.yml`이 `main` 브랜치 push마다 아래 3개 잡을 순서대로 실행합니다.
 
-파이프라인 단계 (`Jenkinsfile` 참고):
-
-| 스테이지 | 내용 |
+| 잡 | 내용 |
 |---|---|
-| Checkout | 저장소 체크아웃 |
-| Test | `docker-compose.ci.yml`로 임시 Postgres(pgvector 이미지)/Redis를 띄우고 `./gradlew test -PciBuild` 실행 후 정리 |
-| Build & Push Docker Image | `Dockerfile`로 이미지 빌드, 빌드 번호 태그 + `latest` 태그로 ECR에 푸시 |
-| Deploy | `deploy/deploy.sh`를 앱 서버로 scp한 뒤 ssh로 실행 — pull → 기존 컨테이너 교체 → 헬스체크 → 실패 시 자동 롤백 |
+| `test` | GitHub Actions의 서비스 컨테이너 기능으로 임시 Postgres(pgvector 이미지)/Redis를 띄우고 `./gradlew test -PciBuild` 실행 |
+| `build-and-push` | OIDC로 임시 AWS 자격증명 발급 → `Dockerfile`로 이미지 빌드 → 커밋 SHA 태그 + `latest` 태그로 ECR에 푸시 |
+| `deploy` | `deploy/deploy.sh`를 앱 서버로 scp한 뒤 ssh로 실행 — pull → 기존 컨테이너 교체 → 헬스체크 → 실패 시 자동 롤백 |
 
 `-PciBuild`가 무엇을 제외하는지: `ScheduleServiceTest`의 성능 벤치마크 테스트 1개는 로컬 개발 DB에
-미리 심어둔 카테고리 데이터가 있어야만 통과합니다. CI의 임시 컨테이너 DB는 매 빌드 비어 있는 상태로
-시작하므로 `@Tag("performance")`로 표시해 CI에서만 제외합니다 — 로컬 `./gradlew test`(플래그 없음)는
-지금까지와 동일하게 이 테스트를 포함해 전부 돕니다.
+미리 심어둔 카테고리 데이터가 있어야만 통과합니다. CI의 임시 서비스 컨테이너 DB는 매 실행 비어 있는
+상태로 시작하므로 `@Tag("performance")`로 표시해 CI에서만 제외합니다 — 로컬 `./gradlew test`(플래그
+없음)는 지금까지와 동일하게 이 테스트를 포함해 전부 돕니다.
+
+설정 순서:
+
+1. `.github/workflows/deploy.yml` 상단의 `AWS_ROLE_ARN`, `ECR_REPOSITORY_URI`, `APP_SERVER_HOST`를
+   실제 값으로 바꿔 커밋합니다.
+2. GitHub 저장소 → Settings → Secrets and variables → Actions → **New repository secret**:
+   - `APP_SERVER_SSH_KEY` — [앱 서버 EC2](#5-앱-서버-ec2)에서 만든 SSH 개인키 전체 내용
+3. `main`에 push하면 워크플로가 자동 실행됩니다. Actions 탭에서 진행 상황을 볼 수 있습니다.
 
 ---
 
@@ -270,7 +284,7 @@ docker exec -u root jenkins bash -c "apt-get update && apt-get install -y awscli
 
 `deploy/app.env.example`에 필요한 환경변수 목록이 있습니다. 실제 값은 AWS Systems Manager
 **Parameter Store**에 `SecureString`으로 저장하고, 앱 서버 EC2에서 배포 직전에 받아와 로컬 파일로만
-존재하게 합니다 (Jenkins나 Git 어디에도 평문으로 남기지 않기 위해).
+존재하게 합니다 (GitHub이나 Git 어디에도 평문으로 남기지 않기 위해).
 
 ```bash
 aws ssm put-parameter --name "/schedule-manager/DB_PASSWORD" --type SecureString --value "..."
@@ -298,16 +312,16 @@ done
 chmod 600 "$OUT"
 ```
 
-값이 바뀌면 이 스크립트를 다시 실행한 뒤 `deploy/deploy.sh`를 재실행(또는 다음 Jenkins 배포가 자동으로
-새 컨테이너를 띄울 때 반영)합니다.
+값이 바뀌면 이 스크립트를 다시 실행한 뒤 `deploy/deploy.sh`를 재실행(또는 다음 GitHub Actions 배포가
+자동으로 새 컨테이너를 띄울 때 반영)합니다.
 
 ---
 
 ## 첫 배포 실행 및 검증
 
-1. `ECR_REPOSITORY_URI`/`APP_SERVER_HOST`를 채운 `Jenkinsfile`을 `main`에 푸시(또는 Jenkins에서 수동
-   **Build Now**)합니다.
-2. Jenkins 콘솔 로그에서 Test → Build & Push → Deploy 스테이지가 순서대로 성공하는지 확인합니다.
+1. `AWS_ROLE_ARN`/`ECR_REPOSITORY_URI`/`APP_SERVER_HOST`를 채운 `.github/workflows/deploy.yml`을
+   `main`에 푸시합니다 (또는 GitHub Actions 탭에서 기존 워크플로를 **Re-run**).
+2. Actions 탭에서 `test` → `build-and-push` → `deploy` 잡이 순서대로 성공하는지 확인합니다.
 3. 배포가 끝나면:
    ```bash
    curl http://<app-server-ip>:8080/actuator/health
@@ -342,28 +356,36 @@ scrape_configs:
 
 - **배포 직후 자동 롤백**: `deploy/deploy.sh`는 새 컨테이너가 30번(약 1분) 헬스체크에 실패하면 직전에
   떠 있던 이미지로 자동 롤백합니다.
-- **수동 롤백**: 특정 빌드 번호로 되돌리고 싶다면 앱 서버에서:
+- **수동 롤백**: 특정 커밋으로 되돌리고 싶다면 앱 서버에서:
   ```bash
-  ./deploy.sh <ECR_REPOSITORY_URI> <되돌릴-빌드번호> ap-northeast-2
+  ./deploy.sh <ECR_REPOSITORY_URI> <되돌릴-이미지태그(커밋 SHA 앞 12자리)> ap-northeast-2
   ```
 - **컨테이너 로그 확인**:
   ```bash
   docker logs -f schedule-manager
   ```
-- **Jenkins Test 스테이지가 매번 느리다면**: `docker-compose.ci.yml`의 Postgres에 `tmpfs`를 이미
-  써서 디스크 I/O는 줄여뒀습니다. 그래도 느리면 Jenkins 에이전트 자체의 인스턴스 타입을 올리는 걸
-  고려하세요 (이미지 빌드 + 컨테이너 기동이 대부분의 시간을 차지합니다).
+- **`test` 잡이 매번 느리다면**: 서비스 컨테이너는 GitHub 호스팅 러너 안에서 뜨므로 별도 튜닝 여지가
+  크지 않습니다. 대부분의 시간은 이미지 빌드(`build-and-push`)가 차지하니, Docker 레이어 캐싱
+  (`docker/build-push-action`의 `cache-from`/`cache-to` 등)을 도입하는 걸 고려하세요.
 - **`SchemaManagementException: missing column`으로 부팅 실패**: RDS 스키마가 최신 엔티티와 어긋난
   상태입니다. [DB 스키마 준비](#db-스키마-준비)의 5번 절차(로컬에서 검증한 DDL을 RDS에도 적용)를
   놓쳤을 가능성이 큽니다.
+- **`deploy` 잡이 SSH 연결에서 멈추거나 실패**: 앱 서버 보안 그룹(`sm-app-sg`)의 22번 인바운드가
+  0.0.0.0/0인지, `APP_SERVER_SSH_KEY` 시크릿이 공개키와 짝이 맞는지, 앱 서버가 재기동되며 퍼블릭
+  IP가 바뀌지 않았는지(Elastic IP 권장) 확인하세요.
 
 ---
 
 ## 알려진 한계 및 다음 단계
 
 - **스키마 마이그레이션 도구 부재**: 지금은 `pg_dump`/수동 DDL로 RDS 스키마를 맞춥니다. 팀 규모가
-  커지거나 배포 빈도가 늘면 Flyway 도입을 권장합니다 — 마이그레이션 이력이 코드로 남고, Jenkins
-  파이프라인에 "마이그레이션 적용" 스테이지를 추가해 이 문서의 4번 섹션 전체를 자동화할 수 있습니다.
+  커지거나 배포 빈도가 늘면 Flyway 도입을 권장합니다 — 마이그레이션 이력이 코드로 남고, GitHub
+  Actions 워크플로에 "마이그레이션 적용" 스텝을 추가해 이 문서의 4번 섹션 전체를 자동화할 수 있습니다.
+- **SSH 대신 SSM Session Manager**: 지금은 GitHub 호스팅 러너의 유동 IP 때문에 22번 포트를
+  0.0.0.0/0으로 열어둡니다. 더 안전하게 가려면 `deploy` 잡을 SSH 대신 `aws ssm send-command`(문서
+  `AWS-RunShellScript`)로 바꾸는 걸 고려하세요 — 앱 서버 IAM 역할에 `AmazonSSMManagedInstanceCore`를
+  붙이고 GitHub Actions에도 OIDC 역할(SSM 권한 포함)을 쓰면, `sm-app-sg`에서 22번 인바운드 규칙 자체를
+  없앨 수 있습니다.
 - **HTTPS 미적용**: 현재 구성은 앱 서버 EC2의 8080 포트를 그대로 노출합니다. JWT를 평문 HTTP로
   주고받는 것은 실제 사용자를 받기 전에 반드시 고쳐야 합니다. 가장 간단한 방법은 앱 서버에
   Nginx + Certbot(Let's Encrypt)을 얹어 443 → 8080으로 리버스 프록시하는 것이고, 더 정석적인

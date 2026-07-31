@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 앱 서버 EC2에서 실행된다 (Jenkins가 scp로 올린 뒤 ssh로 호출 - Jenkinsfile "Deploy" 스테이지 참고).
+# 앱 서버 EC2에서 실행된다 (GitHub Actions가 scp로 올린 뒤 ssh로 호출 - .github/workflows/deploy.yml의
+# "deploy" 잡 참고).
 # 이 EC2에는 미리 다음이 준비돼 있어야 한다 (DEPLOYMENT.md "앱 서버 EC2 준비" 절):
 #   - docker 설치 + ec2-user가 docker 그룹에 속함
 #   - ECR pull 권한을 가진 IAM 역할이 이 EC2에 붙어 있음

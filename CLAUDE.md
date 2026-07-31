@@ -21,7 +21,7 @@ Local infra required to run the app: PostgreSQL 16+ (db `api`) and Redis 7.x, bo
 
 Monitoring stack (optional, not required for app to run): `docker-compose -f monitoring/docker-compose.yml up` starts Prometheus (`:9090`) and Grafana (`:3000`, admin/admin). The app exposes `/actuator/prometheus` unauthenticated (permitted in `SecurityConfig`) for scraping.
 
-Production deployment (AWS EC2 + RDS/ElastiCache + ECR, Jenkins-driven build/test/deploy pipeline): see `DEPLOYMENT.md`. `Dockerfile`/`Jenkinsfile`/`docker-compose.ci.yml`/`deploy/` and `application-prod.yml` back that pipeline — `application-prod.yml` is checked in (unlike `application-local.yml`) since every value is an env-var placeholder, no real secrets.
+Production deployment (AWS EC2 + RDS/ElastiCache + ECR, GitHub Actions-driven build/test/deploy pipeline via OIDC — no long-lived AWS keys stored in GitHub): see `DEPLOYMENT.md`. `Dockerfile`/`.github/workflows/deploy.yml`/`deploy/` and `application-prod.yml` back that pipeline — `application-prod.yml` is checked in (unlike `application-local.yml`) since every value is an env-var placeholder, no real secrets.
 
 ## Architecture
 
@@ -88,7 +88,7 @@ Note: TASKS.md describes the original task plan (session-based auth, `domain/sch
 - When adding new logic (new service methods, new endpoints, new business rules), write accompanying test code in the same change — don't leave it for a follow-up ask.
 - Match existing conventions: JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`, `@Mock`/`@InjectMocks`), AssertJ assertions (`assertThat`, `assertThatThrownBy`), Korean `@DisplayName` describing the scenario (see `UserServiceTest`, `AuthServiceTest`). Cover both success and failure/exception paths.
 - Before reporting a change as done, actually run it: at minimum `./gradlew test --tests "<AffectedClass>"` for the touched class(es), or the full `./gradlew test` when the change spans multiple classes/layers. Don't claim success from reading the code alone — if tests can't be run (e.g. missing local MySQL/Redis), say so explicitly instead of asserting it works.
-- `ScheduleServiceTest.apiPerformance` is tagged `@Tag("performance")` and requires the local DB to already have the seed categories the README's DB setup section describes — it's a manual benchmark, not a CI gate. `./gradlew test` (no flags, normal local/agent workflow) still runs it; only `./gradlew test -PciBuild` (what Jenkins uses, see `DEPLOYMENT.md`) excludes it, since the CI pipeline's ephemeral container DB starts empty every build.
+- `ScheduleServiceTest.apiPerformance` is tagged `@Tag("performance")` and requires the local DB to already have the seed categories the README's DB setup section describes — it's a manual benchmark, not a CI gate. `./gradlew test` (no flags, normal local/agent workflow) still runs it; only `./gradlew test -PciBuild` (what the GitHub Actions `test` job uses, see `DEPLOYMENT.md`) excludes it, since the CI pipeline's ephemeral service-container DB starts empty every run.
 
 ## Git workflow
 

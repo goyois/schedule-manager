@@ -144,7 +144,7 @@ monitoring/                  # Prometheus + Grafana docker-compose
 deploy/                      # 배포 스크립트/환경변수 템플릿 (DEPLOYMENT.md 참고)
 ```
 
-AWS(EC2 + RDS + ElastiCache + ECR) 배포와 Jenkins CI/CD 파이프라인 구성은 `DEPLOYMENT.md`에 정리되어 있습니다.
+AWS(EC2 + RDS + ElastiCache + ECR) 배포와 GitHub Actions CI/CD 파이프라인 구성은 `DEPLOYMENT.md`에 정리되어 있습니다.
 
 전역 예외 처리는 `global/exception/GlobalExceptionHandler`(`@RestControllerAdvice`)가 담당합니다. 서비스 계층은 not-found/권한/충돌 오류를 `ErrorCode`(HTTP 상태 + 메시지 매핑)를 담은 `BusinessException`으로 던지고, 핸들러가 이를 그대로 `ApiResponse.error(...)`로 변환합니다. `@Valid` 검증 실패, 인증 실패(`AuthenticationException`), 권한 없음(`AccessDeniedException`), 그 외 예기치 못한 예외도 각각 매핑되어 더 이상 원인 불명의 500으로 새어나가지 않습니다.
 
