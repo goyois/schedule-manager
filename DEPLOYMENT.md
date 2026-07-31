@@ -176,6 +176,11 @@ aws ecr create-repository \
    -- 자체를 실행하려면 스키마에 대한 CREATE 권한이 필요하다. 안 주면 "permission denied for
    -- schema public"으로 부팅이 실패한다
    GRANT CREATE ON SCHEMA public TO schedule_manager_app;
+   -- PgVectorStore는 CREATE TABLE 다음에 "CREATE INDEX IF NOT EXISTS spring_ai_vector_index ON
+   -- vector_store USING HNSW (...)"도 매 부팅 시도한다. CREATE INDEX는 일반 GRANT로 안 되고
+   -- 테이블 소유자만 할 수 있어서, schema.sql 복원 때 마스터 계정이 만든 vector_store의 소유권을
+   -- 아예 앱 계정으로 넘긴다(이 테이블은 Spring AI가 런타임에 직접 관리하므로 소유해도 안전하다)
+   ALTER TABLE vector_store OWNER TO schedule_manager_app;
    ```
    이 계정 정보가 `DB_USERNAME`/`DB_PASSWORD`가 됩니다. 위 GRANT들은 반드시 3번(스키마 복원)이 끝난
    **뒤에** 실행하세요 — `GRANT ... ON ALL TABLES`는 그 시점에 존재하는 테이블에만 적용되므로, 테이블이
