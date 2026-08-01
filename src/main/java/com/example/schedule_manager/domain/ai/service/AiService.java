@@ -34,12 +34,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -73,10 +75,20 @@ public class AiService {
             {3, 3}, {3, 4}, {3, 5}, {4, 3}, {4, 5}, {5, 3}, {5, 4}, {5, 5},
     };
 
+    // 모델에게는 학습 시점 지식만 있고 실제 "오늘"을 알 방법이 없으므로, 매 턴 userPrompt에 현재
+    // 날짜/시각을 직접 실어 보낸다 - 이게 없으면 "오늘", "내일", "이번 주" 같은 상대 표현을 모델이
+    // 임의로(종종 학습 데이터에 가까운 엉뚱한 날짜로) 추측해버린다
+    private static final DateTimeFormatter CURRENT_DATE_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd(E) HH:mm", Locale.KOREAN);
+
     private static final String SYSTEM_PROMPT = """
             당신은 일정 관리 도우미입니다. 사용자의 기존 일정과 카테고리, 그리고 이전 대화 맥락을 참고해
             대화에 답하세요. 대화는 계속 이어질 수 있으니 이전에 추천/제안한 내용을 기억하고 사용자의 후속
             질문(수정 요청, 추가 질문 등)에 자연스럽게 이어서 답하세요.
+
+            사용자 메시지에는 [현재 날짜/시각]이 함께 주어집니다. "오늘", "내일", "이번 주", "다음 주 월요일"
+            같은 상대적 날짜 표현은 반드시 이 값을 기준으로 정확히 계산하세요 - 당신이 학습한 지식상의 날짜나
+            임의의 날짜를 쓰지 마세요.
 
             먼저 이번 답변을 아래 네 카테고리 중 하나로 분류해 category에 쓰세요. 판단 순서가 중요합니다 -
             아래 순서 그대로 확인하세요.
@@ -233,7 +245,10 @@ public class AiService {
 
         List<Message> conversationHistory = recentHistory.stream().map(this::toSpringAiMessage).toList();
 
-        String userPrompt = userText + "\n\n[기존 일정]\n" + scheduleContext + ragScheduleContext + "\n\n[사용 가능한 카테고리]\n" + categoryContext
+        String currentDateTime = LocalDateTime.now().format(CURRENT_DATE_TIME_FORMATTER);
+
+        String userPrompt = userText + "\n\n[현재 날짜/시각]\n" + currentDateTime
+                + "\n\n[기존 일정]\n" + scheduleContext + ragScheduleContext + "\n\n[사용 가능한 카테고리]\n" + categoryContext
                 + "\n\n[만다라트 보드]\n" + mandalartContext
                 + (activeGoalContext != null ? "\n\n[나의 목표(만다라트)]\n" + activeGoalContext : "");
 

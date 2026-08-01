@@ -40,6 +40,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 
@@ -200,6 +201,28 @@ class AiServiceTest {
                 .contains("팀 회의")
                 .doesNotContain("먼 미래 일정")
                 .contains("운동");
+    }
+
+    @Test
+    @DisplayName("메시지 전송 성공 - 모델이 상대적 날짜(오늘/내일 등)를 스스로 지어내지 않도록 현재 날짜/시각을 프롬프트에 함께 실어 보낸다")
+    void sendMessage_success_includesCurrentDateTimeInPrompt() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        stubEmptyHistoryAndSave(requester);
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(categoryService.getCategories("tester@example.com")).thenReturn(List.of());
+
+        stubChatClient(new AiScheduleSuggestion(AiResponseCategory.GENERAL, null, null,
+                null, null, null, null, null, null, "답변"));
+
+        aiService.sendMessage("tester@example.com", "오늘 뭐 해야 돼?");
+
+        ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatClientRequest).user(userPromptCaptor.capture());
+        String today = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        assertThat(userPromptCaptor.getValue())
+                .contains("[현재 날짜/시각]")
+                .contains(today);
     }
 
     @Test
