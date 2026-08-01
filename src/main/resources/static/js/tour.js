@@ -50,6 +50,7 @@ function createSpotlightTour(steps, storageKeyPrefix) {
 
   function teardownOverlay() {
     window.removeEventListener("resize", handleReposition);
+    window.removeEventListener("keydown", handleKeydown);
     [backdropEl, spotlightEl, highlightEl, tooltipEl].forEach((el) => el && el.remove());
     backdropEl = spotlightEl = highlightEl = tooltipEl = null;
   }
@@ -192,10 +193,23 @@ function createSpotlightTour(steps, storageKeyPrefix) {
     tooltipEl.querySelector("[data-tour-skip]").addEventListener("click", endTour);
     const prevBtn = tooltipEl.querySelector("[data-tour-prev]");
     if (prevBtn) prevBtn.addEventListener("click", () => goToStep(index - 1));
-    tooltipEl.querySelector("[data-tour-next]").addEventListener("click", () => {
-      if (isLast) endTour();
-      else goToStep(index + 1);
-    });
+    tooltipEl.querySelector("[data-tour-next]").addEventListener("click", () => confirmStep(index, isLast));
+  }
+
+  // "다음"/"확인했어요" 버튼(data-tour-next)을 눌렀을 때와 정확히 같은 동작 - 버튼 클릭과
+  // Enter/Esc 키 입력(handleKeydown 참고) 둘 다 여기로 모인다
+  function confirmStep(index, isLast) {
+    if (isLast) endTour();
+    else goToStep(index + 1);
+  }
+
+  // 투어가 떠 있는 동안 Enter/Esc 둘 다 "확인" 버튼을 누른 것과 동일하게 동작한다(Esc가 흔히 갖는
+  // "닫기" 의미 대신, 건너뛰기는 이미 별도의 ×/건너뛰기 버튼이 맡고 있다). 배경 페이지의 다른 Enter/Esc
+  // 동작(폼 제출 등)과 겹치지 않도록 이 핸들러에서 처리했으면 preventDefault로 막는다
+  function handleKeydown(event) {
+    if (event.key !== "Enter" && event.key !== "Escape") return;
+    event.preventDefault();
+    confirmStep(stepIndex, stepIndex === steps.length - 1);
   }
 
   // 이번 화면에서 하이라이트할 수 없는 스텝(조건부 렌더/아직 빈 상태)은 같은 방향으로 다음/이전
@@ -232,6 +246,7 @@ function createSpotlightTour(steps, storageKeyPrefix) {
     stepIndex = 0;
     goToStep(0);
     window.addEventListener("resize", handleReposition);
+    window.addEventListener("keydown", handleKeydown);
   }
 
   function maybeStart() {
