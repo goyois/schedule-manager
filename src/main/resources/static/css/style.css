@@ -889,11 +889,15 @@ select {
 }
 
 /* 만다라트 화면 제목 + "AI로 채우기" 버튼을 한 줄에 배치한다 */
+/* max-width를 .mandalart-grid(900px)와 맞춰야 "AI로 채우기" 버튼이 표 바로 위 오른쪽 끝에 붙는다 -
+   안 맞추면 헤더가 .main 전체 폭을 다 차지해 버튼이 900px짜리 표보다 훨씬 오른쪽(페이지 끝)에 떨어져
+   보인다 */
 .mandalart-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  max-width: 900px;
   margin: 0 0 22px;
 }
 
