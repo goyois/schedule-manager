@@ -17,6 +17,12 @@
       placement: "bottom",
     },
     {
+      target: "#wordcloud-widget",
+      title: "자주 쓴 단어 한눈에 보기",
+      text: "내가 등록한 일정 제목에서 자주 쓴 단어를 크기로 보여줘요. 단어에 마우스를 올리면 확대돼요.",
+      placement: "bottom",
+    },
+    {
       target: "#mandalart-widget",
       title: "만다라트로 목표 세우기",
       text: "핵심 목표부터 실행 항목까지 만다라트로 정리하고, AI에게 자동으로 채워달라고 할 수도 있어요. 눌러보면 미리보기가 떠요.",
@@ -51,6 +57,12 @@
       title: "AI에게 일정 추천받기",
       text: "무엇을 하고 싶은지 말하면 AI가 어울리는 일정을 추천해드려요.",
       placement: "left",
+    },
+    {
+      target: "#report-link",
+      title: "기간별 리포트 보기",
+      text: "이번 주・이번 달・올해 등록한 일정을 통계와 그래프로 모아보고, AI에게 잘한 점/아쉬운 점을 물어볼 수 있어요.",
+      placement: "bottom",
     },
     {
       target: "#settings-link",

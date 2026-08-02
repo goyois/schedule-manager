@@ -116,8 +116,17 @@
 
   <div class="toast" id="toast"></div>
 
+  <!-- 도움말 버튼 - 마우스를 올리면(:hover/:focus-within, css) 짧은 설명 말풍선이 뜨고, 누르면
+       첫 방문 때 봤던 이 페이지 가이드 투어(js/report-onboarding.js)를 언제든 다시 볼 수 있다 -->
+  <div class="help-widget" id="help-widget">
+    <div class="help-widget-tooltip">가이드를 다시 볼 수 있어요</div>
+    <button type="button" class="help-widget-btn" id="restart-tour-btn" title="가이드 다시 보기" aria-label="가이드 다시 보기">❓</button>
+  </div>
+
   <script src="/js/sidebar.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/report.js"></script>
+  <script src="/js/tour.js"></script>
+  <script src="/js/report-onboarding.js"></script>
 </body>
 </html>
