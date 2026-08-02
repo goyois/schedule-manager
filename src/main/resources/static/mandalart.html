@@ -4,6 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>만다라트 · Schedule Manager</title>
+  <!-- 라이트로 한번 그려졌다가 다크로 바뀌는 깜빡임(FOUC)을 막으려고, CSS가 실제로 반영되기 전에
+       저장된 테마를 동기적으로 먼저 심어둔다(js/theme.js는 </body> 직전에 로드돼 너무 늦다) -->
+  <script>
+    (function () {
+      var t = localStorage.getItem("sm_theme");
+      if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+    })();
+  </script>
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
@@ -23,6 +31,7 @@
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
       </svg>
     </a>
+    <button type="button" class="btn btn-ghost btn-sm quote-bar-icon-btn" id="theme-toggle-btn" title="다크 모드로 전환" aria-label="다크 모드로 전환"></button>
     <button class="btn btn-ghost btn-sm" id="logout-btn">로그아웃</button>
   </div>
   <div class="app-shell">
@@ -89,6 +98,7 @@
 
   <script src="/js/quotes.js"></script>
   <script src="/js/sidebar.js"></script>
+  <script src="/js/theme.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/mandalart.js"></script>
   <script src="/js/tour.js"></script>

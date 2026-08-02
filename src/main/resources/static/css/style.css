@@ -1,3 +1,13 @@
+/* ---------- 테마 변수 (라이트/다크) ----------
+   실제 색상 값은 여기(:root)와 다크 오버라이드 두 곳에만 있고, 나머지 스타일시트 전체는 이 변수만
+   참조한다 - 다크 모드 지원을 켜면서 하드코딩된 색을 개별로 다 뜯어고치는 대신, 변수 하나만 바꾸면
+   그 변수를 쓰는 모든 곳이 한 번에 따라오게 하기 위해서다(이미 스타일시트 전역에 var(--color-*)가
+   300곳 넘게 쓰이고 있어 이 구조로 가는 게 자연스러웠다).
+   테마 적용 우선순위: (1) 사용자가 명시적으로 고른 테마(:root[data-theme])가 최우선 - 라이트를
+   명시적으로 골랐으면 OS가 다크여도 라이트를 쓴다. (2) 명시적 선택이 없으면 OS 설정
+   (prefers-color-scheme)을 따른다. 실제 적용/저장/토글 UI는 js/theme.js가 담당하고, 화면이 밝았다가
+   어두워지는 깜빡임(FOUC)을 막기 위해 각 HTML의 <head> 인라인 스크립트가 CSS보다 먼저 data-theme을
+   심어둔다. */
 :root {
   --color-bg: #f2f1f6;
   --color-surface: #ffffff;
@@ -6,6 +16,7 @@
   --color-text-muted: #6b7086;
   --color-primary: #3a3552;
   --color-primary-dark: #2b273f;
+  --color-primary-hover: #2b273f;
   --color-primary-soft: #eceaf3;
 
   --color-pending: #b45309;
@@ -17,9 +28,79 @@
   --color-cancelled: #6b7280;
   --color-cancelled-bg: #eceef2;
 
+  --color-danger: #b91c1c;
+  --color-danger-bg: #fef2f2;
+  --color-danger-border: #fecaca;
+  --color-input-bg: #fbfbfe;
+  --color-auth-gradient: linear-gradient(160deg, #eef0fd 0%, #f5f6fb 45%, #ffffff 100%);
+
   --radius-md: 10px;
   --radius-lg: 16px;
   --shadow-card: 0 1px 2px rgba(20, 23, 45, 0.04), 0 4px 12px rgba(20, 23, 45, 0.06);
+}
+
+/* 다크 값은 두 군데에 똑같이 적어둔다: media query 쪽은 "명시적 선택이 없을 때 OS 설정을 따르는" 기본
+   동작, [data-theme="dark"] 쪽은 "사용자가 직접 골랐을 때" - 두 선택자를 CSS 하나로 합칠 방법이 없어
+   부득이하게 값을 중복시켰다(변경 시 두 곳 다 고쳐야 함). :not([data-theme="light"])는 OS는 다크인데
+   사용자가 라이트를 명시적으로 고른 경우 media query 쪽이 이기지 않게 막는다 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #16161c;
+    --color-surface: #1f1f27;
+    --color-border: #34343f;
+    --color-text: #eeedf6;
+    --color-text-muted: #a2a1b2;
+    --color-primary: #7266dd;
+    --color-primary-dark: #c1b8f2;
+    --color-primary-hover: #5b4ecb;
+    --color-primary-soft: #2b2740;
+
+    --color-pending: #f5ad42;
+    --color-pending-bg: #3a2c14;
+    --color-progress: #6ea3ff;
+    --color-progress-bg: #182a4a;
+    --color-completed: #52dd8e;
+    --color-completed-bg: #113322;
+    --color-cancelled: #9fa1b0;
+    --color-cancelled-bg: #2b2b34;
+
+    --color-danger: #f2837e;
+    --color-danger-bg: #3c1a1a;
+    --color-danger-border: #5c2727;
+    --color-input-bg: #26262f;
+    --color-auth-gradient: linear-gradient(160deg, #1d1d27 0%, #17171e 45%, #101013 100%);
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.4);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #16161c;
+  --color-surface: #1f1f27;
+  --color-border: #34343f;
+  --color-text: #eeedf6;
+  --color-text-muted: #a2a1b2;
+  --color-primary: #7266dd;
+  --color-primary-dark: #c1b8f2;
+  --color-primary-hover: #5b4ecb;
+  --color-primary-soft: #2b2740;
+
+  --color-pending: #f5ad42;
+  --color-pending-bg: #3a2c14;
+  --color-progress: #6ea3ff;
+  --color-progress-bg: #182a4a;
+  --color-completed: #52dd8e;
+  --color-completed-bg: #113322;
+  --color-cancelled: #9fa1b0;
+  --color-cancelled-bg: #2b2b34;
+
+  --color-danger: #f2837e;
+  --color-danger-bg: #3c1a1a;
+  --color-danger-border: #5c2727;
+  --color-input-bg: #26262f;
+  --color-auth-gradient: linear-gradient(160deg, #1d1d27 0%, #17171e 45%, #101013 100%);
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -121,7 +202,18 @@ button {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: linear-gradient(160deg, #eef0fd 0%, #f5f6fb 45%, #ffffff 100%);
+  background: var(--color-auth-gradient);
+}
+
+/* 로그인/회원가입 페이지는 quote-bar(아이콘 행)가 없어 테마 토글 버튼을 우측 상단에 고정으로 띄운다 -
+   다른 quote-bar-icon-btn과 크기/스타일은 동일하게 두고 위치만 fixed로 바꾼다 */
+.theme-toggle-fixed {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
 }
 
 .auth-card {
@@ -187,9 +279,9 @@ button {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   font-size: 14px;
-  background: #fbfbfe;
+  background: var(--color-input-bg);
   color: var(--color-text);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 
 .checkbox-field label {
@@ -240,7 +332,7 @@ button {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-primary-soft);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .btn {
@@ -274,7 +366,7 @@ button {
 }
 
 .btn-primary:hover {
-  background: var(--color-primary-dark);
+  background: var(--color-primary-hover);
 }
 
 .btn-ghost {
@@ -345,9 +437,9 @@ button {
 
 .form-alert {
   display: none;
-  background: #fef2f2;
-  color: #b91c1c;
-  border: 1px solid #fecaca;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger-border);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   font-size: 13px;
@@ -605,7 +697,7 @@ button {
 }
 
 .category-list li .remove-cat:hover {
-  color: #b91c1c;
+  color: var(--color-danger);
 }
 
 .category-list li .apply-board {
@@ -1661,7 +1753,7 @@ button {
   border-left: 3px solid transparent;
   border-radius: var(--radius-md);
   padding: 12px 13px;
-  background: #fdfdff;
+  background: var(--color-input-bg);
   cursor: grab;
   transition: box-shadow 0.15s, border-color 0.15s;
 }
@@ -1672,7 +1764,7 @@ button {
 
 .schedule-card:hover {
   box-shadow: var(--shadow-card);
-  border-color: #d7d9ea;
+  border-color: var(--color-border);
 }
 
 /* 상태별 파스텔 톤 - 카드 배경은 옅게, 왼쪽 테두리는 살짝 진하게 줘서 한눈에 상태가 구분되게 한다 */
@@ -1790,12 +1882,12 @@ button {
   padding: 5px 6px;
   border-radius: 7px;
   border: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .icon-btn {
   border: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 7px;
   padding: 5px 8px;
   font-size: 12px;
@@ -1803,9 +1895,9 @@ button {
 }
 
 .icon-btn:hover {
-  color: #b91c1c;
-  border-color: #fecaca;
-  background: #fef2f2;
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-bg);
 }
 
 /* ---------- View toolbar (보드 / 일 / 주 / 월 / 년) ---------- */
@@ -2419,7 +2511,7 @@ button {
   padding: 8px 0;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--color-surface);
   color: var(--color-text-muted);
   font-size: 13px;
   cursor: pointer;
@@ -2458,7 +2550,7 @@ button {
 .ai-chatbot-bubble {
   position: relative;
   max-width: 190px;
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 14px;
   padding: 10px 22px 10px 14px;
@@ -2498,7 +2590,7 @@ button {
   bottom: -7px;
   width: 12px;
   height: 12px;
-  background: #fff;
+  background: var(--color-surface);
   border-right: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
   transform: rotate(45deg);
@@ -2560,7 +2652,7 @@ button {
 
 .help-widget-tooltip {
   max-width: 190px;
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 14px;
   padding: 10px 14px;
@@ -2587,7 +2679,7 @@ button {
   height: 44px;
   border-radius: 50%;
   border: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
   font-size: 18px;
   display: flex;
   align-items: center;
@@ -2715,7 +2807,7 @@ button {
 
 .ai-chat-bubble-assistant {
   align-self: flex-start;
-  background: #fbfbfe;
+  background: var(--color-input-bg);
   border: 1px solid var(--color-border);
   border-bottom-left-radius: 4px;
 }
@@ -2776,7 +2868,7 @@ button {
 }
 
 .ai-chat-bubble-actions .btn-ghost {
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .ai-chat-bubble-actions .btn-primary {
@@ -2804,7 +2896,7 @@ button {
   padding: 8px 10px;
   border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .ai-chat-suggestion-item .ai-chat-bubble-actions {
@@ -2865,7 +2957,7 @@ button {
   padding: 11px 14px;
   border-radius: 14px;
   border-bottom-left-radius: 4px;
-  background: #fbfbfe;
+  background: var(--color-input-bg);
   border: 1px solid var(--color-border);
 }
 
@@ -2927,7 +3019,7 @@ button {
 .schedule-reminder {
   pointer-events: auto;
   width: 280px;
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-primary);
   border-radius: var(--radius-md);
@@ -3010,7 +3102,7 @@ button {
 }
 
 .schedule-reminder-close:hover {
-  color: #b91c1c;
+  color: var(--color-danger);
 }
 
 .mandalart-grid {
@@ -3089,7 +3181,13 @@ button {
    파스텔(15% 혼합)보다 살짝 더 진한 파스텔(25% 혼합)로 구분한다 - 더 이상 원색(solid) 배경은 쓰지 않는다 */
 .mandalart-cell.main-goal.filled {
   background: #d3d1f9;
-  color: var(--color-text);
+}
+
+/* 채워진 칸의 배경은 다크 모드에서도 바뀌지 않는 고정 파스텔이라(위/아래 색상표 참고), 글자색도
+   var(--color-text)(다크 모드에서 밝은 색으로 바뀜)가 아니라 항상 어두운 잉크색으로 고정해야 한다 -
+   안 그러면 다크 모드에서 밝은 파스텔 배경 위에 밝은 글자가 올라가 안 보인다 */
+.mandalart-cell.filled {
+  color: #201f2c;
 }
 
 /* 8개 바깥 블록 색상 - dataviz 스킬의 8색 categorical 팔레트(고정 순서)를 옅은 배경 톤으로 변환해 사용.
@@ -3205,7 +3303,7 @@ button {
   position: fixed;
   z-index: 502;
   width: 260px;
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
@@ -3280,7 +3378,7 @@ button {
   position: absolute;
   width: 12px;
   height: 12px;
-  background: #fff;
+  background: var(--color-surface);
   transform: rotate(45deg);
 }
 

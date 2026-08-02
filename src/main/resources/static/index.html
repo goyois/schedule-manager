@@ -4,9 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>로그인 · Schedule Manager</title>
+  <!-- 라이트로 한번 그려졌다가 다크로 바뀌는 깜빡임(FOUC)을 막으려고, CSS가 실제로 반영되기 전에
+       저장된 테마를 동기적으로 먼저 심어둔다(js/theme.js는 </body> 직전에 로드돼 너무 늦다) -->
+  <script>
+    (function () {
+      var t = localStorage.getItem("sm_theme");
+      if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+    })();
+  </script>
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
+  <button type="button" class="btn btn-ghost btn-sm quote-bar-icon-btn theme-toggle-fixed" id="theme-toggle-btn" title="다크 모드로 전환" aria-label="다크 모드로 전환"></button>
   <div id="quote-banner" class="quote-banner"></div>
   <div class="auth-page">
     <div class="auth-card">
@@ -41,6 +50,7 @@
   </div>
 
   <script src="/js/quotes.js"></script>
+  <script src="/js/theme.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/login.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer onload="initGoogleSignIn()"></script>
