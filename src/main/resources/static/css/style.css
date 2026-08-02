@@ -3279,8 +3279,8 @@ button {
   gap: 8px;
   padding: 5px 0;
   font-size: 12.5px;
-  animation: reportLegendIn 650ms ease-out backwards;
-  animation-delay: calc(var(--stagger-index, 0) * 110ms);
+  animation: reportLegendIn 1950ms ease-out backwards;
+  animation-delay: calc(var(--stagger-index, 0) * 330ms);
 }
 
 .report-legend-dot {
@@ -3443,7 +3443,7 @@ button {
 /* pieEl은 innerHTML을 다시 만들지 않는 고정 노드라 이 클래스를 report.js의 replayAnimation()이 매번
    떼었다 붙이는 방식으로 재생시킨다(레이아웃 재계산 없이는 CSS가 "이미 있던 클래스"로 보고 재생을 건너뜀) */
 .report-pie-animate-in {
-  animation: reportPieIn 1000ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: reportPieIn 3000ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes reportLegendIn {
@@ -3469,7 +3469,7 @@ button {
 }
 
 .report-trend-axis-group {
-  animation: reportTrendAxisIn 550ms ease-out;
+  animation: reportTrendAxisIn 1650ms ease-out;
 }
 
 /* 실제 경로 길이를 재는 JS 없이(path.getTotalLength() 호출·리플로우 없이) "그려지는" 효과를 내는 표준
@@ -3488,8 +3488,8 @@ button {
 .report-trend-line {
   stroke-dasharray: 4000;
   stroke-dashoffset: 4000;
-  animation: reportTrendDraw 1300ms ease-out forwards;
-  animation-delay: calc(var(--stagger-index, 0) * 160ms);
+  animation: reportTrendDraw 3900ms ease-out forwards;
+  animation-delay: calc(var(--stagger-index, 0) * 480ms);
 }
 
 @keyframes reportTrendDotIn {
@@ -3507,7 +3507,7 @@ button {
   transform-box: fill-box;
   transform-origin: center;
   opacity: 0;
-  animation: reportTrendDotIn 450ms ease-out forwards;
+  animation: reportTrendDotIn 1350ms ease-out forwards;
   animation-delay: var(--dot-delay, 0ms);
 }
 
