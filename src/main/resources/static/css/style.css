@@ -948,6 +948,80 @@ button {
   gap: 14px;
 }
 
+/* ---------- 워드클라우드 위젯 (내 일정 제목 키워드 빈도) ---------- */
+/* .main-header가 justify-content:flex-end라 오른쪽 4개 위젯(고정폭)을 다 채우고도 왼쪽에 빈 공간이
+   남는데, 그 자리를 채우려고 header-widgets의 첫 번째 자식으로 넣었다 - flex:1로 남는 폭을 그대로
+   흡수하고, 다른 위젯들과 시각적으로 맞추려 높이(226px)·배경·테두리·radius를 mandalart-widget과 통일했다 */
+.wordcloud-widget {
+  flex: 1 1 240px;
+  min-width: 200px;
+  height: 226px;
+  box-sizing: border-box;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.wordcloud-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.wordcloud-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+  text-align: center;
+  padding: 0 12px;
+}
+
+/* wordcloud.js가 단어마다 절대 좌표(중심점)·글자 크기·색을 인라인 style로 계산해 배치한다(레이아웃
+   자체가 JS 쪽 스파이럴 배치 알고리즘의 결과라 CSS만으로는 재현 불가) - transform은 중심 좌표 보정용
+   translate(-50%,-50%)만 CSS에 두고 나머지(top/left/font-size/color)는 JS가 채운다 */
+.wordcloud-word {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  font-weight: 700;
+  line-height: 1;
+  cursor: default;
+  user-select: none;
+  transition: transform 150ms ease;
+  animation: wordcloudWordIn 260ms ease-out backwards;
+  animation-delay: calc(var(--stagger-index, 0) * 30ms);
+}
+
+.wordcloud-word:hover {
+  transform: translate(-50%, -50%) scale(1.15);
+}
+
+@keyframes wordcloudWordIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wordcloud-word {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 /* ---------- Mandalart widget (dashboard 미리보기, 클릭 시 /mandalart 이동) ---------- */
 
 .mandalart-widget {

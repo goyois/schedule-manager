@@ -440,6 +440,10 @@ async function loadSchedules() {
     showToast(`일정을 불러오지 못했습니다. ${err.message}`);
   }
   refreshVisibleView(); // 통계 카드/레이더 모두 여기서 함께 갱신된다
+  // 워드클라우드는 현재 뷰/날짜 범위와 무관하게 "전체" 일정 제목을 기반으로 하므로 뷰 전환(refreshVisibleView가
+  // switchView/navigateView에서도 호출됨)마다 다시 그릴 필요가 없다 - schedules 배열 자체가 바뀌는 시점(=
+  // 여기)에만 갱신한다
+  renderWordCloud();
 }
 
 // 사이드바에서 카테고리를 선택하면 서버에 categoryId 를 실어 보내 해당 카테고리의 일정만 조회한다
@@ -1140,6 +1144,142 @@ document.getElementById("achievement-widget").addEventListener("click", () => {
   achievementMetaphor = pickRandomAchievementMetaphor();
   renderAchievementWidget();
 });
+
+// ---------- 워드클라우드 위젯 - 내 일정 제목에서 자주 쓴 단어를 빈도순으로 크게 보여준다.
+// 형태소 분석기 없이(서버 호출/AI 비용 없음) "공백/구두점으로 자르고 흔한 조사만 뒤에서 잘라내는"
+// 수준의 휴리스틱 토크나이저를 쓴다 - 완벽하지 않지만(예: 드물게 원래 단어의 일부를 조사로 착각해
+// 잘라낼 수 있음) 재미 요소인 위젯이라 이 정도 오차는 허용한다. 배치는 캔버스가 매번 다시 그려질 때마다
+// 중심에서 바깥으로 도는 스파이럴을 따라가며 이미 놓인 단어와 겹치지 않는 첫 자리를 찾는 방식(흔한
+// word-cloud 라이브러리들의 방식과 동일한 원리) - 위젯이 작아 전부 못 들어가면 남는 단어는 그냥 생략한다.
+const WORDCLOUD_PARTICLES = [
+  "으로부터", "에게서", "한테서", "에서", "으로", "까지", "부터", "에게", "한테", "께서",
+  "이랑", "하고", "이며", "이나", "나", "도", "만", "은", "는", "이", "가", "을", "를",
+  "에", "와", "과", "의", "께", "로",
+];
+
+function stripWordCloudParticle(token) {
+  for (const p of WORDCLOUD_PARTICLES) {
+    // 뗀 뒤 남는 글자가 최소 2자는 돼야 뗀다 - 1자로 줄이면 "회의"의 "의"처럼 조사가 아니라 원래
+    // 단어의 일부인 경우까지 잘라내는 오탐이 눈에 띄게 늘어난다(실제로 겪은 사례)
+    if (token.length - p.length >= 2 && token.endsWith(p)) return token.slice(0, -p.length);
+  }
+  return token;
+}
+
+function extractWordCloudFrequencies(scheduleList) {
+  const counts = new Map();
+  for (const s of scheduleList) {
+    const title = (s.title || "").trim();
+    if (!title) continue;
+    const rawTokens = title.split(/[\s,·\-/()\[\]{}!?.:;"'~]+/).filter(Boolean);
+    for (const raw of rawTokens) {
+      const cleaned = stripWordCloudParticle(raw);
+      if (!cleaned || /^\d+$/.test(cleaned)) continue; // 숫자만 남은 토큰은 단독으로 의미가 없어 제외
+      counts.set(cleaned, (counts.get(cleaned) || 0) + 1);
+    }
+  }
+  return counts;
+}
+
+// dataviz 스킬의 8슬롯 categorical 팔레트를 파스텔톤으로 바꾼 값(report.js의 CATEGORY_COLORS와 동일한
+// 색) - 여기서는 카테고리가 아니라 단어 순위별 장식 색이라 의미 인코딩이 아니다(크기=빈도가 이미 그
+// 역할을 함). report.js와 파일이 분리돼(대시보드/리포트 별도 페이지 스크립트) 공유 모듈이 없어 값만
+// 그대로 복제했다.
+const WORDCLOUD_COLORS = ["#5f9ae0", "#f08e67", "#54c39b", "#eda305", "#eb8db1", "#40a240", "#776bbd", "#ea7776"];
+
+const WORDCLOUD_MAX_WORDS = 26;
+const WORDCLOUD_MIN_FONT = 11;
+const WORDCLOUD_MAX_FONT = 30;
+
+function wordCloudRectsOverlap(a, b) {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+// 중심에서 시작해 바깥으로 도는 아르키메데스 나선을 따라가며, 이미 놓인 단어들과 겹치지 않고 캔버스
+// 경계 안에 들어가는 첫 좌표를 찾는다. 매번 같은 자리부터 시작하면 늘 같은 모양으로 보여서 시작각을
+// 무작위로 준다
+function findWordCloudSpot(placed, cx, cy, wordW, wordH, boundW, boundH) {
+  const angleStep = 0.35;
+  const radiusStep = 6 * (angleStep / (Math.PI * 2));
+  const maxRadius = Math.max(boundW, boundH);
+  let angle = Math.random() * Math.PI * 2;
+  let radius = 0;
+  while (radius < maxRadius) {
+    const x = cx + radius * Math.cos(angle);
+    const y = cy + radius * Math.sin(angle);
+    const rect = { left: x - wordW / 2, top: y - wordH / 2, right: x + wordW / 2, bottom: y + wordH / 2 };
+    if (rect.left >= 2 && rect.top >= 2 && rect.right <= boundW - 2 && rect.bottom <= boundH - 2) {
+      if (!placed.some((p) => wordCloudRectsOverlap(p, rect))) return { x, y };
+    }
+    angle += angleStep;
+    radius += radiusStep;
+  }
+  return null;
+}
+
+function renderWordCloud() {
+  const canvas = document.getElementById("wordcloud-canvas");
+  const counts = extractWordCloudFrequencies(schedules);
+  const entries = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, WORDCLOUD_MAX_WORDS);
+
+  if (entries.length === 0) {
+    canvas.innerHTML = `<div class="wordcloud-empty">일정 제목이 쌓이면<br>자주 쓴 단어가 여기 나타나요</div>`;
+    return;
+  }
+
+  const maxCount = entries[0][1];
+  const minCount = entries[entries.length - 1][1];
+  // 최댓값 하나가 극단적으로 크면 나머지가 다 같이 작아 보이는 걸 완화하려고 선형이 아니라
+  // 제곱근 스케일(면적이 빈도에 비례하는 쪽에 더 가깝게)을 쓴다
+  function fontSizeFor(count) {
+    if (maxCount === minCount) return (WORDCLOUD_MIN_FONT + WORDCLOUD_MAX_FONT) / 2;
+    const t = (Math.sqrt(count) - Math.sqrt(minCount)) / (Math.sqrt(maxCount) - Math.sqrt(minCount));
+    return WORDCLOUD_MIN_FONT + t * (WORDCLOUD_MAX_FONT - WORDCLOUD_MIN_FONT);
+  }
+
+  canvas.innerHTML = "";
+  const rect = canvas.getBoundingClientRect();
+  const w = rect.width || 240;
+  const h = rect.height || 200;
+  const cx = w / 2;
+  const cy = h / 2;
+
+  // 실제 폰트 크기별 렌더 너비/높이는 DOM에 그려봐야 알 수 있어(글자마다 폭이 다름) 화면엔 안 보이는
+  // 측정용 span 하나를 재사용한다
+  const measurer = document.createElement("span");
+  measurer.style.position = "absolute";
+  measurer.style.visibility = "hidden";
+  measurer.style.whiteSpace = "nowrap";
+  measurer.style.fontWeight = "700";
+  canvas.appendChild(measurer);
+
+  const placed = [];
+  entries.forEach(([word, count], i) => {
+    const fontSize = fontSizeFor(count);
+    measurer.style.fontSize = `${fontSize}px`;
+    measurer.textContent = word;
+    const wordW = measurer.offsetWidth + 6;
+    const wordH = measurer.offsetHeight + 4;
+
+    const pos = findWordCloudSpot(placed, cx, cy, wordW, wordH, w, h);
+    if (!pos) return; // 자리가 없으면 생략 - 위젯이 작아 26개가 다 안 들어갈 수 있다
+
+    placed.push({ left: pos.x - wordW / 2, top: pos.y - wordH / 2, right: pos.x + wordW / 2, bottom: pos.y + wordH / 2 });
+
+    const el = document.createElement("span");
+    el.className = "wordcloud-word";
+    el.style.setProperty("--stagger-index", i);
+    el.textContent = word;
+    el.title = `${word} · ${count}회`;
+    el.style.left = `${pos.x}px`;
+    el.style.top = `${pos.y}px`;
+    el.style.fontSize = `${fontSize}px`;
+    el.style.color = WORDCLOUD_COLORS[i % WORDCLOUD_COLORS.length];
+    canvas.appendChild(el);
+  });
+
+  measurer.remove();
+}
 
 // 전체 접기(board.compact)가 꺼져 있으면 기본 펼침 + collapsedCardIds(개별로 접은 것만) 반영,
 // 켜져 있으면 기본 접힘 + forceExpandedCardIds(개별로 펼친 것만) 반영 - 두 모드에서 기본값이
