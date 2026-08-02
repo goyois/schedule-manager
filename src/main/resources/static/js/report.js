@@ -157,7 +157,6 @@ const TREND_VIEW_W = 480;
 const TREND_VIEW_H = 140;
 const TREND_PAD = { left: 30, right: 18, top: 10, bottom: 20 };
 const TREND_DRAW_MS = 900; // 선 하나가 그려지는 데 걸리는 시간(CSS의 report-trend-line 애니메이션 시간과 맞춰야 함)
-const TREND_SERIES_STAGGER_MS = 100; // 카테고리(시리즈)마다 그려지기 시작하는 시점을 얼마씩 늦출지
 
 // 축 눈금을 "깔끔한" 값으로 반올림한다(dataviz 스킬 - "Y축 눈금은 깔끔한 숫자로 반올림") - 1/2/5의
 // 배수만 쓰는 표준 nice-number 올림
@@ -205,22 +204,20 @@ function renderCategoryTrendChart(trend) {
     return `<text x="${xAt(i)}" y="${TREND_VIEW_H - 6}" class="report-trend-axis-label" text-anchor="middle">${escapeHtml(label)}</text>`;
   }).join("");
 
-  // 선은 dasharray/dashoffset을 실제 경로 길이보다 넉넉히 큰 고정값(TREND_DRAW_LENGTH)으로 뒀다가 0으로
-  // 줄어드는 애니메이션으로 "그려지는" 느낌을 낸다 - 매 렌더마다 실제 path.getTotalLength()를 재는 대신 이
-  // 고정값 트릭을 쓰면 DOM 삽입 후 별도 JS 없이 CSS keyframes만으로 처리된다(이 차트의 작은 viewBox
-  // 기준 실제 최대 경로 길이보다 넉넉히 크게 잡음). 시리즈마다 --stagger-index로 순서대로 그려지게 하고,
-  // 점은 그 선이 지나가는 시점에 맞춰 --stagger-index + 포인트 비율만큼 지연시켜 "선을 따라 찍히는" 것처럼
-  // 보이게 한다
+  // 선은 dasharray/dashoffset을 실제 경로 길이보다 넉넉히 큰 고정값으로 뒀다가 0으로 줄어드는 애니메이션으로
+  // "그려지는" 느낌을 낸다 - 매 렌더마다 실제 path.getTotalLength()를 재는 대신 이 고정값 트릭을 쓰면 DOM
+  // 삽입 후 별도 JS 없이 CSS keyframes만으로 처리된다(이 차트의 작은 viewBox 기준 실제 최대 경로 길이보다
+  // 넉넉히 크게 잡음). 모든 카테고리 선이 동시에 그려지기 시작하고(시리즈 간 지연 없음), 각 점은 자기
+  // 선이 그 지점까지 그려지는 시점에 맞춰 포인트 비율만큼만 지연시켜 "선을 따라 찍히는" 것처럼 보이게 한다
   const linesSvg = series.map((s, i) => {
     const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
     const d = s.counts.map((v, idx) => `${idx === 0 ? "M" : "L"}${xAt(idx)},${yAt(v)}`).join(" ");
     const dotsSvg = s.counts.map((v, idx) => {
-      const dotDelay = i * TREND_SERIES_STAGGER_MS + (idx / Math.max(n - 1, 1)) * TREND_DRAW_MS;
+      const dotDelay = (idx / Math.max(n - 1, 1)) * TREND_DRAW_MS;
       return `<circle cx="${xAt(idx)}" cy="${yAt(v)}" r="3" fill="${color}" stroke="var(--color-surface)" stroke-width="1.5" class="report-trend-dot" style="--dot-delay:${dotDelay}ms"></circle>`;
     }).join("");
     return `
-      <path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-            class="report-trend-line" style="--stagger-index:${i}"></path>
+      <path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="report-trend-line"></path>
       ${dotsSvg}
     `;
   }).join("");

@@ -3489,7 +3489,6 @@ button {
   stroke-dasharray: 4000;
   stroke-dashoffset: 4000;
   animation: reportTrendDraw 900ms ease-out forwards;
-  animation-delay: calc(var(--stagger-index, 0) * 100ms);
 }
 
 @keyframes reportTrendDotIn {
