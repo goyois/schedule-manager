@@ -156,8 +156,8 @@ function renderPieChart(categoryBreakdown) {
 const TREND_VIEW_W = 480;
 const TREND_VIEW_H = 140;
 const TREND_PAD = { left: 30, right: 18, top: 10, bottom: 20 };
-const TREND_DRAW_MS = 700; // 선 하나가 그려지는 데 걸리는 시간(CSS의 report-trend-line 애니메이션 시간과 맞춰야 함)
-const TREND_SERIES_STAGGER_MS = 90; // 카테고리(시리즈)마다 그려지기 시작하는 시점을 얼마씩 늦출지
+const TREND_DRAW_MS = 1300; // 선 하나가 그려지는 데 걸리는 시간(CSS의 report-trend-line 애니메이션 시간과 맞춰야 함)
+const TREND_SERIES_STAGGER_MS = 160; // 카테고리(시리즈)마다 그려지기 시작하는 시점을 얼마씩 늦출지
 
 // 축 눈금을 "깔끔한" 값으로 반올림한다(dataviz 스킬 - "Y축 눈금은 깔끔한 숫자로 반올림") - 1/2/5의
 // 배수만 쓰는 표준 nice-number 올림
@@ -303,8 +303,8 @@ async function loadStats() {
   try {
     const stats = await API.get(`/api/reports/stats?period=${currentPeriod}&date=${formatLocalDate(referenceDate)}`);
     rangeLabelEl.textContent = `${stats.rangeStart} ~ ${stats.rangeEnd} (${periodLabel(stats.period)})`;
-    animateNumber(totalCountEl, stats.totalCount, 700, (v) => `${Math.round(v)}건`);
-    animateNumber(completionRateEl, stats.completionRate * 100, 700, (v) => `${Math.round(v * 10) / 10}%`);
+    animateNumber(totalCountEl, stats.totalCount, 1300, (v) => `${Math.round(v)}건`);
+    animateNumber(completionRateEl, stats.completionRate * 100, 1300, (v) => `${Math.round(v * 10) / 10}%`);
     renderComparison(stats.previous);
     renderStatusList(stats.statusCounts);
     renderPieChart(stats.categoryBreakdown);
