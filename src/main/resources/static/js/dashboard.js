@@ -2885,16 +2885,39 @@ function attachMandalartSubBlockHover(gridEl, cellsByCoord) {
       const subGoalContent = cellsByCoord.get(`${row}-${col}`);
       popoverTitleEl.textContent = subGoalContent && subGoalContent.trim() ? subGoalContent : "실행항목";
 
-      const cellRect = cellEl.getBoundingClientRect();
-      const popoverWidth = 172; // .compact 그리드(150px) + 좌우 패딩
-      let left = cellRect.right + 10;
-      if (left + popoverWidth > window.innerWidth - 10) {
-        left = cellRect.left - popoverWidth - 10; // 오른쪽에 자리가 없으면 왼쪽에 띄운다
-      }
-      const top = Math.min(Math.max(cellRect.top - 20, 10), window.innerHeight - 200);
-      popoverEl.style.left = `${Math.max(left, 10)}px`;
-      popoverEl.style.top = `${top}px`;
+      // 9칸 중 어느 줄(라인)에 있는 칸이냐에 따라 팝오버가 튀어나오는 방향을 고정한다 - 왼쪽 줄(col 3)은
+      // 왼쪽으로, 오른쪽 줄(col 5)은 오른쪽으로, 상단 중앙(3,4)은 위로, 하단 중앙(5,4)은 아래로. 그래야
+      // 팝오버가 항상 그 세부목표 칸에서 모달 바깥쪽으로 뻗어나가는 방향에 뜬다(핵심 목표(4,4)는 호출부에서
+      // 이미 걸러져 여기 들어오지 않는다)
+      const direction = col === 3 ? "left" : col === 5 ? "right" : row === 3 ? "top" : "bottom";
+
+      // 팝오버 크기를 하드코딩하지 않고 실제로 한번 보여서(show) 잰다 - 내용(제목 줄바꿈 등)에 따라
+      // 실제 렌더 크기가 달라질 수 있어서
       popoverEl.classList.add("show");
+      const cellRect = cellEl.getBoundingClientRect();
+      const popRect = popoverEl.getBoundingClientRect();
+      const gap = 10;
+
+      let left;
+      let top;
+      if (direction === "left") {
+        left = cellRect.left - popRect.width - gap;
+        top = cellRect.top + cellRect.height / 2 - popRect.height / 2;
+      } else if (direction === "right") {
+        left = cellRect.right + gap;
+        top = cellRect.top + cellRect.height / 2 - popRect.height / 2;
+      } else if (direction === "top") {
+        left = cellRect.left + cellRect.width / 2 - popRect.width / 2;
+        top = cellRect.top - popRect.height - gap;
+      } else {
+        left = cellRect.left + cellRect.width / 2 - popRect.width / 2;
+        top = cellRect.bottom + gap;
+      }
+
+      left = Math.min(Math.max(left, 10), window.innerWidth - popRect.width - 10);
+      top = Math.min(Math.max(top, 10), window.innerHeight - popRect.height - 10);
+      popoverEl.style.left = `${left}px`;
+      popoverEl.style.top = `${top}px`;
     });
 
     cellEl.addEventListener("mouseleave", () => {
