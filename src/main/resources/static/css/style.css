@@ -1121,6 +1121,33 @@ select {
   opacity: 1;
 }
 
+/* 라이트 모드용 흰색 기반 유리 그라데이션을 다크 카드 위에 그대로 쓰면 뿌옇고 밝은 회색 공처럼
+   튀어 보인다(실제로 그렇게 보인다는 피드백) - 하이라이트/테두리 불투명도를 낮추고, 그림자 쪽은
+   흰색이 아니라 검정 계열로 바꿔 어두운 배경에 자연스럽게 녹아드는 유리알로 다시 조정한다 */
+:root[data-theme="dark"] .wordcloud-lens {
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.05) 45%, rgba(255, 255, 255, 0) 68%),
+    radial-gradient(circle at 72% 80%, rgba(0, 0, 0, 0.35) 0%, rgba(0, 0, 0, 0) 55%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.45),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.3),
+    inset 0 4px 7px rgba(255, 255, 255, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .wordcloud-lens {
+    background:
+      radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.05) 45%, rgba(255, 255, 255, 0) 68%),
+      radial-gradient(circle at 72% 80%, rgba(0, 0, 0, 0.35) 0%, rgba(0, 0, 0, 0) 55%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+      0 6px 16px rgba(0, 0, 0, 0.45),
+      inset 0 -4px 8px rgba(0, 0, 0, 0.3),
+      inset 0 4px 7px rgba(255, 255, 255, 0.12);
+  }
+}
+
 .wordcloud-empty {
   display: flex;
   align-items: center;
