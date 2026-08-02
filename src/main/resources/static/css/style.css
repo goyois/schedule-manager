@@ -2116,6 +2116,29 @@ button {
   gap: 3px;
 }
 
+/* 세부목표 칸 호버 팝오버(.mandalart-subblock-popover) 전용 크기 - compact(150px)보다 뚜렷하게 크게,
+   부모 미리보기 모달(280px, max-width:360px)과 거의 맞먹는 크기로 잡아 내용이 잘 읽히게 한다 */
+.mandalart-goal-preview-grid.popover-size {
+  width: 260px;
+  height: 260px;
+  gap: 5px;
+}
+
+.mandalart-goal-preview-grid.popover-size .mandalart-goal-preview-cell {
+  padding: 6px 5px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.mandalart-goal-preview-grid.popover-size .mandalart-goal-preview-text {
+  -webkit-line-clamp: 4;
+}
+
+.mandalart-goal-preview-grid.popover-size .mandalart-goal-preview-cell.main-goal {
+  font-size: 12px;
+}
+
 /* 칸 자체는 flex로 가운데 정렬만 담당하고(가로/세로 모두), 줄임(line-clamp, .mandalart-goal-preview-text)은
    display:-webkit-box가 필요해 같은 요소에 flex와 함께 줄 수 없으므로 텍스트를 감싸는 안쪽 span에
    따로 적용한다(dashboard.js buildMandalartGoalPreview) */
@@ -2194,8 +2217,8 @@ button {
 }
 
 .mandalart-subblock-popover-title {
-  width: 150px;
-  font-size: 11px;
+  width: 260px;
+  font-size: 12.5px;
   font-weight: 700;
   color: var(--color-text-muted);
   text-align: center;
