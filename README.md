@@ -36,8 +36,8 @@
 - **Redis 캐싱** - 일정 목록 조회 결과를 캐싱하며, Redis 장애 시 예외를 던지지 않고 DB 조회로 폴백합니다(fail-open). 일정 변경 시에는 캐시 전체가 아니라 해당 유저 키 패턴만 `SCAN` 기반으로 무효화합니다.
 - **대시보드 UI** - 정적 프론트엔드로 제공되는 7×7 달력, 12시간제 아날로그 시계(중앙에 낮/밤에 따라 ☀️/🌙 표시), 카테고리별 방사형 차트, AI 챗봇 패널, 성취도 위젯
 - **모니터링** - Actuator + Micrometer로 Prometheus 메트릭을 노출하고, Grafana 대시보드로 시각화 (`monitoring/docker-compose.yml`)
+- **기간별 리포트** - 주/월/년 단위로 그 기간의 일정을 집계합니다. 카테고리별 비율·완료율·직전 동일 기간 대비 증감은 AI 호출 없이 즉시 계산되고(`GET /api/reports/stats`), "잘한 점/아쉬운 점"과 행동 패턴·성향 평가는 별도 엔드포인트(`GET /api/reports/insight`)에서 명시적으로 요청했을 때만 Claude가 생성합니다 - 통계/파이차트는 Anthropic 장애나 레이트리밋과 무관하게 항상 즉시 볼 수 있습니다. 인사이트 생성 시에는 이번 기간 통계·일정 목록뿐 아니라, 스케줄 임베딩(pgvector, AI 챗봇 RAG와 동일한 `VectorStore`)으로 찾은 "의미상 비슷한 다른 시기의 활동"도 참고 컨텍스트로 함께 보내 "이런 활동이 예전에도 있었다" 같은 연속성 있는 서술을 가능하게 합니다.
 - **일정 알림(이메일/푸시)**, **AI 오늘의 운세** - 미구현 (예정)
-- **기간별 리포트** - 주/월/년 단위로 그 기간의 일정을 요약하고, 카테고리별 일정 비율 파이차트, 잘한 점/아쉬운 점, 기간별 행동 패턴·성격 평가 등을 보여주는 기능 - 미구현 (예정)
 
 ---
 
@@ -130,7 +130,8 @@ src/main/java/com/example/schedule_manager/
 │   ├── recurringschedule/  # 반복 일정(요일 지정) — occurrence로 펼쳐 schedule에 생성 (controller / service / repository / entity / dto)
 │   ├── category/           # 카테고리 CRUD (controller / service / repository / entity / dto)
 │   ├── ai/                 # AI 일정 추천 챗봇 — ChatClient 연동, 대화 이력 저장/등록 (controller / service / repository / entity / dto)
-│   └── mandalart/          # 만다라트 보드/셀 CRUD + AI로 빈 칸 채우기 (controller / service / repository / entity / dto)
+│   ├── mandalart/          # 만다라트 보드/셀 CRUD + AI로 빈 칸 채우기 (controller / service / repository / entity / dto)
+│   └── report/             # 기간별 리포트 — 통계 집계 + RAG 보강 AI 인사이트 (controller / service / dto)
 ├── global/
 │   ├── security/    # config/SecurityConfig, filter/JwtAuthenticationFilter, util/JwtUtil, service/CustomUserDetailsService
 │   ├── config/      # RedisConfig(캐시), CacheFailSafeErrorHandler, GoogleOAuthConfig, AiConfig(ChatClient 빈)
@@ -188,6 +189,8 @@ AWS(EC2 + RDS + ElastiCache + ECR) 배포와 GitHub Actions CI/CD 파이프라�
 | POST | `/api/ai/chat/messages` | AI 챗봇에 메시지 전송 (구조화된 추천 응답 수신, 만다라트 채우기 요청도 이 엔드포인트로 처리) | 필요 |
 | PATCH | `/api/ai/chat/messages/{id}/register` | AI 추천 메시지를 실제 일정으로 등록 | 필요 |
 | DELETE | `/api/ai/chat/messages` | AI 챗봇 대화 이력 초기화 | 필요 |
+| GET | `/api/reports/stats?period=WEEK\|MONTH\|YEAR&date=` | 기간별 통계(카테고리 비율/완료율/직전 기간 대비) — AI 호출 없음 | 필요 |
+| GET | `/api/reports/insight?period=WEEK\|MONTH\|YEAR&date=` | 기간별 AI 인사이트(잘한 점/아쉬운 점/행동 패턴/성향) — RAG 보강, 분당 5회 제한 | 필요 |
 
 ### 아직 미구현
 

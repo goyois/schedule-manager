@@ -37,4 +37,9 @@ public class ViewController {
     public String settings() {
         return "forward:/settings.html";
     }
+
+    @GetMapping("/report")
+    public String report() {
+        return "forward:/report.html";
+    }
 }

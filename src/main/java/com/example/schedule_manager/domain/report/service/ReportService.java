@@ -1,0 +1,298 @@
+package com.example.schedule_manager.domain.report.service;
+
+import com.example.schedule_manager.domain.ai.service.AiRateLimiter;
+import com.example.schedule_manager.domain.report.dto.CategoryStatDto;
+import com.example.schedule_manager.domain.report.dto.PreviousPeriodComparisonDto;
+import com.example.schedule_manager.domain.report.dto.ReportInsightDto;
+import com.example.schedule_manager.domain.report.dto.ReportStatsDto;
+import com.example.schedule_manager.domain.report.dto.StatusCountDto;
+import com.example.schedule_manager.domain.report.entity.ReportPeriod;
+import com.example.schedule_manager.domain.schedule.dto.ScheduleResponseDto;
+import com.example.schedule_manager.domain.schedule.entity.ScheduleStatus;
+import com.example.schedule_manager.domain.schedule.service.ScheduleEmbeddingService;
+import com.example.schedule_manager.domain.schedule.service.ScheduleService;
+import com.example.schedule_manager.domain.user.entity.User;
+import com.example.schedule_manager.domain.user.repository.UserRepository;
+import com.example.schedule_manager.global.exception.BusinessException;
+import com.example.schedule_manager.global.exception.ErrorCode;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+// 기간별 리포트(README "기간별 리포트" 기능): 주/월/년 단위로 카테고리 비율·완료율·직전 동일 기간 대비
+// 증감 같은 결정적 통계는 무료로 즉시 계산하고(getStats), "잘한 점/아쉬운 점"·"행동 패턴/성향 평가" 같은
+// 주관적 서술은 별도 엔드포인트(getInsight)에서만 AI를 호출한다 - 통계 카드/파이차트는 Anthropic 장애나
+// 레이트리밋과 무관하게 항상 즉시 보여줄 수 있어야 하므로, 두 관심사를 하나의 요청/응답으로 묶지 않는다
+// (MandalartAiService가 "채우기"만 AI로 하고 순수 복사 부분(mirrorSubGoalsToOuterBlockCenters)은 코드로
+// 처리하는 것과 같은 이유).
+//
+// 리포트는 항상 "본인" 일정만 대상으로 한다(AiService.sendMessage와 동일한 이유 - ADMIN이 호출해도
+// scheduleService.getSchedules에 본인 id를 명시적으로 넘겨야 한다. null을 넘기면 ADMIN은 전체 유저
+// 일정을 받게 되므로 절대 null을 넘기지 않는다) - 회고/성향 평가라는 기능 성격상 "남의 리포트를 관리자가
+// 대신 본다"는 시나리오 자체가 없다.
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ReportService {
+
+    // strengths/improvements 각각 이 개수까지만 반영한다 - UI 카드가 무한정 길어지는 것을 방지(방어적 처리,
+    // AiService의 MAX_SCHEDULE_ITEMS_PER_RECOMMENDATION과 같은 이유)
+    private static final int MAX_INSIGHT_ITEMS = 5;
+
+    // 이번 기간과 의미상 비슷한 다른 시기의 일정을 몇 건까지 참고 컨텍스트로 보강할지
+    // (ScheduleEmbeddingService, AiService.RAG_SCHEDULE_TOP_K와 같은 값)
+    private static final int RAG_TOP_K = 5;
+
+    // RAG 질의 텍스트(이번 기간 일정 제목들을 이어붙인 것)가 너무 길어지지 않도록 상한
+    private static final int MAX_TITLES_FOR_QUERY = 30;
+
+    // 프롬프트에 나열하는 일정 개수 상한(1년 리포트처럼 일정이 아주 많을 수 있어 토큰 비용 방어) -
+    // 정확한 개수/비율은 이미 [기간 통계]에 숫자로 들어가 있으므로, 목록은 맥락 파악용으로만 이 정도면 충분하다
+    private static final int MAX_SCHEDULES_IN_PROMPT = 60;
+
+    private static final String SYSTEM_PROMPT = """
+            당신은 사용자의 지난 일정 기록을 바탕으로 회고를 도와주는 도우미입니다. 함께 주어지는
+            [기간 통계](정확한 숫자), [이번 기간 일정 목록], 그리고 있다면 [참고: 의미상 비슷한 다른 시기의
+            활동]만 근거로 삼아 아래 네 항목을 채우세요. 통계에 없는 숫자나 목록에 없는 일정을 지어내지
+            마세요.
+
+            - strengths: 이번 기간에 잘한 점을 1~3개, 짧은 문장으로.
+            - improvements: 아쉬웠거나 개선하면 좋을 점을 1~3개, 짧은 문장으로.
+            - behaviorPattern: 요일/시간대/카테고리 편중 등 이번 기간에 드러나는 행동 패턴을 1~2문장으로.
+            - personalityNote: 일정 데이터에서 드러나는 성향을 가볍고 긍정적인 톤으로 1~2문장. 과도한
+              단정이나 부정적 평가는 피하세요.
+
+            해당 기간에 일정이 거의 없다면 억지로 분석하지 말고 그 사실 자체를 언급하세요.
+            """;
+
+    private final ChatClient chatClient;
+    private final ScheduleService scheduleService;
+    private final UserRepository userRepository;
+    private final AiRateLimiter aiRateLimiter;
+    private final ScheduleEmbeddingService scheduleEmbeddingService;
+
+    @Transactional(readOnly = true)
+    public ReportStatsDto getStats(String requesterEmail, ReportPeriod period, LocalDate referenceDate) {
+        User requester = findUserByEmail(requesterEmail);
+        LocalDate ref = referenceDate != null ? referenceDate : LocalDate.now();
+        List<ScheduleResponseDto> all = scheduleService.getSchedules(requesterEmail, requester.getId(), null);
+        return computeStats(period, ref, all);
+    }
+
+    @Transactional(readOnly = true)
+    public ReportInsightDto getInsight(String requesterEmail, ReportPeriod period, LocalDate referenceDate) {
+        User requester = findUserByEmail(requesterEmail);
+        aiRateLimiter.checkLimit(requester.getId(), requester.getUserType());
+
+        LocalDate ref = referenceDate != null ? referenceDate : LocalDate.now();
+        List<ScheduleResponseDto> all = scheduleService.getSchedules(requesterEmail, requester.getId(), null);
+        ReportStatsDto stats = computeStats(period, ref, all);
+
+        LocalDate[] range = resolveRange(period, ref);
+        List<ScheduleResponseDto> inRange = overlapping(all, range[0].atStartOfDay(), range[1].plusDays(1).atStartOfDay());
+
+        String userPrompt = "[기간 통계]\n" + buildStatsContext(stats)
+                + "\n\n[이번 기간 일정 목록]\n" + buildScheduleListContext(inRange)
+                + buildRagContext(requester.getId(), inRange, all);
+
+        ReportInsightDto suggestion;
+        try {
+            suggestion = chatClient.prompt()
+                    .system(SYSTEM_PROMPT)
+                    .user(userPrompt)
+                    .call()
+                    .entity(ReportInsightDto.class);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.AI_REQUEST_FAILED, e);
+        }
+
+        return sanitizeInsight(suggestion);
+    }
+
+    private ReportStatsDto computeStats(ReportPeriod period, LocalDate referenceDate, List<ScheduleResponseDto> all) {
+        LocalDate[] range = resolveRange(period, referenceDate);
+        List<ScheduleResponseDto> inRange = overlapping(all, range[0].atStartOfDay(), range[1].plusDays(1).atStartOfDay());
+
+        long total = inRange.size();
+        Map<ScheduleStatus, Long> statusMap = inRange.stream()
+                .collect(Collectors.groupingBy(ScheduleResponseDto::status, Collectors.counting()));
+        List<StatusCountDto> statusCounts = Arrays.stream(ScheduleStatus.values())
+                .map(status -> new StatusCountDto(status, statusMap.getOrDefault(status, 0L)))
+                .toList();
+        double completionRate = completionRate(total, statusMap);
+
+        Map<String, Long> categoryMap = inRange.stream()
+                .collect(Collectors.groupingBy(ScheduleResponseDto::categoryName, Collectors.counting()));
+        List<CategoryStatDto> categoryBreakdown = categoryMap.entrySet().stream()
+                .map(e -> new CategoryStatDto(e.getKey(), e.getValue(), total > 0 ? e.getValue() * 100.0 / total : 0.0))
+                .sorted(Comparator.comparingLong(CategoryStatDto::count).reversed())
+                .toList();
+
+        LocalDate[] prevRange = previousRange(period, range[0]);
+        List<ScheduleResponseDto> prevInRange = overlapping(all, prevRange[0].atStartOfDay(), prevRange[1].plusDays(1).atStartOfDay());
+        long prevTotal = prevInRange.size();
+        Map<ScheduleStatus, Long> prevStatusMap = prevInRange.stream()
+                .collect(Collectors.groupingBy(ScheduleResponseDto::status, Collectors.counting()));
+        double prevCompletionRate = completionRate(prevTotal, prevStatusMap);
+        PreviousPeriodComparisonDto previous = new PreviousPeriodComparisonDto(
+                prevTotal, prevCompletionRate, total - prevTotal, completionRate - prevCompletionRate);
+
+        return new ReportStatsDto(period, range[0], range[1], total, completionRate, statusCounts, categoryBreakdown, previous);
+    }
+
+    // 완료율 = COMPLETED / (전체 - CANCELLED) - 취소된 일정은 애초에 "완료할 대상"이 아니었으므로 분모에서
+    // 뺀다. 분모가 0(일정이 없거나 전부 취소)이면 0으로 둔다(0/0 방어)
+    private double completionRate(long total, Map<ScheduleStatus, Long> statusMap) {
+        long completed = statusMap.getOrDefault(ScheduleStatus.COMPLETED, 0L);
+        long cancelled = statusMap.getOrDefault(ScheduleStatus.CANCELLED, 0L);
+        long denominator = total - cancelled;
+        return denominator > 0 ? (double) completed / denominator : 0.0;
+    }
+
+    private LocalDate[] resolveRange(ReportPeriod period, LocalDate reference) {
+        return switch (period) {
+            case WEEK -> {
+                LocalDate start = reference.with(DayOfWeek.MONDAY);
+                yield new LocalDate[]{start, start.plusDays(6)};
+            }
+            case MONTH -> {
+                LocalDate start = reference.withDayOfMonth(1);
+                yield new LocalDate[]{start, start.plusMonths(1).minusDays(1)};
+            }
+            case YEAR -> {
+                LocalDate start = reference.withDayOfYear(1);
+                yield new LocalDate[]{start, start.plusYears(1).minusDays(1)};
+            }
+        };
+    }
+
+    private LocalDate[] previousRange(ReportPeriod period, LocalDate currentStart) {
+        return switch (period) {
+            case WEEK -> new LocalDate[]{currentStart.minusWeeks(1), currentStart.minusDays(1)};
+            case MONTH -> new LocalDate[]{currentStart.minusMonths(1), currentStart.minusDays(1)};
+            case YEAR -> new LocalDate[]{currentStart.minusYears(1), currentStart.minusDays(1)};
+        };
+    }
+
+    // ScheduleRepositoryImpl.overlapsRange / dashboard.js의 schedulesOverlappingRange와 동일한 겹침
+    // 기준(종료 시각이 없는 알림형 일정은 시작 시각을 종료 시각으로 취급) - 이미 메모리에 올라온 전체 목록을
+    // 걸러내는 것이므로 새 QueryDSL 메서드 없이 AiService.filterToWindow와 같은 방식으로 처리한다
+    private List<ScheduleResponseDto> overlapping(List<ScheduleResponseDto> schedules, LocalDateTime rangeStart, LocalDateTime rangeEnd) {
+        return schedules.stream()
+                .filter(s -> {
+                    LocalDateTime effectiveEnd = s.endAt() != null ? s.endAt() : s.startAt();
+                    return s.startAt().isBefore(rangeEnd) && effectiveEnd.isAfter(rangeStart);
+                })
+                .sorted(Comparator.comparing(ScheduleResponseDto::startAt))
+                .toList();
+    }
+
+    private String buildStatsContext(ReportStatsDto s) {
+        String categoryLines = s.categoryBreakdown().stream()
+                .map(c -> "- %s: %d건 (%.1f%%)".formatted(c.categoryName(), c.count(), c.percentage()))
+                .collect(Collectors.joining("\n"));
+        String statusLines = s.statusCounts().stream()
+                .filter(c -> c.count() > 0)
+                .map(c -> "- %s: %d건".formatted(c.status(), c.count()))
+                .collect(Collectors.joining("\n"));
+        PreviousPeriodComparisonDto prev = s.previous();
+        String prevLine = "직전 동일 기간 대비: 총 일정 %+d건, 완료율 %+.1f%%p".formatted(
+                prev.totalCountDelta(), prev.completionRateDelta() * 100);
+
+        return "기간: %s ~ %s\n총 일정: %d건\n완료율: %.1f%%\n\n[카테고리별]\n%s\n\n[상태별]\n%s\n\n%s".formatted(
+                s.rangeStart(), s.rangeEnd(), s.totalCount(), s.completionRate() * 100,
+                categoryLines.isBlank() ? "(없음)" : categoryLines,
+                statusLines.isBlank() ? "(없음)" : statusLines,
+                prevLine);
+    }
+
+    private String buildScheduleListContext(List<ScheduleResponseDto> schedules) {
+        if (schedules.isEmpty()) {
+            return "(해당 기간에 등록된 일정 없음)";
+        }
+        List<ScheduleResponseDto> capped = schedules.size() > MAX_SCHEDULES_IN_PROMPT
+                ? schedules.subList(0, MAX_SCHEDULES_IN_PROMPT)
+                : schedules;
+        String body = capped.stream()
+                .map(s -> "- [%s] %s (%s, 카테고리: %s)".formatted(s.status(), s.title(), s.startAt(), s.categoryName()))
+                .collect(Collectors.joining("\n"));
+        return schedules.size() > MAX_SCHEDULES_IN_PROMPT
+                ? body + "\n... 외 %d건".formatted(schedules.size() - MAX_SCHEDULES_IN_PROMPT)
+                : body;
+    }
+
+    // 이번 기간 일정 제목들을 질의로 삼아, 기간 밖에서 의미상 비슷한 과거/예정 일정을 찾아 참고 컨텍스트로
+    // 보강한다(AiService.sendMessage가 채팅 응답에 하는 것과 같은 목적의 RAG, 다만 질의가 사용자 메시지가
+    // 아니라 "이번 기간 일정 제목들"이라는 점이 다르다) - "이런 활동이 예전에도 있었다" 같은 연속성 있는
+    // 서술을 가능하게 한다. 검색 자체가 실패해도 ScheduleEmbeddingService가 이미 fail-open으로 빈 목록을
+    // 돌려주므로 여기서 별도 예외 처리는 필요 없다
+    private String buildRagContext(Long userId, List<ScheduleResponseDto> inRange, List<ScheduleResponseDto> all) {
+        if (inRange.isEmpty()) {
+            return "";
+        }
+        String queryText = inRange.stream()
+                .map(ScheduleResponseDto::title)
+                .filter(t -> t != null && !t.isBlank())
+                .limit(MAX_TITLES_FOR_QUERY)
+                .collect(Collectors.joining(", "));
+        if (queryText.isBlank()) {
+            return "";
+        }
+
+        Set<Long> inRangeIds = inRange.stream().map(ScheduleResponseDto::id).collect(Collectors.toSet());
+        List<Long> similarIds = scheduleEmbeddingService.findSimilarScheduleIds(userId, queryText, inRangeIds, RAG_TOP_K);
+        if (similarIds.isEmpty()) {
+            return "";
+        }
+
+        Map<Long, ScheduleResponseDto> byId = all.stream()
+                .collect(Collectors.toMap(ScheduleResponseDto::id, dto -> dto, (a, b) -> a));
+        List<ScheduleResponseDto> similar = similarIds.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
+                .toList();
+        if (similar.isEmpty()) {
+            return "";
+        }
+
+        return "\n\n[참고: 의미상 비슷한 다른 시기의 활동]\n" + buildScheduleListContext(similar);
+    }
+
+    // 모델이 리스트를 비워/null로 보내거나 과도하게 채워 보낼 수 있으므로 방어적으로 정리한다
+    // (AiService.sanitizeRecommendationItem과 같은 이유)
+    private ReportInsightDto sanitizeInsight(ReportInsightDto raw) {
+        return new ReportInsightDto(
+                capNonBlank(raw.strengths()),
+                capNonBlank(raw.improvements()),
+                raw.behaviorPattern() != null ? raw.behaviorPattern() : "",
+                raw.personalityNote() != null ? raw.personalityNote() : "");
+    }
+
+    private List<String> capNonBlank(List<String> items) {
+        if (items == null) {
+            return List.of();
+        }
+        return items.stream()
+                .filter(s -> s != null && !s.isBlank())
+                .limit(MAX_INSIGHT_ITEMS)
+                .toList();
+    }
+
+    private User findUserByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    }
+}
