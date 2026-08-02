@@ -2160,6 +2160,36 @@ button {
   color: var(--color-text-muted);
 }
 
+/* 세부목표 칸 호버 시 뜨는 바깥 블록(실행항목 9칸) 팝오버 - modal-overlay(z-index 50)보다 위에 떠야
+   하고, 마우스가 벗어나면 바로 사라지는 가벼운 미리보기라 배경 오버레이/닫기 버튼 없이 카드 하나만 fixed로
+   띄운다. 위치(left/top)는 dashboard.js가 호버한 칸 기준으로 매번 계산해서 인라인 style로 준다 */
+.mandalart-subblock-popover {
+  position: fixed;
+  z-index: 60;
+  display: none;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 50px rgba(20, 23, 45, 0.25);
+  padding: 10px;
+  pointer-events: none;
+}
+
+.mandalart-subblock-popover.show {
+  display: block;
+}
+
+.mandalart-subblock-popover-title {
+  width: 150px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-align: center;
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .detail-top {
   display: flex;
   align-items: center;

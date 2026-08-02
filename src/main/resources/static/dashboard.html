@@ -207,6 +207,15 @@
     </div>
   </div>
 
+  <!-- 위 미리보기 모달의 세부목표 칸에 마우스를 올리면 그 세부목표에 대응하는 바깥 3x3 블록(실행항목
+       8개 + 세부목표 사본)을 이 팝오버로 한 번 더 보여준다(dashboard.js attachMandalartSubBlockHover) -
+       모달-오버레이 방식이 아니라 마우스가 벗어나면 바로 사라지는 가벼운 팝오버라, 여기서는 modal-overlay
+       래퍼 없이 fixed 위치의 카드 하나로만 둔다 -->
+  <div class="mandalart-subblock-popover" id="mandalart-subblock-popover">
+    <div class="mandalart-subblock-popover-title" id="mandalart-subblock-popover-title"></div>
+    <div class="mandalart-goal-preview-grid compact" id="mandalart-subblock-popover-grid"></div>
+  </div>
+
   <div class="modal-overlay" id="schedule-detail-modal-overlay">
     <div class="modal">
       <div class="detail-top">

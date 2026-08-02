@@ -2832,7 +2832,75 @@ async function loadMandalartWidgetPreview() {
 
   if (subtitleEl) subtitleEl.textContent = title;
   if (gridEl) buildMandalartGoalPreview(gridEl, cellsByCoord);
-  if (modalGridEl) buildMandalartGoalPreview(modalGridEl, cellsByCoord);
+  if (modalGridEl) {
+    buildMandalartGoalPreview(modalGridEl, cellsByCoord);
+    attachMandalartSubBlockHover(modalGridEl, cellsByCoord);
+  }
+}
+
+// 미리보기 모달의 9칸(핵심 목표 + 세부목표 8개) 중 세부목표 칸에 마우스를 올리면, 그 세부목표에 대응하는
+// 바깥 3x3 블록(자기 블록 중심 칸 = 세부목표 사본 + 실행항목 8개, MandalartAiService의 OUTER_BLOCKS와
+// 같은 정의)을 작은 팝오버로 한 번 더 보여준다. 핵심 목표 칸(4,4)은 대응하는 바깥 블록이 없으므로(정석
+// 만다라트 구조상 중앙 블록 자체는 "바깥 블록"이 아님) 호버 대상에서 제외한다.
+//
+// buildMandalartGoalPreview가 매번 gridEl.innerHTML을 비우고 다시 그리므로, 이전 렌더에서 붙인
+// 리스너는 옛 칸 요소와 함께 자연히 사라진다 - 매 호출마다 새로 붙이기만 하면 되고 별도 해제 코드가
+// 필요 없다. cellsByCoord가 없으면(적용된 보드 없음) 보여줄 실제 내용이 없으므로 아무 것도 하지 않는다
+function attachMandalartSubBlockHover(gridEl, cellsByCoord) {
+  const popoverEl = document.getElementById("mandalart-subblock-popover");
+  const popoverGridEl = document.getElementById("mandalart-subblock-popover-grid");
+  const popoverTitleEl = document.getElementById("mandalart-subblock-popover-title");
+  if (!popoverEl || !popoverGridEl || !cellsByCoord) return;
+
+  const cells = gridEl.querySelectorAll(".mandalart-goal-preview-cell");
+  cells.forEach((cellEl, index) => {
+    const row = 3 + Math.floor(index / 3);
+    const col = 3 + (index % 3);
+    if (row === 4 && col === 4) return; // 핵심 목표 - 대응하는 바깥 블록 없음
+
+    cellEl.addEventListener("mouseenter", () => {
+      const baseRow = (row - 3) * 3;
+      const baseCol = (col - 3) * 3;
+
+      popoverGridEl.innerHTML = "";
+      for (let r = baseRow; r <= baseRow + 2; r++) {
+        for (let c = baseCol; c <= baseCol + 2; c++) {
+          const cell = document.createElement("div");
+          cell.className = "mandalart-goal-preview-cell";
+          if (r === baseRow + 1 && c === baseCol + 1) cell.classList.add("main-goal"); // 이 블록의 세부목표 사본
+
+          const content = cellsByCoord.get(`${r}-${c}`);
+          if (content && content.trim()) {
+            const textEl = document.createElement("span");
+            textEl.className = "mandalart-goal-preview-text";
+            textEl.textContent = content;
+            cell.appendChild(textEl);
+          } else {
+            cell.classList.add("empty");
+          }
+          popoverGridEl.appendChild(cell);
+        }
+      }
+
+      const subGoalContent = cellsByCoord.get(`${row}-${col}`);
+      popoverTitleEl.textContent = subGoalContent && subGoalContent.trim() ? subGoalContent : "실행항목";
+
+      const cellRect = cellEl.getBoundingClientRect();
+      const popoverWidth = 172; // .compact 그리드(150px) + 좌우 패딩
+      let left = cellRect.right + 10;
+      if (left + popoverWidth > window.innerWidth - 10) {
+        left = cellRect.left - popoverWidth - 10; // 오른쪽에 자리가 없으면 왼쪽에 띄운다
+      }
+      const top = Math.min(Math.max(cellRect.top - 20, 10), window.innerHeight - 200);
+      popoverEl.style.left = `${Math.max(left, 10)}px`;
+      popoverEl.style.top = `${top}px`;
+      popoverEl.classList.add("show");
+    });
+
+    cellEl.addEventListener("mouseleave", () => {
+      popoverEl.classList.remove("show");
+    });
+  });
 }
 
 // 만다라트 위젯을 누르면 바로 /mandalart 로 이동하지 않고, 가이드처럼 미리보기 모달부터 보여준다.
@@ -2850,6 +2918,8 @@ function openMandalartPreviewModal() {
 
 function closeMandalartPreviewModal() {
   mandalartPreviewModalOverlay.classList.remove("show");
+  // 칸에 마우스를 올린 채로 모달을 닫으면(배경 클릭 등) mouseleave가 안 나갈 수 있어 팝오버도 같이 닫는다
+  document.getElementById("mandalart-subblock-popover")?.classList.remove("show");
 }
 
 if (mandalartWidgetEl) {
