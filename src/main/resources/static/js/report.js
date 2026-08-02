@@ -20,6 +20,27 @@ function escapeHtml(str) {
   }[m]));
 }
 
+const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// 총 일정/완료율 숫자를 0에서 실제 값까지 세어 올라가는 애니메이션 - CSS로는 텍스트 콘텐츠 자체를
+// 바꿀 수 없어(카운트업은 숫자 문자열을 매 프레임 다시 그려야 함) 여기만 JS로 직접 구현한다. 나머지
+// (파이차트/선 그래프/범례)는 CSS 애니메이션 + 클래스 재적용으로 처리한다(각 render 함수 참고)
+function animateNumber(el, to, durationMs, formatFn) {
+  if (prefersReducedMotion) {
+    el.textContent = formatFn(to);
+    return;
+  }
+  const start = performance.now();
+  function tick(now) {
+    const progress = Math.min((now - start) / durationMs, 1);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+    el.textContent = formatFn(to * eased);
+    if (progress < 1) requestAnimationFrame(tick);
+    else el.textContent = formatFn(to);
+  }
+  requestAnimationFrame(tick);
+}
+
 function renderUserChip() {
   const user = API.getCurrentUser();
   const email = (user && user.email) || "-";
@@ -92,6 +113,16 @@ function renderComparison(previous) {
   `;
 }
 
+// pieEl은 innerHTML로 다시 만들지 않고 style.background만 바꾸는 고정 DOM 노드라, 클래스를 붙이는 것만으로는
+// 두 번째 렌더부터 CSS 애니메이션이 재생되지 않는다(브라우저가 "이미 붙어있던 클래스"로 보고 무시함) -
+// 클래스를 뗐다가 강제로 리플로우시킨 뒤 다시 붙이는 표준 트릭으로 매번 처음부터 재생시킨다
+function replayAnimation(el, className) {
+  if (prefersReducedMotion) return;
+  el.classList.remove(className);
+  void el.offsetWidth; // 리플로우 강제 - 이 줄이 없으면 remove/add가 같은 프레임에 묶여 재생되지 않는다
+  el.classList.add(className);
+}
+
 function renderPieChart(categoryBreakdown) {
   if (categoryBreakdown.length === 0) {
     pieEl.style.background = "var(--color-border)";
@@ -109,9 +140,12 @@ function renderPieChart(categoryBreakdown) {
     return { color, start, end };
   });
   pieEl.style.background = `conic-gradient(${stops.map((s) => `${s.color} ${s.start}% ${s.end}%`).join(", ")})`;
+  replayAnimation(pieEl, "report-pie-animate-in");
 
+  // 범례 <li>는 매번 innerHTML로 새로 만드는 요소라 별도 리플로우 없이도 애니메이션이 항상 처음부터
+  // 재생된다 - 항목마다 --stagger-index로 순서대로 살짝 늦게 나타나게 한다
   legendEl.innerHTML = categoryBreakdown.map((c, i) => `
-    <li class="report-legend-item">
+    <li class="report-legend-item" style="--stagger-index:${i}">
       <span class="report-legend-dot" style="background:${CATEGORY_COLORS[i % CATEGORY_COLORS.length]}"></span>
       <span class="report-legend-name">${escapeHtml(c.categoryName)}</span>
       <span class="report-legend-value">${c.count}건 · ${c.percentage.toFixed(1)}%</span>
@@ -122,6 +156,8 @@ function renderPieChart(categoryBreakdown) {
 const TREND_VIEW_W = 480;
 const TREND_VIEW_H = 140;
 const TREND_PAD = { left: 30, right: 18, top: 10, bottom: 20 };
+const TREND_DRAW_MS = 700; // 선 하나가 그려지는 데 걸리는 시간(CSS의 report-trend-line 애니메이션 시간과 맞춰야 함)
+const TREND_SERIES_STAGGER_MS = 90; // 카테고리(시리즈)마다 그려지기 시작하는 시점을 얼마씩 늦출지
 
 // 축 눈금을 "깔끔한" 값으로 반올림한다(dataviz 스킬 - "Y축 눈금은 깔끔한 숫자로 반올림") - 1/2/5의
 // 배수만 쓰는 표준 nice-number 올림
@@ -169,26 +205,30 @@ function renderCategoryTrendChart(trend) {
     return `<text x="${xAt(i)}" y="${TREND_VIEW_H - 6}" class="report-trend-axis-label" text-anchor="middle">${escapeHtml(label)}</text>`;
   }).join("");
 
+  // 선은 dasharray/dashoffset을 실제 경로 길이보다 넉넉히 큰 고정값(TREND_DRAW_LENGTH)으로 뒀다가 0으로
+  // 줄어드는 애니메이션으로 "그려지는" 느낌을 낸다 - 매 렌더마다 실제 path.getTotalLength()를 재는 대신 이
+  // 고정값 트릭을 쓰면 DOM 삽입 후 별도 JS 없이 CSS keyframes만으로 처리된다(이 차트의 작은 viewBox
+  // 기준 실제 최대 경로 길이보다 넉넉히 크게 잡음). 시리즈마다 --stagger-index로 순서대로 그려지게 하고,
+  // 점은 그 선이 지나가는 시점에 맞춰 --stagger-index + 포인트 비율만큼 지연시켜 "선을 따라 찍히는" 것처럼
+  // 보이게 한다
   const linesSvg = series.map((s, i) => {
     const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
     const d = s.counts.map((v, idx) => `${idx === 0 ? "M" : "L"}${xAt(idx)},${yAt(v)}`).join(" ");
-    // 값이 바뀌는 지점(변곡점)뿐 아니라 모든 구간에 점을 찍어 정확히 어느 날짜의 값인지 한눈에 보이게 한다 -
-    // 링(surface 색 테두리)으로 선과 겹쳐도 점이 묻히지 않게 한다(MONTH처럼 점이 31개로 촘촘해도 뭉개지지
-    // 않도록 반지름은 끝점 강조용보다 살짝 작게 둔다)
-    const dotsSvg = s.counts.map((v, idx) => `
-      <circle cx="${xAt(idx)}" cy="${yAt(v)}" r="3" fill="${color}" stroke="var(--color-surface)" stroke-width="1.5" />
-    `).join("");
+    const dotsSvg = s.counts.map((v, idx) => {
+      const dotDelay = i * TREND_SERIES_STAGGER_MS + (idx / Math.max(n - 1, 1)) * TREND_DRAW_MS;
+      return `<circle cx="${xAt(idx)}" cy="${yAt(v)}" r="3" fill="${color}" stroke="var(--color-surface)" stroke-width="1.5" class="report-trend-dot" style="--dot-delay:${dotDelay}ms"></circle>`;
+    }).join("");
     return `
-      <path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            class="report-trend-line" style="--stagger-index:${i}"></path>
       ${dotsSvg}
     `;
   }).join("");
 
   trendChartBoxEl.innerHTML = `
     <svg viewBox="0 0 ${TREND_VIEW_W} ${TREND_VIEW_H}" class="report-trend-svg" id="report-trend-svg">
-      ${gridlinesSvg}
+      <g class="report-trend-axis-group">${gridlinesSvg}${xLabelsSvg}</g>
       ${linesSvg}
-      ${xLabelsSvg}
       <line class="report-trend-crosshair" id="report-trend-crosshair" x1="0" y1="${TREND_PAD.top}" x2="0" y2="${TREND_VIEW_H - TREND_PAD.bottom}" style="display:none"></line>
       <rect x="${TREND_PAD.left}" y="${TREND_PAD.top}" width="${plotW}" height="${plotH}" fill="transparent" id="report-trend-hover-area"></rect>
     </svg>
@@ -199,7 +239,7 @@ function renderCategoryTrendChart(trend) {
   // 카테고리뿐이면 범례 없이도 제목만으로 식별 가능하므로 생략한다
   trendLegendEl.innerHTML = series.length > 1
     ? series.map((s, i) => `
-      <li class="report-legend-item">
+      <li class="report-legend-item" style="--stagger-index:${i}">
         <span class="report-legend-dot" style="background:${CATEGORY_COLORS[i % CATEGORY_COLORS.length]}"></span>
         <span class="report-legend-name">${escapeHtml(s.categoryName)}</span>
       </li>
@@ -263,8 +303,8 @@ async function loadStats() {
   try {
     const stats = await API.get(`/api/reports/stats?period=${currentPeriod}&date=${formatLocalDate(referenceDate)}`);
     rangeLabelEl.textContent = `${stats.rangeStart} ~ ${stats.rangeEnd} (${periodLabel(stats.period)})`;
-    totalCountEl.textContent = `${stats.totalCount}건`;
-    completionRateEl.textContent = `${Math.round(stats.completionRate * 1000) / 10}%`;
+    animateNumber(totalCountEl, stats.totalCount, 700, (v) => `${Math.round(v)}건`);
+    animateNumber(completionRateEl, stats.completionRate * 100, 700, (v) => `${Math.round(v * 10) / 10}%`);
     renderComparison(stats.previous);
     renderStatusList(stats.statusCounts);
     renderPieChart(stats.categoryBreakdown);

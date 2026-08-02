@@ -3262,6 +3262,7 @@ button {
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--color-border);
+  transform-origin: center;
 }
 
 .report-legend {
@@ -3278,6 +3279,8 @@ button {
   gap: 8px;
   padding: 5px 0;
   font-size: 12.5px;
+  animation: reportLegendIn 350ms ease-out backwards;
+  animation-delay: calc(var(--stagger-index, 0) * 60ms);
 }
 
 .report-legend-dot {
@@ -3422,6 +3425,102 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 16px;
+}
+
+/* ---------- 리포트 랜딩 애니메이션 (수치 카운트업은 report.js의 animateNumber, 나머지는 아래 CSS) ---------- */
+
+@keyframes reportPieIn {
+  from {
+    opacity: 0;
+    transform: scale(0.72) rotate(-6deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* pieEl은 innerHTML을 다시 만들지 않는 고정 노드라 이 클래스를 report.js의 replayAnimation()이 매번
+   떼었다 붙이는 방식으로 재생시킨다(레이아웃 재계산 없이는 CSS가 "이미 있던 클래스"로 보고 재생을 건너뜀) */
+.report-pie-animate-in {
+  animation: reportPieIn 550ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes reportLegendIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 격자선/눈금 글자는 데이터(선/점)보다 먼저 살짝 페이드인되어 캔버스부터 자리 잡은 뒤 그 위로 선이
+   그려지는 순서로 보이게 한다 */
+@keyframes reportTrendAxisIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.report-trend-axis-group {
+  animation: reportTrendAxisIn 300ms ease-out;
+}
+
+/* 실제 경로 길이를 재는 JS 없이(path.getTotalLength() 호출·리플로우 없이) "그려지는" 효과를 내는 표준
+   SVG 트릭 - dasharray를 이 차트의 viewBox에서 나올 수 있는 최대 길이보다 넉넉히 큰 고정값으로 두고
+   dashoffset을 그 값에서 0으로 줄인다(dashoffset이 dasharray와 같으면 선 전체가 숨겨지고, 0이면 전부
+   보인다 - dasharray가 실제 경로보다 크기만 하면 값 자체는 부정확해도 결과는 항상 정확하다) */
+@keyframes reportTrendDraw {
+  from {
+    stroke-dashoffset: 4000;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.report-trend-line {
+  stroke-dasharray: 4000;
+  stroke-dashoffset: 4000;
+  animation: reportTrendDraw 700ms ease-out forwards;
+  animation-delay: calc(var(--stagger-index, 0) * 90ms);
+}
+
+@keyframes reportTrendDotIn {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.report-trend-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: reportTrendDotIn 250ms ease-out forwards;
+  animation-delay: var(--dot-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-pie-animate-in,
+  .report-legend-item,
+  .report-trend-axis-group,
+  .report-trend-line,
+  .report-trend-dot {
+    animation: none;
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
 }
 
 @media (max-width: 860px) {
