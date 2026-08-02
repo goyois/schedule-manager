@@ -156,7 +156,7 @@ function renderPieChart(categoryBreakdown) {
 const TREND_VIEW_W = 480;
 const TREND_VIEW_H = 140;
 const TREND_PAD = { left: 30, right: 18, top: 10, bottom: 20 };
-const TREND_DRAW_MS = 900; // 선 하나가 그려지는 데 걸리는 시간(CSS의 report-trend-line 애니메이션 시간과 맞춰야 함)
+const TREND_DRAW_MS = 1350; // 선 하나가 그려지는 데 걸리는 시간(CSS의 report-trend-line 애니메이션 시간과 맞춰야 함)
 
 // 축 눈금을 "깔끔한" 값으로 반올림한다(dataviz 스킬 - "Y축 눈금은 깔끔한 숫자로 반올림") - 1/2/5의
 // 배수만 쓰는 표준 nice-number 올림

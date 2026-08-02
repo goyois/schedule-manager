@@ -3488,7 +3488,7 @@ button {
 .report-trend-line {
   stroke-dasharray: 4000;
   stroke-dashoffset: 4000;
-  animation: reportTrendDraw 900ms ease-out forwards;
+  animation: reportTrendDraw 1350ms ease-out forwards;
 }
 
 @keyframes reportTrendDotIn {
