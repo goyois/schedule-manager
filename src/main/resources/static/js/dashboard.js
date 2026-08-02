@@ -1359,6 +1359,18 @@ function bindWordcloudLens() {
 
 bindWordcloudLens();
 
+// renderWordCloud()는 렌더 시점의 위젯 폭(canvas.getBoundingClientRect())을 기준으로 단어마다
+// 절대좌표(px)를 한 번 계산해서 박아둔다 - 그 뒤 브라우저 창을 줄였다가 늘리거나 사이드바를
+// 접었다 펼쳐서 위젯의 실제 폭이 바뀌어도, 이미 그려진 단어들은 예전(좁았을 때) 좌표에 그대로 남아
+// 왼쪽에 몰려 보이는 버그가 있었다(다시 그려주는 트리거가 없었음). ResizeObserver로 위젯 크기 변화를
+// 감지해 다시 그린다 - 창을 드래그로 계속 늘렸다 줄였다 하는 동안 매 프레임 다시 그리면 버벅이므로
+// 크기 변화가 멎고 나서 한 번만 다시 그리도록 debounce한다
+let wordcloudResizeTimer = null;
+new ResizeObserver(() => {
+  clearTimeout(wordcloudResizeTimer);
+  wordcloudResizeTimer = setTimeout(renderWordCloud, 150);
+}).observe(document.getElementById("wordcloud-widget"));
+
 // 전체 접기(board.compact)가 꺼져 있으면 기본 펼침 + collapsedCardIds(개별로 접은 것만) 반영,
 // 켜져 있으면 기본 접힘 + forceExpandedCardIds(개별로 펼친 것만) 반영 - 두 모드에서 기본값이
 // 반대라 어느 쪽 예외 집합을 볼지도 바뀐다
