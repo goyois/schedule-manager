@@ -167,10 +167,14 @@ body {
   display: none;
 }
 
-/* quote-banner가 비어서(:empty) 접히면 로그아웃 버튼 앞에 flex:1로 공간을 채워주던 요소가 사라져
-   기본 정렬(flex-start)대로 왼쪽에 붙어버린다 - margin-left:auto로 quote-bar 안에서 항상 오른쪽 끝에
-   붙게 한다(명언이 있는 페이지에서는 quote-banner의 flex:1이 이미 같은 효과를 내므로 변화 없다) */
-#logout-btn {
+/* quote-banner가 비어서(:empty) 접히면 flex:1로 공간을 채워주던 요소가 사라져 뒤따르는 아이콘/버튼들이
+   기본 정렬(flex-start)대로 왼쪽 끝(0,0)에 붙어버린다 - 예전엔 #logout-btn 하나만 margin-left:auto를
+   줬는데, 그 앞에 테마 토글 버튼이 새로 생기면서(리포트/설정 페이지는 quotes.js를 안 불러와 배너가
+   항상 비어있음) 그 버튼만 왼쪽 위에 뜨는 문제가 생겼다 - #logout-btn을 못박는 대신, "비어있는
+   quote-banner 바로 다음에 오는 요소가 뭐든" 그 요소에 margin-left:auto를 주면 로그아웃 앞에 아이콘이
+   몇 개든 항상 오른쪽 끝 무리 전체가 통째로 붙는다(명언이 있는 페이지는 :empty가 매치되지 않아 이
+   규칙 자체가 적용되지 않고, quote-banner의 flex:1이 그대로 같은 효과를 낸다) */
+.quote-banner:empty + * {
   margin-left: auto;
 }
 
