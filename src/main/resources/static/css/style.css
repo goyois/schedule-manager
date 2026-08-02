@@ -3537,6 +3537,76 @@ select {
   font-weight: 600;
 }
 
+/* 추이 그래프와 파이 차트 사이 남는 공간에 카테고리 건수 순위를 넣는다 - categoryBreakdown이 이미
+   서버에서 건수 내림차순으로 내려오므로(ReportService) report.js는 그 순서를 그대로 쓰기만 하면 된다 */
+.report-rank-wrap {
+  flex: 0 1 170px;
+  min-width: 150px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.report-rank-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.report-rank-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.report-rank-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12.5px;
+  animation: reportLegendIn 400ms ease-out backwards;
+  animation-delay: calc(var(--stagger-index, 0) * 60ms);
+}
+
+.report-rank-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* 금/은/동 배지는 테마와 무관하게 고정된 밝은 색이라(다크 모드에서도 안 바뀜), 글자색도 var(--color-text)가
+   아니라 고정 잉크색을 써야 한다 - mandalart 채워진 칸과 같은 이유(고정 파스텔 배경 위에 테마별로 바뀌는
+   글자색을 얹으면 다크 모드에서 안 보이는 조합이 나올 수 있음) */
+.report-rank-badge.rank-1 { background: #f5c451; color: #4a3400; }
+.report-rank-badge.rank-2 { background: #c9ccd6; color: #33363f; }
+.report-rank-badge.rank-3 { background: #d9a066; color: #3a2308; }
+
+.report-rank-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-rank-count {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
 .report-pie-wrap {
   position: relative;
   display: flex;

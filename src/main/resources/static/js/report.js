@@ -88,6 +88,7 @@ const pieWrapEl = document.getElementById("report-pie-wrap");
 const pieSvgEl = document.getElementById("report-pie-svg");
 const pieTooltipEl = document.getElementById("report-pie-tooltip");
 const legendEl = document.getElementById("report-legend");
+const rankListEl = document.getElementById("report-rank-list");
 const trendChartBoxEl = document.getElementById("report-trend-chart-box");
 const trendLegendEl = document.getElementById("report-trend-legend");
 const insightBtn = document.getElementById("report-insight-btn");
@@ -158,8 +159,29 @@ function pieArcPath(startDeg, endDeg, radius) {
 let pieSlices = [];
 let hoveredPieIdx = null;
 
+const RANK_MEDALS = ["", "rank-1", "rank-2", "rank-3"]; // index 0은 안 씀(1위부터 rank-1)
+const RANK_MAX_ITEMS = 5;
+
+// categoryBreakdown은 이미 서버(ReportService)에서 건수 내림차순으로 내려오므로 순서를 그대로 순위로
+// 쓴다 - 파이차트/범례와 같은 색(CATEGORY_COLORS[i])을 써서 어느 조각이 몇 위인지 바로 연결되게 한다
+function renderCategoryRank(categoryBreakdown) {
+  if (categoryBreakdown.length === 0) {
+    rankListEl.innerHTML = `<li class="report-legend-empty">해당 기간에 등록된 일정이 없어요.</li>`;
+    return;
+  }
+  rankListEl.innerHTML = categoryBreakdown.slice(0, RANK_MAX_ITEMS).map((c, i) => `
+    <li class="report-rank-item" style="--stagger-index:${i}">
+      <span class="report-rank-badge ${RANK_MEDALS[i + 1] || ""}">${i + 1}</span>
+      <span class="report-legend-dot" style="background:${CATEGORY_COLORS[i % CATEGORY_COLORS.length]}"></span>
+      <span class="report-rank-name">${escapeHtml(c.categoryName)}</span>
+      <span class="report-rank-count">${c.count}건</span>
+    </li>
+  `).join("");
+}
+
 function renderPieChart(categoryBreakdown) {
   hoveredPieIdx = null;
+  renderCategoryRank(categoryBreakdown);
   if (categoryBreakdown.length === 0) {
     pieSvgEl.innerHTML = "";
     pieSvgEl.classList.remove("has-hover");
