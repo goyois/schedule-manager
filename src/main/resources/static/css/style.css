@@ -3341,6 +3341,88 @@ button {
   color: var(--color-text-muted);
 }
 
+.report-trend-card {
+  grid-column: 1 / -1;
+  max-width: none;
+}
+
+.report-trend-wrap {
+  margin-top: 14px;
+}
+
+.report-trend-chart-box {
+  position: relative;
+  width: 100%;
+}
+
+.report-trend-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.report-trend-gridline {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+.report-trend-axis-label {
+  font-size: 10px;
+  fill: var(--color-text-muted);
+}
+
+.report-trend-crosshair {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+/* hover 시 값을 읽는 히트 영역 - 마크가 아니라 순수 인터랙션 레이어라 커서만 바꾸고 시각 요소는 없다 */
+#report-trend-hover-area {
+  cursor: crosshair;
+}
+
+.report-trend-tooltip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  box-shadow: var(--shadow-card);
+  min-width: 120px;
+}
+
+.report-trend-tooltip-label {
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: var(--color-text);
+}
+
+.report-trend-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  color: var(--color-text-muted);
+}
+
+.report-trend-tooltip-row strong {
+  margin-left: auto;
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.report-trend-legend {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
 @media (max-width: 860px) {
   .report-grid {
     grid-template-columns: 1fr;

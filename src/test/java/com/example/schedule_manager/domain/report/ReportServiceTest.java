@@ -1,7 +1,9 @@
 package com.example.schedule_manager.domain.report;
 
 import com.example.schedule_manager.domain.ai.service.AiRateLimiter;
+import com.example.schedule_manager.domain.report.dto.CategorySeriesDto;
 import com.example.schedule_manager.domain.report.dto.CategoryStatDto;
+import com.example.schedule_manager.domain.report.dto.CategoryTrendDto;
 import com.example.schedule_manager.domain.report.dto.ReportInsightDto;
 import com.example.schedule_manager.domain.report.dto.ReportStatsDto;
 import com.example.schedule_manager.domain.report.entity.ReportPeriod;
@@ -154,6 +156,84 @@ class ReportServiceTest {
         ReportStatsDto stats = reportService.getStats("tester@example.com", ReportPeriod.YEAR, null);
 
         assertThat(stats.rangeStart()).isEqualTo(LocalDate.now().withDayOfYear(1));
+    }
+
+    @Test
+    @DisplayName("통계 조회 성공 - WEEK 카테고리 추이는 일 단위 7구간이며, 일정이 시작 날짜의 구간에만 집계된다")
+    void getStats_week_categoryTrendBucketsByStartDate() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+
+        LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
+        LocalDate sunday = monday.plusDays(6);
+        List<ScheduleResponseDto> all = List.of(
+                schedule(1L, "회의1", monday, ScheduleStatus.COMPLETED, "업무"),
+                schedule(2L, "회의2", monday, ScheduleStatus.COMPLETED, "업무"),
+                schedule(3L, "보고서", sunday, ScheduleStatus.PENDING, "업무"),
+                schedule(4L, "헬스장", monday.plusDays(2), ScheduleStatus.COMPLETED, "운동")
+        );
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(all);
+
+        ReportStatsDto stats = reportService.getStats("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
+        CategoryTrendDto trend = stats.categoryTrend();
+
+        assertThat(trend.bucketLabels()).hasSize(7);
+        assertThat(trend.bucketLabels().get(0)).isEqualTo(monday.format(java.time.format.DateTimeFormatter.ofPattern("MM/dd")));
+        assertThat(trend.bucketLabels().get(6)).isEqualTo(sunday.format(java.time.format.DateTimeFormatter.ofPattern("MM/dd")));
+
+        // categoryBreakdown이 건수 내림차순(업무 3건, 운동 1건)이므로 series 순서도 그와 같아야 한다
+        assertThat(trend.series()).extracting(CategorySeriesDto::categoryName).containsExactly("업무", "운동");
+        List<Long> workCounts = trend.series().get(0).counts();
+        assertThat(workCounts.get(0)).isEqualTo(2L); // 월요일에 회의1+회의2
+        assertThat(workCounts.get(6)).isEqualTo(1L); // 일요일에 보고서
+        assertThat(workCounts.subList(1, 6)).containsOnly(0L);
+
+        List<Long> exerciseCounts = trend.series().get(1).counts();
+        assertThat(exerciseCounts.get(2)).isEqualTo(1L); // 월요일+2일 = 수요일 헬스장
+        assertThat(exerciseCounts.get(0)).isEqualTo(0L);
+    }
+
+    @Test
+    @DisplayName("통계 조회 성공 - YEAR 카테고리 추이는 월 단위 12구간으로 집계된다")
+    void getStats_year_categoryTrendBucketsByMonth() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+
+        LocalDate yearStart = LocalDate.now().withDayOfYear(1);
+        List<ScheduleResponseDto> all = List.of(
+                schedule(1L, "신년 계획", yearStart, ScheduleStatus.COMPLETED, "업무"),
+                schedule(2L, "여름 휴가", yearStart.plusMonths(5), ScheduleStatus.COMPLETED, "일상")
+        );
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(all);
+
+        ReportStatsDto stats = reportService.getStats("tester@example.com", ReportPeriod.YEAR, LocalDate.now());
+        CategoryTrendDto trend = stats.categoryTrend();
+
+        assertThat(trend.bucketLabels()).hasSize(12);
+        assertThat(trend.bucketLabels().get(0)).isEqualTo("1월");
+        assertThat(trend.bucketLabels().get(11)).isEqualTo("12월");
+
+        List<Long> workCounts = trend.series().stream()
+                .filter(s -> s.categoryName().equals("업무")).findFirst().orElseThrow().counts();
+        assertThat(workCounts.get(0)).isEqualTo(1L);
+        assertThat(workCounts.subList(1, 12)).containsOnly(0L);
+
+        List<Long> dailyCounts = trend.series().stream()
+                .filter(s -> s.categoryName().equals("일상")).findFirst().orElseThrow().counts();
+        assertThat(dailyCounts.get(5)).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("통계 조회 성공 - 해당 기간에 일정이 없으면 카테고리 추이는 빈 series로, 구간 라벨은 그대로 채워진다")
+    void getStats_emptyPeriod_categoryTrendHasLabelsButNoSeries() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+
+        ReportStatsDto stats = reportService.getStats("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
+
+        assertThat(stats.categoryTrend().series()).isEmpty();
+        assertThat(stats.categoryTrend().bucketLabels()).hasSize(7);
     }
 
     @Test

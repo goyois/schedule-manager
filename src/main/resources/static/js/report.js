@@ -32,9 +32,13 @@ function renderUserChip() {
 const STATUS_LABELS = { PENDING: "대기", IN_PROGRESS: "진행중", COMPLETED: "완료", CANCELLED: "취소" };
 const STATUS_ORDER = ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
 
-// 카테고리는 사용자마다 개수/이름이 제각각이라 상태(PENDING 등)처럼 고정 색을 못 쓴다 - 파이차트/범례에서
-// 카테고리 인덱스 순서대로 순환해서 쓰는 고정 팔레트. --color-pending 등 상태 색과 겹치지 않는 색으로 골랐다
-const CATEGORY_COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#06b6d4", "#8b5cf6", "#f97316", "#14b8a6", "#ef4444", "#84cc16"];
+// 카테고리는 사용자마다 개수/이름이 제각각이라 상태(PENDING 등)처럼 고정 색을 못 쓴다 - 파이차트/범례/추이
+// 그래프에서 카테고리 인덱스 순서대로(항상 이 순서 고정, 절대 임의로 섞지 않음) 쓰는 팔레트. dataviz
+// 스킬의 검증된 8슬롯 categorical 테마(references/palette.md, 라이트 모드 값 - 이 앱은 다크모드 미지원)를
+// 그대로 썼다: 인접 쌍 기준 CVD ΔE ≥ 8, 일반 시야 ΔE ≥ 15를 모두 통과한 순서라 임의로 재배열하지 않는다.
+// 카테고리가 8개를 넘으면 다시 처음 색부터 순환한다(그 이상은 흔치 않은 경우라 "기타"로 접는 로직까지는
+// 두지 않음).
+const CATEGORY_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
 
 // 서버 LocalDate 응답("yyyy-MM-dd")을 그대로 쿼리 파라미터로 되돌려보낼 때 쓰는 포맷 - toISOString()은
 // UTC로 변환되며 로컬 자정 근처 날짜가 하루 밀릴 수 있어 로컬 연/월/일을 직접 이어붙인다
@@ -56,6 +60,8 @@ const comparisonEl = document.getElementById("report-comparison");
 const statusListEl = document.getElementById("report-status-list");
 const pieEl = document.getElementById("report-pie");
 const legendEl = document.getElementById("report-legend");
+const trendChartBoxEl = document.getElementById("report-trend-chart-box");
+const trendLegendEl = document.getElementById("report-trend-legend");
 const insightBtn = document.getElementById("report-insight-btn");
 const insightBodyEl = document.getElementById("report-insight-body");
 
@@ -113,6 +119,136 @@ function renderPieChart(categoryBreakdown) {
   `).join("");
 }
 
+const TREND_VIEW_W = 640;
+const TREND_VIEW_H = 220;
+const TREND_PAD = { left: 34, right: 12, top: 12, bottom: 24 };
+
+// 축 눈금을 "깔끔한" 값으로 반올림한다(dataviz 스킬 - "Y축 눈금은 깔끔한 숫자로 반올림") - 1/2/5의
+// 배수만 쓰는 표준 nice-number 올림
+function niceCeil(value) {
+  if (value <= 0) return 1;
+  const exp = Math.floor(Math.log10(value));
+  const base = Math.pow(10, exp);
+  const norm = value / base;
+  const niceNorm = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return niceNorm * base;
+}
+
+// 카테고리별 선 그래프 - 직접 그린 SVG(2px 선, 끝점 마커, 옅은 회색 격자선)에 크로스헤어+툴팁 호버를
+// 붙인다. 카테고리 색은 파이차트/범례와 같은 인덱스 순서를 그대로 써서 같은 카테고리는 같은 색으로 보인다
+function renderCategoryTrendChart(trend) {
+  const { bucketLabels, series } = trend;
+  const n = bucketLabels.length;
+
+  if (series.length === 0 || n === 0) {
+    trendChartBoxEl.innerHTML = `<p class="report-legend-empty">해당 기간에 등록된 일정이 없어요.</p>`;
+    trendLegendEl.innerHTML = "";
+    return;
+  }
+
+  const plotW = TREND_VIEW_W - TREND_PAD.left - TREND_PAD.right;
+  const plotH = TREND_VIEW_H - TREND_PAD.top - TREND_PAD.bottom;
+  const stepX = n > 1 ? plotW / (n - 1) : 0;
+  const xAt = (i) => TREND_PAD.left + stepX * i;
+
+  const rawMax = Math.max(0, ...series.flatMap((s) => s.counts));
+  const niceMax = niceCeil(rawMax);
+  const yAt = (v) => TREND_PAD.top + plotH - (v / niceMax) * plotH;
+
+  const yTicks = Array.from(new Set([0, Math.round(niceMax / 2), niceMax]));
+  const gridlinesSvg = yTicks.map((t) => `
+    <line x1="${TREND_PAD.left}" y1="${yAt(t)}" x2="${TREND_VIEW_W - TREND_PAD.right}" y2="${yAt(t)}" class="report-trend-gridline" />
+    <text x="${TREND_PAD.left - 6}" y="${yAt(t)}" class="report-trend-axis-label" text-anchor="end" dominant-baseline="middle">${t}</text>
+  `).join("");
+
+  // 구간(bucket)이 많은 MONTH(최대 31개)에서 x축 라벨이 다 겹치지 않도록 일정 간격으로만 그린다 -
+  // 데이터 포인트/선 자체는 모든 구간을 그대로 쓰고, 축 "글자"만 솎아낸다
+  const labelStep = n <= 10 ? 1 : Math.ceil(n / 8);
+  const xLabelsSvg = bucketLabels.map((label, i) => {
+    if (i % labelStep !== 0 && i !== n - 1) return "";
+    return `<text x="${xAt(i)}" y="${TREND_VIEW_H - 6}" class="report-trend-axis-label" text-anchor="middle">${escapeHtml(label)}</text>`;
+  }).join("");
+
+  const linesSvg = series.map((s, i) => {
+    const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+    const d = s.counts.map((v, idx) => `${idx === 0 ? "M" : "L"}${xAt(idx)},${yAt(v)}`).join(" ");
+    const lastIdx = s.counts.length - 1;
+    return `
+      <path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      <circle cx="${xAt(lastIdx)}" cy="${yAt(s.counts[lastIdx])}" r="4" fill="${color}" stroke="var(--color-surface)" stroke-width="2" />
+    `;
+  }).join("");
+
+  trendChartBoxEl.innerHTML = `
+    <svg viewBox="0 0 ${TREND_VIEW_W} ${TREND_VIEW_H}" class="report-trend-svg" id="report-trend-svg">
+      ${gridlinesSvg}
+      ${linesSvg}
+      ${xLabelsSvg}
+      <line class="report-trend-crosshair" id="report-trend-crosshair" x1="0" y1="${TREND_PAD.top}" x2="0" y2="${TREND_VIEW_H - TREND_PAD.bottom}" style="display:none"></line>
+      <rect x="${TREND_PAD.left}" y="${TREND_PAD.top}" width="${plotW}" height="${plotH}" fill="transparent" id="report-trend-hover-area"></rect>
+    </svg>
+    <div class="report-trend-tooltip" id="report-trend-tooltip" style="display:none"></div>
+  `;
+
+  // 범례는 파이차트 쪽과 색이 겹치므로 여기서는 이름만 (건수/비율은 파이 범례가 이미 보여줌) - 단일
+  // 카테고리뿐이면 범례 없이도 제목만으로 식별 가능하므로 생략한다
+  trendLegendEl.innerHTML = series.length > 1
+    ? series.map((s, i) => `
+      <li class="report-legend-item">
+        <span class="report-legend-dot" style="background:${CATEGORY_COLORS[i % CATEGORY_COLORS.length]}"></span>
+        <span class="report-legend-name">${escapeHtml(s.categoryName)}</span>
+      </li>
+    `).join("")
+    : "";
+
+  bindTrendHover(trend, xAt, n);
+}
+
+function bindTrendHover(trend, xAt, n) {
+  const svgEl = document.getElementById("report-trend-svg");
+  const hoverAreaEl = document.getElementById("report-trend-hover-area");
+  const crosshairEl = document.getElementById("report-trend-crosshair");
+  const tooltipEl = document.getElementById("report-trend-tooltip");
+  if (!svgEl || !hoverAreaEl) return;
+
+  const stepX = n > 1 ? (TREND_VIEW_W - TREND_PAD.left - TREND_PAD.right) / (n - 1) : 0;
+
+  hoverAreaEl.addEventListener("mousemove", (e) => {
+    const rect = svgEl.getBoundingClientRect();
+    const scaleX = TREND_VIEW_W / rect.width;
+    const xInSvg = (e.clientX - rect.left) * scaleX;
+    let idx = stepX > 0 ? Math.round((xInSvg - TREND_PAD.left) / stepX) : 0;
+    idx = Math.max(0, Math.min(n - 1, idx));
+
+    crosshairEl.setAttribute("x1", xAt(idx));
+    crosshairEl.setAttribute("x2", xAt(idx));
+    crosshairEl.style.display = "block";
+
+    const rows = trend.series.map((s, i) => `
+      <div class="report-trend-tooltip-row">
+        <span class="report-legend-dot" style="background:${CATEGORY_COLORS[i % CATEGORY_COLORS.length]}"></span>
+        <span>${escapeHtml(s.categoryName)}</span>
+        <strong>${s.counts[idx]}건</strong>
+      </div>
+    `).join("");
+    tooltipEl.innerHTML = `<div class="report-trend-tooltip-label">${escapeHtml(trend.bucketLabels[idx])}</div>${rows}`;
+    tooltipEl.style.display = "block";
+
+    const wrapRect = trendChartBoxEl.getBoundingClientRect();
+    const left = Math.min(
+      Math.max(e.clientX - wrapRect.left + 12, 0),
+      Math.max(wrapRect.width - tooltipEl.offsetWidth - 4, 0)
+    );
+    tooltipEl.style.left = `${left}px`;
+    tooltipEl.style.top = `${e.clientY - wrapRect.top + 12}px`;
+  });
+
+  hoverAreaEl.addEventListener("mouseleave", () => {
+    crosshairEl.style.display = "none";
+    tooltipEl.style.display = "none";
+  });
+}
+
 function periodLabel(period) {
   return { WEEK: "이번 주", MONTH: "이번 달", YEAR: "올해" }[period];
 }
@@ -127,6 +263,7 @@ async function loadStats() {
     renderComparison(stats.previous);
     renderStatusList(stats.statusCounts);
     renderPieChart(stats.categoryBreakdown);
+    renderCategoryTrendChart(stats.categoryTrend);
   } catch (err) {
     rangeLabelEl.textContent = "-";
     showToast(`리포트를 불러오지 못했습니다. ${err.message}`);

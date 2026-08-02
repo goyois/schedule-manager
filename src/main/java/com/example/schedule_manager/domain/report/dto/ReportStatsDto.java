@@ -15,6 +15,7 @@ public record ReportStatsDto(
         double completionRate,
         List<StatusCountDto> statusCounts,
         List<CategoryStatDto> categoryBreakdown,
-        PreviousPeriodComparisonDto previous
+        PreviousPeriodComparisonDto previous,
+        CategoryTrendDto categoryTrend
 ) {
 }

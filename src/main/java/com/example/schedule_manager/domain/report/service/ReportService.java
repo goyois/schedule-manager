@@ -1,7 +1,9 @@
 package com.example.schedule_manager.domain.report.service;
 
 import com.example.schedule_manager.domain.ai.service.AiRateLimiter;
+import com.example.schedule_manager.domain.report.dto.CategorySeriesDto;
 import com.example.schedule_manager.domain.report.dto.CategoryStatDto;
+import com.example.schedule_manager.domain.report.dto.CategoryTrendDto;
 import com.example.schedule_manager.domain.report.dto.PreviousPeriodComparisonDto;
 import com.example.schedule_manager.domain.report.dto.ReportInsightDto;
 import com.example.schedule_manager.domain.report.dto.ReportStatsDto;
@@ -24,13 +26,17 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 // 기간별 리포트(README "기간별 리포트" 기능): 주/월/년 단위로 카테고리 비율·완료율·직전 동일 기간 대비
 // 증감 같은 결정적 통계는 무료로 즉시 계산하고(getStats), "잘한 점/아쉬운 점"·"행동 패턴/성향 평가" 같은
@@ -62,6 +68,9 @@ public class ReportService {
     // 프롬프트에 나열하는 일정 개수 상한(1년 리포트처럼 일정이 아주 많을 수 있어 토큰 비용 방어) -
     // 정확한 개수/비율은 이미 [기간 통계]에 숫자로 들어가 있으므로, 목록은 맥락 파악용으로만 이 정도면 충분하다
     private static final int MAX_SCHEDULES_IN_PROMPT = 60;
+
+    // 카테고리별 선 그래프(categoryTrend)의 WEEK/MONTH 구간 라벨 포맷 - "MM/dd"
+    private static final DateTimeFormatter DAY_LABEL_FORMATTER = DateTimeFormatter.ofPattern("MM/dd");
 
     private static final String SYSTEM_PROMPT = """
             당신은 사용자의 지난 일정 기록을 바탕으로 회고를 도와주는 도우미입니다. 함께 주어지는
@@ -150,7 +159,70 @@ public class ReportService {
         PreviousPeriodComparisonDto previous = new PreviousPeriodComparisonDto(
                 prevTotal, prevCompletionRate, total - prevTotal, completionRate - prevCompletionRate);
 
-        return new ReportStatsDto(period, range[0], range[1], total, completionRate, statusCounts, categoryBreakdown, previous);
+        CategoryTrendDto categoryTrend = buildCategoryTrend(period, range, inRange, categoryBreakdown);
+
+        return new ReportStatsDto(period, range[0], range[1], total, completionRate, statusCounts, categoryBreakdown, previous, categoryTrend);
+    }
+
+    // 카테고리별 선 그래프용 데이터 - 구간(bucket) 단위는 기간에 따라 다르다: WEEK/MONTH는 일 단위(최대
+    // 31개, 한 달 치를 하루씩 찍어도 과밀하지 않은 수준), YEAR는 월 단위(12개)로 묶어 점이 너무 많아지는
+    // 것을 막는다. 일정은 시작 시각(startAt) 기준으로 한 구간에만 배정한다 - overlapping()처럼 겹침으로
+    // 여러 구간에 걸치게 하면 "그 활동이 언제 일어났는지"보다 "언제까지 걸쳐 있었는지"를 보여주게 돼
+    // 선 그래프의 "발생 시점 추이"라는 목적과 맞지 않는다. series 순서는 categoryBreakdown(건수 내림차순)과
+    // 동일하게 맞춰 프론트가 파이차트/범례와 같은 색을 그대로 재사용할 수 있게 한다.
+    private CategoryTrendDto buildCategoryTrend(ReportPeriod period, LocalDate[] range,
+                                                 List<ScheduleResponseDto> inRange, List<CategoryStatDto> categoryBreakdown) {
+        List<String> categoryNames = categoryBreakdown.stream().map(CategoryStatDto::categoryName).toList();
+
+        if (period == ReportPeriod.YEAR) {
+            List<String> labels = IntStream.rangeClosed(1, 12).mapToObj(m -> m + "월").toList();
+            Map<String, long[]> countsByCategory = initCounts(categoryNames, 12);
+            int year = range[0].getYear();
+            for (ScheduleResponseDto s : inRange) {
+                LocalDate d = s.startAt().toLocalDate();
+                if (d.getYear() != year) {
+                    continue; // 방어적 처리 - 연도 경계를 걸치는 일정의 시작일이 다른 해일 수 있음
+                }
+                long[] counts = countsByCategory.get(s.categoryName());
+                if (counts != null) {
+                    counts[d.getMonthValue() - 1]++;
+                }
+            }
+            return toTrendDto(labels, categoryNames, countsByCategory);
+        }
+
+        int dayCount = (int) (ChronoUnit.DAYS.between(range[0], range[1]) + 1);
+        List<String> labels = IntStream.range(0, dayCount)
+                .mapToObj(i -> range[0].plusDays(i).format(DAY_LABEL_FORMATTER))
+                .toList();
+        Map<String, long[]> countsByCategory = initCounts(categoryNames, dayCount);
+        for (ScheduleResponseDto s : inRange) {
+            LocalDate d = s.startAt().toLocalDate();
+            int idx = (int) ChronoUnit.DAYS.between(range[0], d);
+            if (idx < 0 || idx >= dayCount) {
+                continue; // 방어적 처리 - 기간을 걸치는 일정의 시작일이 이번 구간 밖일 수 있음
+            }
+            long[] counts = countsByCategory.get(s.categoryName());
+            if (counts != null) {
+                counts[idx]++;
+            }
+        }
+        return toTrendDto(labels, categoryNames, countsByCategory);
+    }
+
+    private Map<String, long[]> initCounts(List<String> categoryNames, int bucketCount) {
+        Map<String, long[]> map = new LinkedHashMap<>();
+        for (String name : categoryNames) {
+            map.put(name, new long[bucketCount]);
+        }
+        return map;
+    }
+
+    private CategoryTrendDto toTrendDto(List<String> labels, List<String> categoryNames, Map<String, long[]> countsByCategory) {
+        List<CategorySeriesDto> series = categoryNames.stream()
+                .map(name -> new CategorySeriesDto(name, Arrays.stream(countsByCategory.get(name)).boxed().toList()))
+                .toList();
+        return new CategoryTrendDto(labels, series);
     }
 
     // 완료율 = COMPLETED / (전체 - CANCELLED) - 취소된 일정은 애초에 "완료할 대상"이 아니었으므로 분모에서
