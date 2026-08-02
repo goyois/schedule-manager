@@ -46,7 +46,7 @@ class RedisConfigTest {
         LocalDateTime now = LocalDateTime.now().withNano(0);
         ScheduleResponseDto dto = new ScheduleResponseDto(
                 1L, "title", "content", now, now.plusHours(1),
-                ScheduleStatus.PENDING, "username", "categoryName");
+                ScheduleStatus.PENDING, "username", "categoryName", now);
 
         cache.put("redis-config-test-key", List.of(dto));
 

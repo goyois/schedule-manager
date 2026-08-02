@@ -5,10 +5,13 @@ import com.example.schedule_manager.domain.report.dto.CategorySeriesDto;
 import com.example.schedule_manager.domain.report.dto.CategoryStatDto;
 import com.example.schedule_manager.domain.report.dto.CategoryTrendDto;
 import com.example.schedule_manager.domain.report.dto.PreviousPeriodComparisonDto;
+import com.example.schedule_manager.domain.report.dto.ReportInsightCacheDto;
 import com.example.schedule_manager.domain.report.dto.ReportInsightDto;
 import com.example.schedule_manager.domain.report.dto.ReportStatsDto;
 import com.example.schedule_manager.domain.report.dto.StatusCountDto;
+import com.example.schedule_manager.domain.report.entity.ReportInsightSnapshot;
 import com.example.schedule_manager.domain.report.entity.ReportPeriod;
+import com.example.schedule_manager.domain.report.repository.ReportInsightSnapshotRepository;
 import com.example.schedule_manager.domain.schedule.dto.ScheduleResponseDto;
 import com.example.schedule_manager.domain.schedule.entity.ScheduleStatus;
 import com.example.schedule_manager.domain.schedule.service.ScheduleEmbeddingService;
@@ -34,7 +37,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -72,6 +77,10 @@ public class ReportService {
     // 카테고리별 선 그래프(categoryTrend)의 WEEK/MONTH 구간 라벨 포맷 - "MM/dd"
     private static final DateTimeFormatter DAY_LABEL_FORMATTER = DateTimeFormatter.ofPattern("MM/dd");
 
+    // ReportInsightSnapshot.strengths/improvements에 List<String>을 별도 컬렉션 테이블 없이 이어붙여
+    // 저장할 때 쓰는 구분자 - AI가 생성하는 자연어 문장에 나올 가능성이 거의 없는 조합을 골랐다
+    private static final String ITEM_DELIMITER = "␟";
+
     private static final String SYSTEM_PROMPT = """
             당신은 사용자의 지난 일정 기록을 바탕으로 회고를 도와주는 도우미입니다. 함께 주어지는
             [기간 통계](정확한 숫자), [이번 기간 일정 목록], 그리고 있다면 [참고: 의미상 비슷한 다른 시기의
@@ -92,6 +101,7 @@ public class ReportService {
     private final UserRepository userRepository;
     private final AiRateLimiter aiRateLimiter;
     private final ScheduleEmbeddingService scheduleEmbeddingService;
+    private final ReportInsightSnapshotRepository reportInsightSnapshotRepository;
 
     @Transactional(readOnly = true)
     public ReportStatsDto getStats(String requesterEmail, ReportPeriod period, LocalDate referenceDate) {
@@ -101,7 +111,10 @@ public class ReportService {
         return computeStats(period, ref, all);
     }
 
-    @Transactional(readOnly = true)
+    // AI를 실제로 호출해 재생성하고, 결과를 ReportInsightSnapshot에 upsert한다(그래서 더 이상
+    // readOnly가 아니다) - 프론트의 "AI 코멘트 생성" 버튼(신규/재생성 모두)이 호출하는 유일한 경로다.
+    // 조회만 하고 싶으면(캐시된 결과 + 최신 여부만 필요하면) getCachedInsight를 쓴다
+    @Transactional
     public ReportInsightDto getInsight(String requesterEmail, ReportPeriod period, LocalDate referenceDate) {
         User requester = findUserByEmail(requesterEmail);
         aiRateLimiter.checkLimit(requester.getId(), requester.getUserType());
@@ -128,7 +141,82 @@ public class ReportService {
             throw new BusinessException(ErrorCode.AI_REQUEST_FAILED, e);
         }
 
-        return sanitizeInsight(suggestion);
+        ReportInsightDto sanitized = sanitizeInsight(suggestion);
+        saveSnapshot(requester, period, range, inRange, sanitized);
+        return sanitized;
+    }
+
+    // AI를 호출하지 않고(요금/레이트리밋 없음) 마지막으로 저장해둔 결과 + 그 이후 이 기간 일정이 바뀌었는지만
+    // 돌려준다. 프론트가 리포트 페이지 진입/기간 전환마다 먼저 이걸 불러 저장된 결과를 바로 보여주고,
+    // stale일 때만 "스케줄 변동으로 새로운 결과를 얻을 수 있습니다" 안내와 함께 재생성 버튼을 띄운다
+    @Transactional(readOnly = true)
+    public ReportInsightCacheDto getCachedInsight(String requesterEmail, ReportPeriod period, LocalDate referenceDate) {
+        User requester = findUserByEmail(requesterEmail);
+        LocalDate ref = referenceDate != null ? referenceDate : LocalDate.now();
+        LocalDate[] range = resolveRange(period, ref);
+
+        ReportInsightSnapshot snapshot = reportInsightSnapshotRepository
+                .findByUserIdAndPeriodAndRangeStart(requester.getId(), period, range[0])
+                .orElse(null);
+        if (snapshot == null) {
+            return new ReportInsightCacheDto(null, false, null);
+        }
+
+        List<ScheduleResponseDto> all = scheduleService.getSchedules(requesterEmail, requester.getId(), null);
+        List<ScheduleResponseDto> inRange = overlapping(all, range[0].atStartOfDay(), range[1].plusDays(1).atStartOfDay());
+        Fingerprint current = fingerprintOf(inRange);
+        boolean stale = current.count() != snapshot.getScheduleCount()
+                || !Objects.equals(current.latestUpdatedAt(), snapshot.getLatestScheduleUpdatedAt());
+
+        ReportInsightDto insight = new ReportInsightDto(
+                splitItems(snapshot.getStrengths()),
+                splitItems(snapshot.getImprovements()),
+                snapshot.getBehaviorPattern(),
+                snapshot.getPersonalityNote());
+
+        return new ReportInsightCacheDto(insight, stale, snapshot.getUpdatedAt());
+    }
+
+    // "이 기간에 지금 어떤 일정들이 있는지"를 하나의 값으로 압축한 것 - scheduleCount는 추가/삭제/기간
+    // 밖으로 이동을, latestUpdatedAt은 내용/상태만 바뀐 경우(개수는 그대로)를 잡아낸다. 저장 시점과 조회
+    // 시점에 각각 계산해서 둘 다 같으면 "그 사이 이 기간 일정에 변화가 없었다"로 간주한다
+    private record Fingerprint(long count, LocalDateTime latestUpdatedAt) {
+    }
+
+    private Fingerprint fingerprintOf(List<ScheduleResponseDto> inRange) {
+        LocalDateTime latest = inRange.stream()
+                .map(ScheduleResponseDto::updatedAt)
+                .filter(Objects::nonNull)
+                .max(Comparator.naturalOrder())
+                .orElse(null);
+        return new Fingerprint(inRange.size(), latest);
+    }
+
+    private void saveSnapshot(User requester, ReportPeriod period, LocalDate[] range,
+                               List<ScheduleResponseDto> inRange, ReportInsightDto insight) {
+        Fingerprint fingerprint = fingerprintOf(inRange);
+        ReportInsightSnapshot snapshot = reportInsightSnapshotRepository
+                .findByUserIdAndPeriodAndRangeStart(requester.getId(), period, range[0])
+                .orElseGet(() -> ReportInsightSnapshot.builder()
+                        .user(requester)
+                        .period(period)
+                        .rangeStart(range[0])
+                        .rangeEnd(range[1])
+                        .build());
+        snapshot.update(joinItems(insight.strengths()), joinItems(insight.improvements()),
+                insight.behaviorPattern(), insight.personalityNote(), fingerprint.count(), fingerprint.latestUpdatedAt());
+        reportInsightSnapshotRepository.save(snapshot);
+    }
+
+    private String joinItems(List<String> items) {
+        return items == null ? "" : String.join(ITEM_DELIMITER, items);
+    }
+
+    private List<String> splitItems(String joined) {
+        if (joined == null || joined.isBlank()) {
+            return List.of();
+        }
+        return Arrays.asList(joined.split(Pattern.quote(ITEM_DELIMITER)));
     }
 
     private ReportStatsDto computeStats(ReportPeriod period, LocalDate referenceDate, List<ScheduleResponseDto> all) {

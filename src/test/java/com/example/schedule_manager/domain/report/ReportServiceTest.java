@@ -4,9 +4,12 @@ import com.example.schedule_manager.domain.ai.service.AiRateLimiter;
 import com.example.schedule_manager.domain.report.dto.CategorySeriesDto;
 import com.example.schedule_manager.domain.report.dto.CategoryStatDto;
 import com.example.schedule_manager.domain.report.dto.CategoryTrendDto;
+import com.example.schedule_manager.domain.report.dto.ReportInsightCacheDto;
 import com.example.schedule_manager.domain.report.dto.ReportInsightDto;
 import com.example.schedule_manager.domain.report.dto.ReportStatsDto;
+import com.example.schedule_manager.domain.report.entity.ReportInsightSnapshot;
 import com.example.schedule_manager.domain.report.entity.ReportPeriod;
+import com.example.schedule_manager.domain.report.repository.ReportInsightSnapshotRepository;
 import com.example.schedule_manager.domain.report.service.ReportService;
 import com.example.schedule_manager.domain.schedule.dto.ScheduleResponseDto;
 import com.example.schedule_manager.domain.schedule.entity.ScheduleStatus;
@@ -17,6 +20,7 @@ import com.example.schedule_manager.domain.user.entity.UserType;
 import com.example.schedule_manager.domain.user.repository.UserRepository;
 import com.example.schedule_manager.global.exception.BusinessException;
 import com.example.schedule_manager.global.exception.ErrorCode;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +32,7 @@ import org.springframework.ai.chat.client.ChatClient;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,9 +40,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -66,15 +73,33 @@ class ReportServiceTest {
     @Mock
     private ScheduleEmbeddingService scheduleEmbeddingService;
 
+    @Mock
+    private ReportInsightSnapshotRepository reportInsightSnapshotRepository;
+
     @InjectMocks
     private ReportService reportService;
+
+    // getInsight()를 호출하는 테스트는 전부 saveSnapshot() 경로도 함께 타므로(더 이상 readOnly가 아님),
+    // 리포지토리를 건드리지 않는 테스트(getStats 등)에서도 strict stubbing 오류가 안 나도록 기본값을
+    // lenient로 깔아둔다(AiServiceTest.stubDefaults와 같은 이유)
+    @BeforeEach
+    void stubDefaults() {
+        lenient().when(reportInsightSnapshotRepository.findByUserIdAndPeriodAndRangeStart(anyLong(), any(), any()))
+                .thenReturn(Optional.empty());
+        lenient().when(reportInsightSnapshotRepository.save(any(ReportInsightSnapshot.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+    }
 
     private User user(Long id) {
         return User.builder().id(id).username("tester").email("tester@example.com").userType(UserType.USER).build();
     }
 
     private ScheduleResponseDto schedule(Long id, String title, LocalDate date, ScheduleStatus status, String category) {
-        return new ScheduleResponseDto(id, title, "내용", date.atTime(10, 0), date.atTime(11, 0), status, "tester", category);
+        return schedule(id, title, date, status, category, date.atTime(10, 0));
+    }
+
+    private ScheduleResponseDto schedule(Long id, String title, LocalDate date, ScheduleStatus status, String category, LocalDateTime updatedAt) {
+        return new ScheduleResponseDto(id, title, "내용", date.atTime(10, 0), date.atTime(11, 0), status, "tester", category, updatedAt);
     }
 
     private void stubChatClient(ReportInsightDto result) {
@@ -380,5 +405,126 @@ class ReportServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("인사이트 생성 성공 - 결과를 스냅샷으로 저장한다(이번 기간 일정 건수 + 그중 가장 최근 수정 시각 포함)")
+    void getInsight_success_savesSnapshotWithScheduleFingerprint() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+
+        LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
+        LocalDateTime earlierUpdatedAt = monday.atTime(9, 0);
+        LocalDateTime laterUpdatedAt = monday.plusDays(1).atTime(15, 30);
+        List<ScheduleResponseDto> all = List.of(
+                schedule(1L, "회의", monday, ScheduleStatus.COMPLETED, "업무", earlierUpdatedAt),
+                schedule(2L, "운동", monday.plusDays(1), ScheduleStatus.COMPLETED, "운동", laterUpdatedAt));
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(all);
+        stubChatClient(new ReportInsightDto(List.of("잘함"), List.of("아쉬움"), "패턴", "성향"));
+
+        reportService.getInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
+
+        ArgumentCaptor<ReportInsightSnapshot> captor = ArgumentCaptor.forClass(ReportInsightSnapshot.class);
+        verify(reportInsightSnapshotRepository).save(captor.capture());
+        ReportInsightSnapshot saved = captor.getValue();
+        assertThat(saved.getScheduleCount()).isEqualTo(2);
+        assertThat(saved.getLatestScheduleUpdatedAt()).isEqualTo(laterUpdatedAt); // 둘 중 더 최근 것
+        assertThat(saved.getBehaviorPattern()).isEqualTo("패턴");
+        assertThat(saved.getPersonalityNote()).isEqualTo("성향");
+    }
+
+    @Test
+    @DisplayName("캐시된 인사이트 조회 - 저장된 스냅샷이 없으면 insight는 null, stale은 false다(AI를 부르지 않는다)")
+    void getCachedInsight_noSnapshot_returnsNullInsightNotStale() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+
+        ReportInsightCacheDto result = reportService.getCachedInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
+
+        assertThat(result.insight()).isNull();
+        assertThat(result.stale()).isFalse();
+        verifyNoInteractions(chatClient);
+    }
+
+    @Test
+    @DisplayName("캐시된 인사이트 조회 - 생성 시점 이후 이 기간 일정이 그대로면 stale이 false이고 저장된 결과를 그대로 반환한다")
+    void getCachedInsight_unchanged_returnsSavedInsightNotStale() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+
+        LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
+        List<ScheduleResponseDto> all = List.of(
+                schedule(1L, "회의", monday, ScheduleStatus.COMPLETED, "업무", monday.atTime(9, 0)));
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(all);
+        stubChatClient(new ReportInsightDto(List.of("잘함1", "잘함2"), List.of("아쉬움"), "패턴", "성향"));
+        reportService.getInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
+
+        ArgumentCaptor<ReportInsightSnapshot> captor = ArgumentCaptor.forClass(ReportInsightSnapshot.class);
+        verify(reportInsightSnapshotRepository).save(captor.capture());
+        when(reportInsightSnapshotRepository.findByUserIdAndPeriodAndRangeStart(eq(1L), eq(ReportPeriod.WEEK), any()))
+                .thenReturn(Optional.of(captor.getValue()));
+
+        ReportInsightCacheDto cached = reportService.getCachedInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
+
+        assertThat(cached.stale()).isFalse();
+        assertThat(cached.insight().strengths()).containsExactly("잘함1", "잘함2");
+        assertThat(cached.insight().improvements()).containsExactly("아쉬움");
+        assertThat(cached.insight().behaviorPattern()).isEqualTo("패턴");
+        assertThat(cached.insight().personalityNote()).isEqualTo("성향");
+    }
+
+    @Test
+    @DisplayName("캐시된 인사이트 조회 - 생성 이후 이 기간 일정 건수가 바뀌면(추가/삭제) stale이 true다")
+    void getCachedInsight_scheduleCountChanged_returnsStale() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+
+        LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
+        ScheduleResponseDto original = schedule(1L, "회의", monday, ScheduleStatus.COMPLETED, "업무", monday.atTime(9, 0));
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(original));
+        stubChatClient(new ReportInsightDto(List.of("잘함"), List.of(), "패턴", "성향"));
+        reportService.getInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
+
+        ArgumentCaptor<ReportInsightSnapshot> captor = ArgumentCaptor.forClass(ReportInsightSnapshot.class);
+        verify(reportInsightSnapshotRepository).save(captor.capture());
+        when(reportInsightSnapshotRepository.findByUserIdAndPeriodAndRangeStart(eq(1L), eq(ReportPeriod.WEEK), any()))
+                .thenReturn(Optional.of(captor.getValue()));
+
+        // 그 사이 같은 주에 일정이 하나 더 생김
+        List<ScheduleResponseDto> changed = List.of(
+                original,
+                schedule(2L, "새 일정", monday.plusDays(1), ScheduleStatus.PENDING, "일상", monday.plusDays(1).atTime(10, 0)));
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(changed);
+
+        ReportInsightCacheDto cached = reportService.getCachedInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
+
+        assertThat(cached.stale()).isTrue();
+        assertThat(cached.insight()).isNotNull(); // 오래된 결과라도 일단 그대로 보여준다(재생성은 프론트의 선택)
+    }
+
+    @Test
+    @DisplayName("캐시된 인사이트 조회 - 일정 건수는 그대로여도 그중 하나가 수정되면(최신 수정 시각 변경) stale이 true다")
+    void getCachedInsight_scheduleContentUpdated_returnsStale() {
+        User requester = user(1L);
+        when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
+
+        LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
+        ScheduleResponseDto original = schedule(1L, "회의", monday, ScheduleStatus.PENDING, "업무", monday.atTime(9, 0));
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(original));
+        stubChatClient(new ReportInsightDto(List.of("잘함"), List.of(), "패턴", "성향"));
+        reportService.getInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
+
+        ArgumentCaptor<ReportInsightSnapshot> captor = ArgumentCaptor.forClass(ReportInsightSnapshot.class);
+        verify(reportInsightSnapshotRepository).save(captor.capture());
+        when(reportInsightSnapshotRepository.findByUserIdAndPeriodAndRangeStart(eq(1L), eq(ReportPeriod.WEEK), any()))
+                .thenReturn(Optional.of(captor.getValue()));
+
+        // 같은 일정(건수 그대로 1건)이지만 상태가 바뀌어 updatedAt만 갱신됨
+        ScheduleResponseDto updated = schedule(1L, "회의", monday, ScheduleStatus.COMPLETED, "업무", monday.atTime(18, 0));
+        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(updated));
+
+        ReportInsightCacheDto cached = reportService.getCachedInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
+
+        assertThat(cached.stale()).isTrue();
     }
 }

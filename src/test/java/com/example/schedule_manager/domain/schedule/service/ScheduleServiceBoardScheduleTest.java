@@ -78,7 +78,7 @@ class ScheduleServiceBoardScheduleTest {
         when(userRepository.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
         Pageable pageable = PageRequest.of(0, 5);
         ScheduleResponseDto dto = new ScheduleResponseDto(100L, "회의", "", LocalDateTime.now(), null,
-                ScheduleStatus.PENDING, user.getUsername(), category.getName());
+                ScheduleStatus.PENDING, user.getUsername(), category.getName(), LocalDateTime.now());
         Page<ScheduleResponseDto> page = new PageImpl<>(List.of(dto), pageable, 1);
         when(scheduleRepository.searchBoardSchedules(eq(user.getId()), any(), eq(ScheduleStatus.PENDING),
                 any(), any(), eq(pageable))).thenReturn(page);

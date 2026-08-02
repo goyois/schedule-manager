@@ -162,10 +162,10 @@ class AiServiceTest {
         LocalDateTime now = LocalDateTime.now();
         ScheduleResponseDto inWindow = new ScheduleResponseDto(
                 1L, "팀 회의", "주간 회의", now.plusDays(1), now.plusDays(1).plusHours(1),
-                ScheduleStatus.PENDING, "tester", "업무");
+                ScheduleStatus.PENDING, "tester", "업무", now);
         ScheduleResponseDto outOfWindow = new ScheduleResponseDto(
                 2L, "먼 미래 일정", "내용", now.plusWeeks(5), now.plusWeeks(5).plusHours(1),
-                ScheduleStatus.PENDING, "tester", "업무");
+                ScheduleStatus.PENDING, "tester", "업무", now);
         when(scheduleService.getSchedules("tester@example.com", 1L, null))
                 .thenReturn(List.of(inWindow, outOfWindow));
         when(categoryService.getCategories("tester@example.com"))
@@ -463,7 +463,7 @@ class AiServiceTest {
         LocalDateTime now = LocalDateTime.now();
         ScheduleResponseDto existing = new ScheduleResponseDto(
                 5L, "팀 회의", "주간 회의", now.plusDays(1), now.plusDays(1).plusHours(1),
-                ScheduleStatus.PENDING, "tester", "업무");
+                ScheduleStatus.PENDING, "tester", "업무", now);
         when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(existing));
         when(categoryService.getCategories("tester@example.com"))
                 .thenReturn(List.of(new CategoryResponseDto(10L, "업무")));
@@ -514,7 +514,7 @@ class AiServiceTest {
         LocalDateTime now = LocalDateTime.now();
         ScheduleResponseDto farInThePast = new ScheduleResponseDto(
                 7L, "저번 분기 킥오프", "분기 목표 논의", now.minusMonths(3), now.minusMonths(3).plusHours(1),
-                ScheduleStatus.COMPLETED, "tester", "업무");
+                ScheduleStatus.COMPLETED, "tester", "업무", now);
         when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(farInThePast));
         when(categoryService.getCategories("tester@example.com"))
                 .thenReturn(List.of(new CategoryResponseDto(10L, "업무")));
@@ -567,7 +567,7 @@ class AiServiceTest {
         LocalDateTime now = LocalDateTime.now();
         ScheduleResponseDto farInThePast = new ScheduleResponseDto(
                 7L, "저번 분기 킥오프", "분기 목표 논의", now.minusMonths(3), now.minusMonths(3).plusHours(1),
-                ScheduleStatus.COMPLETED, "tester", "업무");
+                ScheduleStatus.COMPLETED, "tester", "업무", now);
         when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(farInThePast));
         when(categoryService.getCategories("tester@example.com"))
                 .thenReturn(List.of(new CategoryResponseDto(10L, "업무")));

@@ -88,6 +88,7 @@ const trendChartBoxEl = document.getElementById("report-trend-chart-box");
 const trendLegendEl = document.getElementById("report-trend-legend");
 const insightBtn = document.getElementById("report-insight-btn");
 const insightBodyEl = document.getElementById("report-insight-body");
+const insightStaleHintEl = document.getElementById("report-insight-stale-hint");
 
 function renderStatusList(statusCounts) {
   const byStatus = Object.fromEntries(statusCounts.map((s) => [s.status, s.count]));
@@ -406,44 +407,73 @@ async function loadStats() {
     renderStatusList(stats.statusCounts);
     renderPieChart(stats.categoryBreakdown);
     renderCategoryTrendChart(stats.categoryTrend);
+    await loadCachedInsight();
   } catch (err) {
     rangeLabelEl.textContent = "-";
     showToast(`리포트를 불러오지 못했습니다. ${err.message}`);
   }
 }
 
+function renderInsightBody(insight) {
+  const strengthsHtml = insight.strengths.length
+    ? `<ul>${insight.strengths.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`
+    : `<p class="report-insight-empty">이번 기간엔 특별히 짚을 만한 점이 없었어요.</p>`;
+  const improvementsHtml = insight.improvements.length
+    ? `<ul>${insight.improvements.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`
+    : `<p class="report-insight-empty">아쉬운 점은 딱히 없었어요.</p>`;
+  insightBodyEl.innerHTML = `
+    <div class="report-insight-section">
+      <h3>👍 잘한 점</h3>
+      ${strengthsHtml}
+    </div>
+    <div class="report-insight-section">
+      <h3>🌱 아쉬운 점</h3>
+      ${improvementsHtml}
+    </div>
+    <div class="report-insight-section">
+      <h3>📊 행동 패턴</h3>
+      <p>${escapeHtml(insight.behaviorPattern || "-")}</p>
+    </div>
+    <div class="report-insight-section">
+      <h3>✨ 성향</h3>
+      <p>${escapeHtml(insight.personalityNote || "-")}</p>
+    </div>
+  `;
+}
+
+// 리포트 페이지 진입/기간·날짜 전환마다 먼저 저장된 결과가 있는지 확인한다(AI 호출 없음) - 있으면 바로
+// 보여주고, "생성" 버튼은 아직 한 번도 생성한 적이 없을 때(insight===null)나 그 이후 이 기간 일정이
+// 바뀌었을 때(stale===true)만 보여준다. stale이어도 예전 결과 자체는 그대로 보여준다(재생성은 사용자
+// 선택 - 자동으로 다시 AI를 부르지 않는다)
+async function loadCachedInsight() {
+  try {
+    const cache = await API.get(`/api/reports/insight/cached?period=${currentPeriod}&date=${formatLocalDate(referenceDate)}`);
+    if (cache.insight) {
+      renderInsightBody(cache.insight);
+    } else {
+      insightBodyEl.innerHTML = "";
+    }
+    insightBtn.style.display = cache.insight && !cache.stale ? "none" : "";
+    insightStaleHintEl.style.display = cache.insight && cache.stale ? "" : "none";
+  } catch (err) {
+    // 저장된 결과 조회 실패는 조용히 "아직 생성한 적 없음"과 같은 상태로 대체한다 - 버튼을 눌러
+    // 새로 생성하는 기존 경로는 그대로 살아있으니 리포트 페이지 전체를 막을 정도는 아니다
+    insightBodyEl.innerHTML = "";
+    insightBtn.style.display = "";
+    insightStaleHintEl.style.display = "none";
+  }
+}
+
 async function loadInsight() {
   insightBtn.disabled = true;
   insightBtn.textContent = "생성 중...";
-  insightBodyEl.innerHTML = "";
   try {
-    const insight = await API.get(`/api/reports/insight?period=${currentPeriod}&date=${formatLocalDate(referenceDate)}`);
-    const strengthsHtml = insight.strengths.length
-      ? `<ul>${insight.strengths.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`
-      : `<p class="report-insight-empty">이번 기간엔 특별히 짚을 만한 점이 없었어요.</p>`;
-    const improvementsHtml = insight.improvements.length
-      ? `<ul>${insight.improvements.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`
-      : `<p class="report-insight-empty">아쉬운 점은 딱히 없었어요.</p>`;
-    insightBodyEl.innerHTML = `
-      <div class="report-insight-section">
-        <h3>👍 잘한 점</h3>
-        ${strengthsHtml}
-      </div>
-      <div class="report-insight-section">
-        <h3>🌱 아쉬운 점</h3>
-        ${improvementsHtml}
-      </div>
-      <div class="report-insight-section">
-        <h3>📊 행동 패턴</h3>
-        <p>${escapeHtml(insight.behaviorPattern || "-")}</p>
-      </div>
-      <div class="report-insight-section">
-        <h3>✨ 성향</h3>
-        <p>${escapeHtml(insight.personalityNote || "-")}</p>
-      </div>
-    `;
+    const insight = await API.post(`/api/reports/insight?period=${currentPeriod}&date=${formatLocalDate(referenceDate)}`, {});
+    renderInsightBody(insight);
+    insightBtn.style.display = "none";
+    insightStaleHintEl.style.display = "none";
   } catch (err) {
-    insightBodyEl.innerHTML = `<p class="report-insight-empty">AI 코멘트를 생성하지 못했어요. ${escapeHtml(err.message)}</p>`;
+    showToast(`AI 코멘트를 생성하지 못했어요. ${err.message}`);
   } finally {
     insightBtn.disabled = false;
     insightBtn.textContent = "AI 코멘트 생성";
@@ -470,25 +500,21 @@ periodSwitcherEl.addEventListener("click", (e) => {
   if (!btn) return;
   currentPeriod = btn.dataset.period;
   periodSwitcherEl.querySelectorAll(".view-tab").forEach((t) => t.classList.toggle("active", t === btn));
-  insightBodyEl.innerHTML = ""; // 기간이 바뀌면 이전 기간의 AI 코멘트를 그대로 보여주지 않는다
-  loadStats();
+  loadStats(); // loadStats가 끝에 loadCachedInsight도 호출해 그 기간에 저장된 AI 코멘트로 교체한다
 });
 
 document.getElementById("report-prev-btn").addEventListener("click", () => {
   shiftReferenceDate(-1);
-  insightBodyEl.innerHTML = "";
   loadStats();
 });
 
 document.getElementById("report-next-btn").addEventListener("click", () => {
   shiftReferenceDate(1);
-  insightBodyEl.innerHTML = "";
   loadStats();
 });
 
 document.getElementById("report-today-btn").addEventListener("click", () => {
   referenceDate = new Date();
-  insightBodyEl.innerHTML = "";
   loadStats();
 });
 

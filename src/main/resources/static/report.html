@@ -77,35 +77,37 @@
           <ul class="report-status-list" id="report-status-list"></ul>
         </section>
 
-        <section class="settings-section report-chart-card">
-          <h2>카테고리별 비율</h2>
-          <div class="report-pie-wrap" id="report-pie-wrap">
-            <div class="report-pie-box">
-              <div class="report-pie" id="report-pie"></div>
-              <div class="report-pie-highlight" id="report-pie-highlight"></div>
-            </div>
-            <ul class="report-legend" id="report-legend"></ul>
-            <div class="report-trend-tooltip" id="report-pie-tooltip" style="display:none"></div>
-          </div>
-        </section>
-
-        <section class="settings-section report-trend-card">
-          <h2>카테고리별 추이</h2>
-          <p class="settings-section-desc">기간 내 날짜별로 카테고리마다 며칠에 몇 건씩 등록했는지 보여줘요.</p>
-          <div class="report-trend-wrap" id="report-trend-wrap">
-            <div class="report-trend-chart-box" id="report-trend-chart-box"></div>
-            <ul class="report-trend-legend" id="report-trend-legend"></ul>
-          </div>
-        </section>
-
         <section class="settings-section report-insight-card">
           <h2>AI 코멘트</h2>
           <p class="settings-section-desc">
             이번 기간 통계와 일정 기록을 바탕으로 잘한 점/아쉬운 점, 행동 패턴을 AI가 분석해드려요.
-            요청할 때만 호출되니 필요할 때 버튼을 눌러주세요.
+            한 번 생성하면 저장되고, 이후 이 기간 일정이 바뀌었을 때만 다시 생성할 수 있어요.
           </p>
-          <button type="button" class="btn btn-primary" id="report-insight-btn" style="width: auto">AI 코멘트 생성</button>
+          <p class="report-insight-stale-hint" id="report-insight-stale-hint" style="display:none">
+            스케줄 변동으로 새로운 결과를 얻을 수 있습니다
+          </p>
+          <button type="button" class="btn btn-primary" id="report-insight-btn" style="width: auto; display:none">AI 코멘트 생성</button>
           <div class="report-insight-body" id="report-insight-body"></div>
+        </section>
+
+        <section class="settings-section report-trend-card">
+          <h2>카테고리별 추이 · 비율</h2>
+          <p class="settings-section-desc">기간 내 날짜별로 카테고리마다 며칠에 몇 건씩 등록했는지, 전체 비율은 어떤지 보여줘요.</p>
+          <div class="report-trend-row">
+            <div class="report-trend-wrap" id="report-trend-wrap">
+              <div class="report-trend-chart-box" id="report-trend-chart-box"></div>
+              <ul class="report-trend-legend" id="report-trend-legend"></ul>
+            </div>
+
+            <div class="report-pie-wrap" id="report-pie-wrap">
+              <div class="report-pie-box">
+                <div class="report-pie" id="report-pie"></div>
+                <div class="report-pie-highlight" id="report-pie-highlight"></div>
+              </div>
+              <ul class="report-legend" id="report-legend"></ul>
+              <div class="report-trend-tooltip" id="report-pie-tooltip" style="display:none"></div>
+            </div>
+          </div>
         </section>
       </div>
     </main>

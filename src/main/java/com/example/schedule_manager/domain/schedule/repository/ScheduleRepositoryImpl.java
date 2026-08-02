@@ -47,7 +47,8 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryCustom {
                         schedule.endAt,
                         schedule.status,
                         user.username,
-                        category.name))
+                        category.name,
+                        schedule.updatedAt))
                 .from(schedule)
                 .join(schedule.user, user)
                 .join(schedule.category, category)
@@ -73,7 +74,8 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryCustom {
                         schedule.endAt,
                         schedule.status,
                         user.username,
-                        category.name))
+                        category.name,
+                        schedule.updatedAt))
                 .from(schedule)
                 .join(schedule.user, user)
                 .join(schedule.category, category)
