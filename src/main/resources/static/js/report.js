@@ -392,15 +392,11 @@ function bindTrendHover(trend, xAt, n) {
   });
 }
 
-function periodLabel(period) {
-  return { WEEK: "이번 주", MONTH: "이번 달", YEAR: "올해" }[period];
-}
-
 async function loadStats() {
   rangeLabelEl.textContent = "불러오는 중...";
   try {
     const stats = await API.get(`/api/reports/stats?period=${currentPeriod}&date=${formatLocalDate(referenceDate)}`);
-    rangeLabelEl.textContent = `${stats.rangeStart} ~ ${stats.rangeEnd} (${periodLabel(stats.period)})`;
+    rangeLabelEl.textContent = `${stats.rangeStart} ~ ${stats.rangeEnd}`;
     animateNumber(totalCountEl, stats.totalCount, 800, (v) => `${Math.round(v)}건`);
     animateNumber(completionRateEl, stats.completionRate * 100, 800, (v) => `${Math.round(v * 10) / 10}%`);
     renderComparison(stats.previous);

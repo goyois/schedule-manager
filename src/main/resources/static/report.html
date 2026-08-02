@@ -10,7 +10,12 @@
   <div class="shell-page">
   <div class="quote-bar">
     <div id="quote-banner" class="quote-banner"></div>
-    <a class="btn btn-ghost btn-sm" href="/settings" title="자동화 설정">설정</a>
+    <a class="btn btn-ghost btn-sm quote-bar-icon-btn" href="/settings" title="자동화 설정" aria-label="자동화 설정">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </a>
     <button class="btn btn-ghost btn-sm" id="logout-btn">로그아웃</button>
   </div>
   <div class="app-shell">
@@ -61,6 +66,26 @@
       <h1 class="mandalart-page-title">기간별 리포트</h1>
 
       <div class="report-grid" id="report-grid">
+        <section class="settings-section report-trend-card">
+          <h2>카테고리별 추이 · 비율</h2>
+          <p class="settings-section-desc">기간 내 날짜별로 카테고리마다 며칠에 몇 건씩 등록했는지, 전체 비율은 어떤지 보여줘요.</p>
+          <div class="report-trend-row">
+            <div class="report-trend-wrap" id="report-trend-wrap">
+              <div class="report-trend-chart-box" id="report-trend-chart-box"></div>
+              <ul class="report-trend-legend" id="report-trend-legend"></ul>
+            </div>
+
+            <div class="report-pie-wrap" id="report-pie-wrap">
+              <div class="report-pie-box">
+                <div class="report-pie" id="report-pie"></div>
+                <div class="report-pie-highlight" id="report-pie-highlight"></div>
+              </div>
+              <ul class="report-legend" id="report-legend"></ul>
+              <div class="report-trend-tooltip" id="report-pie-tooltip" style="display:none"></div>
+            </div>
+          </div>
+        </section>
+
         <section class="settings-section report-summary-card">
           <h2>요약</h2>
           <div class="report-stat-tiles">
@@ -88,26 +113,6 @@
           </p>
           <button type="button" class="btn btn-primary" id="report-insight-btn" style="width: auto; display:none">AI 코멘트 생성</button>
           <div class="report-insight-body" id="report-insight-body"></div>
-        </section>
-
-        <section class="settings-section report-trend-card">
-          <h2>카테고리별 추이 · 비율</h2>
-          <p class="settings-section-desc">기간 내 날짜별로 카테고리마다 며칠에 몇 건씩 등록했는지, 전체 비율은 어떤지 보여줘요.</p>
-          <div class="report-trend-row">
-            <div class="report-trend-wrap" id="report-trend-wrap">
-              <div class="report-trend-chart-box" id="report-trend-chart-box"></div>
-              <ul class="report-trend-legend" id="report-trend-legend"></ul>
-            </div>
-
-            <div class="report-pie-wrap" id="report-pie-wrap">
-              <div class="report-pie-box">
-                <div class="report-pie" id="report-pie"></div>
-                <div class="report-pie-highlight" id="report-pie-highlight"></div>
-              </div>
-              <ul class="report-legend" id="report-legend"></ul>
-              <div class="report-trend-tooltip" id="report-pie-tooltip" style="display:none"></div>
-            </div>
-          </div>
         </section>
       </div>
     </main>
