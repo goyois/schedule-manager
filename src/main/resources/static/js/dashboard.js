@@ -1187,7 +1187,7 @@ function extractWordCloudFrequencies(scheduleList) {
 // 그대로 복제했다.
 const WORDCLOUD_COLORS = ["#5f9ae0", "#f08e67", "#54c39b", "#eda305", "#eb8db1", "#40a240", "#776bbd", "#ea7776"];
 
-const WORDCLOUD_MAX_WORDS = 26;
+const WORDCLOUD_MAX_WORDS = 40;
 const WORDCLOUD_MIN_FONT = 11;
 const WORDCLOUD_MAX_FONT = 30;
 
@@ -1195,20 +1195,24 @@ function wordCloudRectsOverlap(a, b) {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
-// 중심에서 시작해 바깥으로 도는 아르키메데스 나선을 따라가며, 이미 놓인 단어들과 겹치지 않고 캔버스
-// 경계 안에 들어가는 첫 좌표를 찾는다. 매번 같은 자리부터 시작하면 늘 같은 모양으로 보여서 시작각을
-// 무작위로 준다
-function findWordCloudSpot(placed, cx, cy, wordW, wordH, boundW, boundH) {
-  const angleStep = 0.35;
-  const radiusStep = 6 * (angleStep / (Math.PI * 2));
-  const maxRadius = Math.max(boundW, boundH);
+// 중심에서 시작해 바깥으로 도는 나선을 따라가며, 이미 놓인 단어들과 겹치지 않고 캔버스 경계 안에
+// 들어가는 첫 좌표를 찾는다. 위젯이 세로(226px)보다 가로가 훨씬 넓어서(만다라트 옆 남는 공간을 채우는
+// 위젯이라 폭이 가변적) 원형 나선을 그대로 쓰면 세로 경계에 먼저 막혀 가운데로만 몰린다 - x 반지름에
+// aspect(가로/세로 비)를 곱한 타원형 나선을 써서 가로로 넓게 퍼지게 한다. 매번 같은 자리부터 시작하면
+// 늘 같은 모양으로 보여서 시작각을 무작위로 준다. margin은 호버 시 CSS로 확대(scale)되는 만큼 가장자리에
+// 미리 남겨두는 여유 - 큰 글자일수록 확대 폭도 커서 호출부(renderWordCloud)가 폰트 크기 비례로 넉넉하게 넘긴다
+function findWordCloudSpot(placed, cx, cy, wordW, wordH, boundW, boundH, margin) {
+  const aspect = Math.max(1, boundW / boundH);
+  const angleStep = 0.28;
+  const radiusStep = 5 * (angleStep / (Math.PI * 2));
+  const maxRadius = boundH;
   let angle = Math.random() * Math.PI * 2;
   let radius = 0;
   while (radius < maxRadius) {
-    const x = cx + radius * Math.cos(angle);
+    const x = cx + radius * aspect * Math.cos(angle);
     const y = cy + radius * Math.sin(angle);
     const rect = { left: x - wordW / 2, top: y - wordH / 2, right: x + wordW / 2, bottom: y + wordH / 2 };
-    if (rect.left >= 2 && rect.top >= 2 && rect.right <= boundW - 2 && rect.bottom <= boundH - 2) {
+    if (rect.left >= margin && rect.top >= margin && rect.right <= boundW - margin && rect.bottom <= boundH - margin) {
       if (!placed.some((p) => wordCloudRectsOverlap(p, rect))) return { x, y };
     }
     angle += angleStep;
@@ -1258,17 +1262,27 @@ function renderWordCloud() {
     const fontSize = fontSizeFor(count);
     measurer.style.fontSize = `${fontSize}px`;
     measurer.textContent = word;
-    const wordW = measurer.offsetWidth + 6;
-    const wordH = measurer.offsetHeight + 4;
+    const textW = measurer.offsetWidth;
+    const textH = measurer.offsetHeight;
 
-    const pos = findWordCloudSpot(placed, cx, cy, wordW, wordH, w, h);
-    if (!pos) return; // 자리가 없으면 생략 - 위젯이 작아 26개가 다 안 들어갈 수 있다
+    // 짧은 단어 일부를 세로로 세워 참고 이미지처럼 결을 준다 - 너무 긴 단어를 세우면 위젯 높이(226px)를
+    // 넘기기 쉬워 글자 수 제한을 둔다. 세우면 히트박스의 가로/세로가 뒤바뀐다
+    const rotate = word.length <= 4 && Math.random() < 0.22;
+    const wordW = (rotate ? textH : textW) + 6;
+    const wordH = (rotate ? textW : textH) + 4;
+    // 호버 시 scale(1.35)로 커지는 만큼(가장자리에서 폭의 약 17.5%가 밖으로 자란다) 배치 단계에서부터
+    // 여유를 남겨둔다 - 안 그러면 큰 글자일수록 위젯 테두리(overflow:hidden)에 잘려 보인다
+    const margin = Math.max(8, fontSize * 0.6);
+
+    const pos = findWordCloudSpot(placed, cx, cy, wordW, wordH, w, h, margin);
+    if (!pos) return; // 자리가 없으면 생략 - 단어 수가 많으면 다 안 들어갈 수 있다
 
     placed.push({ left: pos.x - wordW / 2, top: pos.y - wordH / 2, right: pos.x + wordW / 2, bottom: pos.y + wordH / 2 });
 
     const el = document.createElement("span");
     el.className = "wordcloud-word";
     el.style.setProperty("--stagger-index", i);
+    el.style.setProperty("--wc-rotate", rotate ? "90deg" : "0deg");
     el.textContent = word;
     el.title = `${word} · ${count}회`;
     el.style.left = `${pos.x}px`;

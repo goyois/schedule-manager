@@ -983,36 +983,42 @@ button {
   padding: 0 12px;
 }
 
-/* wordcloud.js가 단어마다 절대 좌표(중심점)·글자 크기·색을 인라인 style로 계산해 배치한다(레이아웃
-   자체가 JS 쪽 스파이럴 배치 알고리즘의 결과라 CSS만으로는 재현 불가) - transform은 중심 좌표 보정용
-   translate(-50%,-50%)만 CSS에 두고 나머지(top/left/font-size/color)는 JS가 채운다 */
+/* wordcloud.js가 단어마다 절대 좌표(중심점)·글자 크기·색·회전 여부를 인라인 style로 계산해 배치한다
+   (레이아웃 자체가 JS 쪽 타원형 스파이럴 배치 알고리즘의 결과라 CSS만으로는 재현 불가) - 회전은
+   --wc-rotate 커스텀 프로퍼티로 받아 기본/호버 transform 양쪽에서 공통으로 쓴다(안 그러면 호버 시
+   scale만 있는 transform으로 덮어써져 회전이 풀려버린다) */
 .wordcloud-word {
+  --wc-rotate: 0deg;
   position: absolute;
   top: 0;
   left: 0;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) rotate(var(--wc-rotate));
   white-space: nowrap;
   font-weight: 700;
   line-height: 1;
   cursor: default;
   user-select: none;
-  transition: transform 150ms ease;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 180ms ease;
   animation: wordcloudWordIn 260ms ease-out backwards;
   animation-delay: calc(var(--stagger-index, 0) * 30ms);
 }
 
+/* "돋보기로 확대"에 가깝게 보이도록 확대 폭을 크게 주고, 겹쳐 있던 주변 단어 위로 떠 보이게
+   z-index와 은은한 그림자를 함께 준다 */
 .wordcloud-word:hover {
-  transform: translate(-50%, -50%) scale(1.15);
+  transform: translate(-50%, -50%) rotate(var(--wc-rotate)) scale(1.35);
+  z-index: 5;
+  filter: drop-shadow(0 4px 10px rgba(20, 23, 45, 0.28));
 }
 
 @keyframes wordcloudWordIn {
   from {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.5);
+    transform: translate(-50%, -50%) rotate(var(--wc-rotate)) scale(0.5);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: translate(-50%, -50%) rotate(var(--wc-rotate)) scale(1);
   }
 }
 
