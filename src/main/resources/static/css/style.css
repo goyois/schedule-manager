@@ -946,6 +946,7 @@ button {
   display: flex;
   align-items: center;
   gap: 14px;
+  flex: 1;
 }
 
 /* ---------- 워드클라우드 위젯 (내 일정 제목 키워드 빈도) ---------- */
