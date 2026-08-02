@@ -102,10 +102,12 @@
             이번 기간 통계와 일정 기록을 바탕으로 잘한 점/아쉬운 점, 행동 패턴을 AI가 분석해드려요.
             한 번 생성하면 저장되고, 이후 이 기간 일정이 바뀌었을 때만 다시 생성할 수 있어요.
           </p>
-          <p class="report-insight-stale-hint" id="report-insight-stale-hint" style="display:none">
-            스케줄 변동으로 새로운 결과를 얻을 수 있습니다
-          </p>
-          <button type="button" class="btn btn-primary" id="report-insight-btn" style="width: auto; display:none">AI 코멘트 생성</button>
+          <div class="report-insight-action-row">
+            <button type="button" class="btn btn-primary" id="report-insight-btn" style="width: auto; display:none">AI 코멘트 생성</button>
+            <p class="report-insight-stale-hint" id="report-insight-stale-hint" style="display:none">
+              스케줄 변동으로 새로운 결과를 얻을 수 있습니다
+            </p>
+          </div>
           <div class="report-insight-body" id="report-insight-body"></div>
         </section>
       </div>

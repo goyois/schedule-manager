@@ -3404,8 +3404,15 @@ button {
   color: var(--color-text-muted);
 }
 
+.report-insight-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .report-insight-stale-hint {
-  margin: 4px 0 12px;
+  margin: 0;
   padding: 8px 12px;
   border-radius: 8px;
   background: var(--color-pending-bg);
