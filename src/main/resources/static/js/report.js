@@ -119,9 +119,9 @@ function renderPieChart(categoryBreakdown) {
   `).join("");
 }
 
-const TREND_VIEW_W = 640;
-const TREND_VIEW_H = 220;
-const TREND_PAD = { left: 34, right: 12, top: 12, bottom: 24 };
+const TREND_VIEW_W = 480;
+const TREND_VIEW_H = 140;
+const TREND_PAD = { left: 30, right: 18, top: 10, bottom: 20 };
 
 // 축 눈금을 "깔끔한" 값으로 반올림한다(dataviz 스킬 - "Y축 눈금은 깔끔한 숫자로 반올림") - 1/2/5의
 // 배수만 쓰는 표준 nice-number 올림
@@ -172,10 +172,15 @@ function renderCategoryTrendChart(trend) {
   const linesSvg = series.map((s, i) => {
     const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
     const d = s.counts.map((v, idx) => `${idx === 0 ? "M" : "L"}${xAt(idx)},${yAt(v)}`).join(" ");
-    const lastIdx = s.counts.length - 1;
+    // 값이 바뀌는 지점(변곡점)뿐 아니라 모든 구간에 점을 찍어 정확히 어느 날짜의 값인지 한눈에 보이게 한다 -
+    // 링(surface 색 테두리)으로 선과 겹쳐도 점이 묻히지 않게 한다(MONTH처럼 점이 31개로 촘촘해도 뭉개지지
+    // 않도록 반지름은 끝점 강조용보다 살짝 작게 둔다)
+    const dotsSvg = s.counts.map((v, idx) => `
+      <circle cx="${xAt(idx)}" cy="${yAt(v)}" r="3" fill="${color}" stroke="var(--color-surface)" stroke-width="1.5" />
+    `).join("");
     return `
       <path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-      <circle cx="${xAt(lastIdx)}" cy="${yAt(s.counts[lastIdx])}" r="4" fill="${color}" stroke="var(--color-surface)" stroke-width="2" />
+      ${dotsSvg}
     `;
   }).join("");
 

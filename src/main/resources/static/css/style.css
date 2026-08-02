@@ -3353,6 +3353,7 @@ button {
 .report-trend-chart-box {
   position: relative;
   width: 100%;
+  max-width: 560px;
 }
 
 .report-trend-svg {
