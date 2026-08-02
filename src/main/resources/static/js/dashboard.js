@@ -1197,7 +1197,8 @@ const WORDCLOUD_MAX_FONT = 30;
 // 재는 데 쓴다
 let wordcloudEntries = []; // [{ el, x, y }]
 const WORDCLOUD_LENS_RADIUS = 65;
-const WORDCLOUD_LENS_MAX_SCALE = 1.35;
+// 기존 1.35배보다 30% 더 확대해달라는 요청 반영 - 최종 배율을 1.3배 곱한 값(1.35 * 1.3 ≈ 1.76)
+const WORDCLOUD_LENS_MAX_SCALE = 1.76;
 
 function wordCloudRectsOverlap(a, b) {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
@@ -1281,8 +1282,9 @@ function renderWordCloud() {
     const wordW = (rotate ? textH : textW) + 6;
     const wordH = (rotate ? textW : textH) + 4;
     // 마우스 렌즈가 지나갈 때 scale(WORDCLOUD_LENS_MAX_SCALE)까지 커지는 걸 감안해 배치 단계에서부터
-    // 여유를 남겨둔다 - 안 그러면 커서가 가장자리 단어를 스칠 때 위젯 테두리(overflow:hidden)에 잘린다
-    const margin = Math.max(10, fontSize * 0.6);
+    // 여유를 남겨둔다 - 안 그러면 커서가 가장자리 단어를 스칠 때 위젯 테두리(overflow:hidden)에 잘린다.
+    // 배율이 커진 만큼(1.35→1.76) 여유도 같은 비율로 늘렸다
+    const margin = Math.max(14, fontSize * 1.3);
 
     const pos = findWordCloudSpot(placed, cx, cy, wordW, wordH, w, h, margin);
     if (!pos) return; // 자리가 없으면 생략 - 단어 수가 많으면 다 안 들어갈 수 있다
