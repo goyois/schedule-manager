@@ -3472,24 +3472,12 @@ button {
   animation: reportTrendAxisIn 300ms ease-out;
 }
 
-/* 실제 경로 길이를 재는 JS 없이(path.getTotalLength() 호출·리플로우 없이) "그려지는" 효과를 내는 표준
-   SVG 트릭 - dasharray를 이 차트의 viewBox에서 나올 수 있는 최대 길이보다 넉넉히 큰 고정값으로 두고
-   dashoffset을 그 값에서 0으로 줄인다(dashoffset이 dasharray와 같으면 선 전체가 숨겨지고, 0이면 전부
-   보인다 - dasharray가 실제 경로보다 크기만 하면 값 자체는 부정확해도 결과는 항상 정확하다) */
-@keyframes reportTrendDraw {
-  from {
-    stroke-dashoffset: 4000;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-.report-trend-line {
-  stroke-dasharray: 4000;
-  stroke-dashoffset: 4000;
-  animation: reportTrendDraw 1350ms ease-out forwards;
-}
+/* report-trend-line(선 자체)의 "그려지는" 효과는 CSS가 아니라 report.js의 playTrendLineDrawIn()이
+   Web Animations API(el.animate())로 만든다 - dasharray/dashoffset을 실제 경로 길이(주로 150~400
+   정도)에 맞춰야 하는데, 그 값은 DOM에 삽입된 뒤 path.getTotalLength()로 재야만 알 수 있어 CSS만으로는
+   불가능하다. 처음엔 CSS transition(두 번 값을 바꿔 트리거)으로 시도했지만, 막 삽입된 요소는 브라우저가
+   "이전 상태"를 실제로 한 프레임 페인트했다는 보장이 없어 트랜지션 없이 즉시 완료돼버리는 경우가
+   있었다(실측 확인) - animate()는 시작/종료 값을 한 번에 넘겨받아 이 문제 자체가 없다. */
 
 @keyframes reportTrendDotIn {
   from {
@@ -3514,11 +3502,9 @@ button {
   .report-pie-animate-in,
   .report-legend-item,
   .report-trend-axis-group,
-  .report-trend-line,
   .report-trend-dot {
     animation: none;
     opacity: 1;
-    stroke-dashoffset: 0;
   }
 }
 

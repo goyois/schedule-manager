@@ -169,6 +169,29 @@ function niceCeil(value) {
   return niceNorm * base;
 }
 
+// 선이 실제로 "그려지는" 속도로 보이려면 dasharray/dashoffset을 그 선의 실제 경로 길이에 맞춰야 한다 -
+// 고정된 큰 값(예: 4000)을 실제 길이(주로 150~400 정도)보다 훨씬 크게 잡으면, dashoffset이 실제 길이만큼만
+// 줄어도 이미 선 전체가 드러나버려서 애니메이션 지속시간의 극히 일부(길이 비율만큼)만에 다 그려지고
+// 나머지 시간은 멈춰있는 것처럼 보인다(실제로 겪은 버그 - 카테고리가 적어 경로가 짧은 WEEK 뷰에서 특히
+// 심했다). getTotalLength()로 실측한 뒤 두 번의 requestAnimationFrame을 거쳐 dashoffset을 0으로 바꿔야
+// "숨겨진 상태"가 실제로 한 프레임 페인트된 뒤에 transition이 걸린다(리플로우 없이 같은 프레임에서 바로
+// 바꾸면 transition 없이 최종 상태로 바로 그려짐)
+function playTrendLineDrawIn(container) {
+  if (prefersReducedMotion) return; // dasharray를 건드리지 않으면 기본적으로 완성된 선 그대로 보인다
+  container.querySelectorAll(".report-trend-line").forEach((el) => {
+    const length = el.getTotalLength();
+    el.style.strokeDasharray = `${length}`;
+    // CSS transition으로 (style을 두 번 바꿔) 트리거하는 방식은 막 DOM에 삽입된 요소에서 "이전 상태"가
+    // 실제로 한 프레임 페인트됐다는 보장이 없어 트랜지션 없이 즉시 완료돼버리는 경우가 있었다(더블
+    // requestAnimationFrame으로도 재현됨, 실측 확인) - Web Animations API는 시작/종료 값을 한 번의
+    // 호출로 넘겨받으므로 이 문제 자체가 없다
+    el.animate(
+      [{ strokeDashoffset: length }, { strokeDashoffset: 0 }],
+      { duration: TREND_DRAW_MS, easing: "ease-out", fill: "forwards" }
+    );
+  });
+}
+
 // 카테고리별 선 그래프 - 직접 그린 SVG(2px 선, 끝점 마커, 옅은 회색 격자선)에 크로스헤어+툴팁 호버를
 // 붙인다. 카테고리 색은 파이차트/범례와 같은 인덱스 순서를 그대로 써서 같은 카테고리는 같은 색으로 보인다
 function renderCategoryTrendChart(trend) {
@@ -231,6 +254,8 @@ function renderCategoryTrendChart(trend) {
     </svg>
     <div class="report-trend-tooltip" id="report-trend-tooltip" style="display:none"></div>
   `;
+
+  playTrendLineDrawIn(trendChartBoxEl);
 
   // 범례는 파이차트 쪽과 색이 겹치므로 여기서는 이름만 (건수/비율은 파이 범례가 이미 보여줌) - 단일
   // 카테고리뿐이면 범례 없이도 제목만으로 식별 가능하므로 생략한다
