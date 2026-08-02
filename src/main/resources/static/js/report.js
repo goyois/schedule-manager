@@ -81,6 +81,7 @@ const comparisonEl = document.getElementById("report-comparison");
 const statusListEl = document.getElementById("report-status-list");
 const pieWrapEl = document.getElementById("report-pie-wrap");
 const pieEl = document.getElementById("report-pie");
+const pieHighlightEl = document.getElementById("report-pie-highlight");
 const pieTooltipEl = document.getElementById("report-pie-tooltip");
 const legendEl = document.getElementById("report-legend");
 const trendChartBoxEl = document.getElementById("report-trend-chart-box");
@@ -165,6 +166,21 @@ function renderPieChart(categoryBreakdown) {
 // 시작각(12시 방향)·회전 방향(시계 방향)과 맞춰야 pieSlices의 start/end(%)와 일치한다. pieEl은
 // innerHTML로 다시 만들어지지 않는 고정 노드라 리스너는 한 번만 붙이면 되고, 매 렌더마다 최신
 // pieSlices를 참조하기만 하면 된다
+// 호버 중인 조각만 남기고 나머지를 어둡게 덮는 conic-gradient를 만든다 - 조각별 DOM 요소가 없어(파이가
+// conic-gradient 배경 하나뿐이라) 실제 조각 색을 바꾸는 대신, 그 위에 겹친 투명 레이어(report-pie-highlight)의
+// 배경을 매번 다시 그리는 방식으로 "그 구간만 밝게(=안 덮임), 나머지만 어둡게" 대비를 낸다
+const PIE_DIM_COLOR = "rgba(20, 23, 45, 0.35)";
+
+function updatePieHighlight(slice) {
+  if (!slice) {
+    pieHighlightEl.style.background = "transparent";
+    return;
+  }
+  const stops = [`${PIE_DIM_COLOR} 0% ${slice.start}%`, `transparent ${slice.start}% ${slice.end}%`];
+  if (slice.end < 100) stops.push(`${PIE_DIM_COLOR} ${slice.end}% 100%`);
+  pieHighlightEl.style.background = `conic-gradient(${stops.join(", ")})`;
+}
+
 function bindPieHover() {
   pieEl.addEventListener("mousemove", (e) => {
     if (pieSlices.length === 0) return;
@@ -175,6 +191,7 @@ function bindPieHover() {
     const dy = e.clientY - (rect.top + radius);
     if (Math.sqrt(dx * dx + dy * dy) > radius) {
       pieTooltipEl.style.display = "none";
+      updatePieHighlight(null);
       return;
     }
 
@@ -182,6 +199,8 @@ function bindPieHover() {
     if (angleDeg < 0) angleDeg += 360;
     const pct = (angleDeg / 360) * 100;
     const slice = pieSlices.find((s) => pct >= s.start && pct < s.end) || pieSlices[pieSlices.length - 1];
+
+    updatePieHighlight(slice);
 
     pieTooltipEl.innerHTML = `
       <div class="report-trend-tooltip-row">
@@ -203,6 +222,7 @@ function bindPieHover() {
 
   pieEl.addEventListener("mouseleave", () => {
     pieTooltipEl.style.display = "none";
+    updatePieHighlight(null);
   });
 }
 

@@ -3287,14 +3287,31 @@ button {
   margin-top: 14px;
 }
 
+.report-pie-box {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  flex-shrink: 0;
+}
+
 .report-pie {
   width: 140px;
   height: 140px;
   border-radius: 50%;
-  flex-shrink: 0;
   background: var(--color-border);
   transform-origin: center;
   cursor: pointer;
+}
+
+/* 파이차트 위에 겹쳐 두는 하이라이트 레이어 - 조각별 DOM 요소가 없어(conic-gradient 배경 하나뿐이라)
+   호버 중인 조각만 빼고 나머지를 어둡게 덮는 conic-gradient를 report.js가 마우스 위치에 맞춰 매번
+   새로 계산해서 그린다(pointer-events:none이라 마우스 이벤트는 그대로 아래 .report-pie가 받는다) */
+.report-pie-highlight {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  background: transparent;
 }
 
 .report-legend {
