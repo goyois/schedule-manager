@@ -189,9 +189,22 @@ a {
   text-decoration: none;
 }
 
+/* color: inherit가 없으면 브라우저 기본 버튼 글자색(다크 모드와 무관한 시스템 색, 대체로 검정)이
+   그대로 남아 - .achievement-headline처럼 자기 색을 따로 안 정하고 부모(<button class="achievement-widget">)
+   에게서 물려받으려던 텍스트가 다크 모드에서도 계속 검게 보이는 버그가 있었다 */
 button {
   font-family: inherit;
+  color: inherit;
   cursor: pointer;
+}
+
+/* select도 button과 같은 이유(브라우저 기본 폼 컨트롤 글자색이 다크 모드와 무관하게 검정 계열로
+   고정돼있는 경우가 있음)로 color: inherit가 필요하다 - 특히 .card-actions select(보드 카드의 상태
+   변경 드롭다운)는 자기 색을 따로 안 정하고 부모에게서 물려받으려던 거라 다크 모드에서 선택된 상태
+   텍스트("대기"/"진행중" 등)가 계속 검게 보이는 문제가 있었다 */
+select {
+  font-family: inherit;
+  color: inherit;
 }
 
 /* ---------- Auth pages (login / signup) ---------- */
@@ -203,17 +216,6 @@ button {
   justify-content: center;
   padding: 24px;
   background: var(--color-auth-gradient);
-}
-
-/* 로그인/회원가입 페이지는 quote-bar(아이콘 행)가 없어 테마 토글 버튼을 우측 상단에 고정으로 띄운다 -
-   다른 quote-bar-icon-btn과 크기/스타일은 동일하게 두고 위치만 fixed로 바꾼다 */
-.theme-toggle-fixed {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  z-index: 10;
-  background: var(--color-surface);
-  box-shadow: var(--shadow-card);
 }
 
 .auth-card {
@@ -726,6 +728,20 @@ button {
   margin-top: 10px;
 }
 
+/* input에 별도 width 지정이 없으면 브라우저 기본 size(약 20자 폭)를 차지해 좁은 사이드바(240px)
+   안에서 버튼과 합쳐 한 줄에 다 안 들어가고, flex-shrink 기본값(1) 때문에 버튼이 눌리면서 "추가"
+   글자가 두 줄로 줄바꿈된다 - input이 남는 폭만큼만 줄어들게(flex:1) 하고 버튼은 내용 크기 그대로
+   고정해(flex-shrink:0) 한 줄을 유지한다 */
+.add-category-form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.add-category-form button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .admin-add-category-form {
   flex-direction: column;
   align-items: stretch;
@@ -1046,6 +1062,7 @@ button {
    남는데, 그 자리를 채우려고 header-widgets의 첫 번째 자식으로 넣었다 - flex:1로 남는 폭을 그대로
    흡수하고, 다른 위젯들과 시각적으로 맞추려 높이(226px)·배경·테두리·radius를 mandalart-widget과 통일했다 */
 .wordcloud-widget {
+  position: relative;
   flex: 1 1 240px;
   min-width: 200px;
   height: 226px;
@@ -1064,6 +1081,38 @@ button {
   height: 100%;
 }
 
+/* 마우스를 따라다니는 원형 돋보기(볼록렌즈) - .wordcloud-canvas는 매 렌더마다 innerHTML을 통째로
+   새로 그려서(dashboard.js renderWordCloud) 그 안에 넣으면 렌더될 때마다 사라진다. .wordcloud-widget의
+   형제로 두면(부모가 position:relative) canvas와 같은 패딩 기준 좌표계를 공유해, canvas 기준으로 잰
+   마우스 좌표를 그대로 이 요소의 left/top에 써도 맞아떨어진다. dashboard.js가 mousemove마다
+   left/top을 이 요소에 직접 옮기고(centered via transform), "렌즈 반경 안 단어만 확대"는 단어별
+   커서 거리 계산이 필요해 CSS만으로는 안 되므로 같은 mousemove 핸들러가 .wordcloud-word 각각의
+   --wc-scale도 함께 갱신한다 - 이 요소 자체는 렌즈의 "유리알" 시각 효과만 담당한다 */
+.wordcloud-lens {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.12) 45%, rgba(255, 255, 255, 0) 68%),
+    radial-gradient(circle at 72% 80%, rgba(20, 23, 45, 0.1) 0%, rgba(20, 23, 45, 0) 55%);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow:
+    0 6px 16px rgba(20, 23, 45, 0.2),
+    inset 0 -4px 8px rgba(20, 23, 45, 0.1),
+    inset 0 4px 7px rgba(255, 255, 255, 0.45);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.wordcloud-lens.show {
+  opacity: 1;
+}
+
 .wordcloud-empty {
   display: flex;
   align-items: center;
@@ -1079,56 +1128,25 @@ button {
    (레이아웃 자체가 JS 쪽 타원형 스파이럴 배치 알고리즘의 결과라 CSS만으로는 재현 불가) - 회전은
    --wc-rotate 커스텀 프로퍼티로 받아 기본/호버 transform 양쪽에서 공통으로 쓴다(안 그러면 호버 시
    scale만 있는 transform으로 덮어써져 회전이 풀려버린다) */
+/* 확대/그림자는 더 이상 :hover(그 단어 자기 영역 위일 때만)로 켜지 않는다 - 마우스를 원형 렌즈로
+   보고 그 반경 안에 있는 모든 단어가 거리에 비례해 같이 부풀어야 하므로, dashboard.js가 mousemove마다
+   각 단어~커서 거리를 계산해 --wc-scale/--wc-shadow-t를 인라인으로 갱신한다(.wordcloud-lens가 그
+   "렌즈" 자체의 유리알 시각 효과를 담당). transition을 짧게 둬 커서를 따라 자연스럽게 뒤쫓아오게 한다 */
 .wordcloud-word {
   --wc-rotate: 0deg;
+  --wc-scale: 1;
   position: absolute;
   top: 0;
   left: 0;
-  transform: translate(-50%, -50%) rotate(var(--wc-rotate));
+  transform: translate(-50%, -50%) rotate(var(--wc-rotate)) scale(var(--wc-scale));
   white-space: nowrap;
   font-weight: 700;
   line-height: 1;
   cursor: default;
   user-select: none;
-  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 180ms ease;
+  transition: transform 90ms linear, filter 90ms linear;
   animation: wordcloudWordIn 260ms ease-out backwards;
   animation-delay: calc(var(--stagger-index, 0) * 30ms);
-}
-
-/* "돋보기로 확대"보다 더 "볼록렌즈" 느낌을 내려고 텍스트 뒤에 유리 렌즈 모양(::before)을 깐다 -
-   좌상단이 밝고 우하단이 살짝 어두운 방사형 그라데이션(빛 반사) + 안쪽 하이라이트/그림자(inset
-   box-shadow)로 볼록한 유리알처럼 보이게 한다. 부모(.wordcloud-word)의 transform을 그대로 물려받아
-   회전(--wc-rotate)·확대가 텍스트와 한 몸처럼 같이 움직인다 */
-.wordcloud-word::before {
-  content: "";
-  position: absolute;
-  inset: -30% -18%;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.28) 36%, rgba(255, 255, 255, 0) 60%),
-    radial-gradient(circle at 72% 80%, rgba(20, 23, 45, 0.14) 0%, rgba(20, 23, 45, 0) 55%);
-  box-shadow:
-    0 4px 10px rgba(20, 23, 45, 0.22),
-    inset 0 -3px 6px rgba(20, 23, 45, 0.12),
-    inset 0 3px 5px rgba(255, 255, 255, 0.6);
-  opacity: 0;
-  transform: scale(0.6);
-  transition: opacity 200ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
-  z-index: -1;
-  pointer-events: none;
-}
-
-/* 겹쳐 있던 주변 단어 위로 떠 보이도록 z-index를 함께 준다. 렌즈(::before) 쪽에 이미 그림자가 있어
-   텍스트 자체의 그림자는 살짝만 얹는다 */
-.wordcloud-word:hover {
-  transform: translate(-50%, -50%) rotate(var(--wc-rotate)) scale(1.22);
-  z-index: 5;
-  filter: drop-shadow(0 2px 4px rgba(20, 23, 45, 0.18));
-}
-
-.wordcloud-word:hover::before {
-  opacity: 1;
-  transform: scale(1);
 }
 
 @keyframes wordcloudWordIn {
@@ -3668,6 +3686,28 @@ button {
   justify-content: flex-end;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+/* 다크 모드에서는 사이트 전체에 이미 쓰이는 보라색(--color-primary) 대신, "AI 코멘트 생성" 버튼만
+   눈에 띄는 밝은 앰버 톤으로 구분해준다 - 어두운 카드 위에서 다른 보라색 버튼들 사이에 묻히지 않게 */
+:root[data-theme="dark"] #report-insight-btn {
+  background: #f5b942;
+  color: #2a1a05;
+}
+
+:root[data-theme="dark"] #report-insight-btn:hover {
+  background: #f7c665;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) #report-insight-btn {
+    background: #f5b942;
+    color: #2a1a05;
+  }
+
+  :root:not([data-theme="light"]) #report-insight-btn:hover {
+    background: #f7c665;
+  }
 }
 
 .report-insight-stale-hint {

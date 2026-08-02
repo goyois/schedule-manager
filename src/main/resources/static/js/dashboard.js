@@ -1191,6 +1191,14 @@ const WORDCLOUD_MAX_WORDS = 40;
 const WORDCLOUD_MIN_FONT = 11;
 const WORDCLOUD_MAX_FONT = 30;
 
+// 마우스 위치 기준 원형 돋보기(볼록렌즈) 효과에 쓰는 값 - RADIUS는 렌즈 반경(px, CSS .wordcloud-lens의
+// 지름 130px과 맞춤), MAX_SCALE은 커서 정중앙에 있는 단어가 커지는 배수. 렌더될 때마다 새로 만들어지는
+// 단어 <span>들의 중심 좌표를 여기 담아뒀다가, mousemove 핸들러(bindWordcloudLens)가 커서와의 거리를
+// 재는 데 쓴다
+let wordcloudEntries = []; // [{ el, x, y }]
+const WORDCLOUD_LENS_RADIUS = 65;
+const WORDCLOUD_LENS_MAX_SCALE = 1.35;
+
 function wordCloudRectsOverlap(a, b) {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
@@ -1228,6 +1236,7 @@ function renderWordCloud() {
 
   if (entries.length === 0) {
     canvas.innerHTML = `<div class="wordcloud-empty">일정 제목이 쌓이면<br>자주 쓴 단어가 여기 나타나요</div>`;
+    wordcloudEntries = [];
     return;
   }
 
@@ -1258,6 +1267,7 @@ function renderWordCloud() {
   canvas.appendChild(measurer);
 
   const placed = [];
+  wordcloudEntries = [];
   entries.forEach(([word, count], i) => {
     const fontSize = fontSizeFor(count);
     measurer.style.fontSize = `${fontSize}px`;
@@ -1270,10 +1280,9 @@ function renderWordCloud() {
     const rotate = word.length <= 4 && Math.random() < 0.22;
     const wordW = (rotate ? textH : textW) + 6;
     const wordH = (rotate ? textW : textH) + 4;
-    // 호버 시 텍스트 자체가 scale(1.22)로 커지는 데다, 뒤에 깔리는 볼록렌즈 모양(CSS ::before, inset
-    // -30%/-18%)까지 같이 확대돼 세로 기준 최종 폭이 원래 글자 상자의 약 2배까지 자란다 - 배치
-    // 단계에서부터 그만큼 여유를 남겨둬야 큰 글자일수록 위젯 테두리(overflow:hidden)에 렌즈가 잘리지 않는다
-    const margin = Math.max(10, fontSize * 0.85);
+    // 마우스 렌즈가 지나갈 때 scale(WORDCLOUD_LENS_MAX_SCALE)까지 커지는 걸 감안해 배치 단계에서부터
+    // 여유를 남겨둔다 - 안 그러면 커서가 가장자리 단어를 스칠 때 위젯 테두리(overflow:hidden)에 잘린다
+    const margin = Math.max(10, fontSize * 0.6);
 
     const pos = findWordCloudSpot(placed, cx, cy, wordW, wordH, w, h, margin);
     if (!pos) return; // 자리가 없으면 생략 - 단어 수가 많으면 다 안 들어갈 수 있다
@@ -1291,10 +1300,62 @@ function renderWordCloud() {
     el.style.fontSize = `${fontSize}px`;
     el.style.color = WORDCLOUD_COLORS[i % WORDCLOUD_COLORS.length];
     canvas.appendChild(el);
+    wordcloudEntries.push({ el, x: pos.x, y: pos.y });
   });
 
   measurer.remove();
 }
+
+// 마우스를 원형 돋보기(반경 WORDCLOUD_LENS_RADIUS)로 보고, 그 안에 들어온 단어만 커서와의 거리에
+// 비례해(가까울수록 크게) 부풀린다 - 이전엔 단어 각각의 :hover로 그 단어 자기 영역 위에 있을 때만
+// 확대됐지만, "마우스 자체가 렌즈"가 되려면 여러 단어가 동시에, 그리고 정도가 다르게 반응해야 해서
+// CSS만으로는 안 되고 매 mousemove마다 전체 단어와 커서 사이 거리를 계산해야 한다. 캔버스는 렌더될
+// 때마다 innerHTML이 통째로 바뀌지만(단어 <span> 자체는 새로 만들어짐) 캔버스/렌즈 노드 자체는 고정이라
+// 리스너는 한 번만 붙이면 되고, 매번 최신 wordcloudEntries를 참조하기만 하면 된다
+function updateWordcloudLensEffect(mx, my) {
+  wordcloudEntries.forEach(({ el, x, y }) => {
+    const dist = Math.hypot(mx - x, my - y);
+    if (dist >= WORDCLOUD_LENS_RADIUS) {
+      el.style.removeProperty("--wc-scale");
+      el.style.zIndex = "";
+      el.style.filter = "";
+      return;
+    }
+    const t = 1 - dist / WORDCLOUD_LENS_RADIUS; // 렌즈 중심에 가까울수록 1에 가까움
+    const scale = 1 + t * (WORDCLOUD_LENS_MAX_SCALE - 1);
+    el.style.setProperty("--wc-scale", scale.toFixed(3));
+    el.style.zIndex = String(Math.round(5 + t * 10));
+    el.style.filter = `drop-shadow(0 ${(2 + t * 3).toFixed(1)}px ${(4 + t * 5).toFixed(1)}px rgba(20, 23, 45, ${(0.12 + t * 0.18).toFixed(2)}))`;
+  });
+}
+
+function resetWordcloudLensEffect() {
+  wordcloudEntries.forEach(({ el }) => {
+    el.style.removeProperty("--wc-scale");
+    el.style.zIndex = "";
+    el.style.filter = "";
+  });
+}
+
+function bindWordcloudLens() {
+  const canvas = document.getElementById("wordcloud-canvas");
+  const lens = document.getElementById("wordcloud-lens");
+  canvas.addEventListener("mousemove", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    lens.style.left = `${mx}px`;
+    lens.style.top = `${my}px`;
+    lens.classList.add("show");
+    updateWordcloudLensEffect(mx, my);
+  });
+  canvas.addEventListener("mouseleave", () => {
+    lens.classList.remove("show");
+    resetWordcloudLensEffect();
+  });
+}
+
+bindWordcloudLens();
 
 // 전체 접기(board.compact)가 꺼져 있으면 기본 펼침 + collapsedCardIds(개별로 접은 것만) 반영,
 // 켜져 있으면 기본 접힘 + forceExpandedCardIds(개별로 펼친 것만) 반영 - 두 모드에서 기본값이
