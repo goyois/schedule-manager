@@ -1270,9 +1270,10 @@ function renderWordCloud() {
     const rotate = word.length <= 4 && Math.random() < 0.22;
     const wordW = (rotate ? textH : textW) + 6;
     const wordH = (rotate ? textW : textH) + 4;
-    // 호버 시 scale(1.35)로 커지는 만큼(가장자리에서 폭의 약 17.5%가 밖으로 자란다) 배치 단계에서부터
-    // 여유를 남겨둔다 - 안 그러면 큰 글자일수록 위젯 테두리(overflow:hidden)에 잘려 보인다
-    const margin = Math.max(8, fontSize * 0.6);
+    // 호버 시 텍스트 자체가 scale(1.22)로 커지는 데다, 뒤에 깔리는 볼록렌즈 모양(CSS ::before, inset
+    // -30%/-18%)까지 같이 확대돼 세로 기준 최종 폭이 원래 글자 상자의 약 2배까지 자란다 - 배치
+    // 단계에서부터 그만큼 여유를 남겨둬야 큰 글자일수록 위젯 테두리(overflow:hidden)에 렌즈가 잘리지 않는다
+    const margin = Math.max(10, fontSize * 0.85);
 
     const pos = findWordCloudSpot(placed, cx, cy, wordW, wordH, w, h, margin);
     if (!pos) return; // 자리가 없으면 생략 - 단어 수가 많으면 다 안 들어갈 수 있다
