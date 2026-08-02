@@ -3574,8 +3574,11 @@ select {
 
 /* 추이 그래프와 파이 차트 사이 남는 공간에 카테고리 건수 순위를 넣는다 - categoryBreakdown이 이미
    서버에서 건수 내림차순으로 내려오므로(ReportService) report.js는 그 순서를 그대로 쓰기만 하면 된다 */
+/* flex-grow를 pie-wrap과 같은 1로 줘야(예전엔 0이라 전혀 안 늘어났음) 남는 폭을 트렌드/파이 쪽과
+   공평하게 나눠 갖는다 - trend-wrap이 max-width 없이 flex-grow:2로 혼자 다 먹던 걸 옆(아래)에서
+   같이 고쳤다(.report-trend-wrap 참고) */
 .report-rank-wrap {
-  flex: 0 1 170px;
+  flex: 1 1 170px;
   min-width: 150px;
   align-self: stretch;
   display: flex;
@@ -3591,20 +3594,37 @@ select {
   margin-bottom: 10px;
 }
 
+/* rank-wrap 자체는 이제 늘어나지만(flex:1) 목록 내용까지 그 폭에 맞춰 늘어나면 배지-이름-건수 사이
+   간격만 불필요하게 벌어져 보인다 - 목록은 원래 폭(170px)으로 고정해 두고 margin:auto로 넓어진
+   rank-wrap 안에서 가운데 정렬만 되게 한다 */
 .report-rank-list {
   list-style: none;
-  margin: 0;
+  margin: 0 auto;
   padding: 0;
+  width: 170px;
 }
 
+/* 순위가 위→아래로 하나씩, 작았다가 커지면서 나타나는 효과 - stagger-index로 순서대로 살짝씩
+   늦게 시작해 "한 줄씩 내려가며 커지는" 느낌을 낸다 */
 .report-rank-item {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 0;
   font-size: 12.5px;
-  animation: reportLegendIn 400ms ease-out backwards;
-  animation-delay: calc(var(--stagger-index, 0) * 60ms);
+  animation: reportRankIn 420ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  animation-delay: calc(var(--stagger-index, 0) * 90ms);
+}
+
+@keyframes reportRankIn {
+  from {
+    opacity: 0;
+    transform: scale(0.6) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .report-rank-badge {
@@ -3844,9 +3864,14 @@ select {
   margin-top: 14px;
 }
 
+/* 예전엔 flex-grow:2(순위·파이의 2배)에 max-width도 없어서 실제 차트(최대 560px, .report-trend-chart-box)
+   보다 훨씬 넓게 늘어나 그 안에 빈 여백만 생기고, 남는 폭이 전부 여기로만 쏠려 순위·파이 쪽은 좁게
+   눌려 있었다 - max-width를 차트 실제 크기에 맞추고 grow도 1로 낮춰 세 블록이 공평하게 남는 폭을
+   나눠 갖게(.report-rank-wrap도 grow:1로 맞춤) 했다 */
 .report-trend-wrap {
-  flex: 2 1 420px;
+  flex: 1 1 420px;
   min-width: 300px;
+  max-width: 560px;
 }
 
 .report-trend-chart-box {
@@ -3998,6 +4023,7 @@ select {
 @media (prefers-reduced-motion: reduce) {
   .report-pie-animate-in,
   .report-legend-item,
+  .report-rank-item,
   .report-trend-axis-group,
   .report-trend-dot {
     animation: none;
