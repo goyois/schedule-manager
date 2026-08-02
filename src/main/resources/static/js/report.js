@@ -79,7 +79,9 @@ const totalCountEl = document.getElementById("report-total-count");
 const completionRateEl = document.getElementById("report-completion-rate");
 const comparisonEl = document.getElementById("report-comparison");
 const statusListEl = document.getElementById("report-status-list");
+const pieWrapEl = document.getElementById("report-pie-wrap");
 const pieEl = document.getElementById("report-pie");
+const pieTooltipEl = document.getElementById("report-pie-tooltip");
 const legendEl = document.getElementById("report-legend");
 const trendChartBoxEl = document.getElementById("report-trend-chart-box");
 const trendLegendEl = document.getElementById("report-trend-legend");
@@ -123,23 +125,29 @@ function replayAnimation(el, className) {
   el.classList.add(className);
 }
 
+// 파이차트는 SVG가 아니라 conic-gradient 배경 하나뿐인 div라 조각별 DOM 요소/hit-test가 없다 - 호버 시
+// 마우스 각도로 어느 조각인지 계산해야 해서(bindPieHover 참고), renderPieChart가 매번 채운 이 배열에
+// 조각별 시작/끝 각도(%)·색·카테고리 정보를 저장해두고 호버 핸들러가 참조한다
+let pieSlices = [];
+
 function renderPieChart(categoryBreakdown) {
   if (categoryBreakdown.length === 0) {
     pieEl.style.background = "var(--color-border)";
     legendEl.innerHTML = `<li class="report-legend-empty">해당 기간에 등록된 일정이 없어요.</li>`;
+    pieSlices = [];
     return;
   }
 
   let cursor = 0;
-  const stops = categoryBreakdown.map((c, i) => {
+  pieSlices = categoryBreakdown.map((c, i) => {
     const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
     const start = cursor;
     // 반올림 오차로 마지막 구간이 100%를 못 채우는 걸 방지하기 위해 마지막 항목은 100%까지 채운다
     const end = i === categoryBreakdown.length - 1 ? 100 : cursor + c.percentage;
     cursor = end;
-    return { color, start, end };
+    return { color, start, end, categoryName: c.categoryName, count: c.count, percentage: c.percentage };
   });
-  pieEl.style.background = `conic-gradient(${stops.map((s) => `${s.color} ${s.start}% ${s.end}%`).join(", ")})`;
+  pieEl.style.background = `conic-gradient(${pieSlices.map((s) => `${s.color} ${s.start}% ${s.end}%`).join(", ")})`;
   replayAnimation(pieEl, "report-pie-animate-in");
 
   // 범례 <li>는 매번 innerHTML로 새로 만드는 요소라 별도 리플로우 없이도 애니메이션이 항상 처음부터
@@ -152,6 +160,53 @@ function renderPieChart(categoryBreakdown) {
     </li>
   `).join("");
 }
+
+// 마우스 위치를 파이 중심 기준 각도로 변환해 어느 조각 위에 있는지 계산한다 - conic-gradient의 기본
+// 시작각(12시 방향)·회전 방향(시계 방향)과 맞춰야 pieSlices의 start/end(%)와 일치한다. pieEl은
+// innerHTML로 다시 만들어지지 않는 고정 노드라 리스너는 한 번만 붙이면 되고, 매 렌더마다 최신
+// pieSlices를 참조하기만 하면 된다
+function bindPieHover() {
+  pieEl.addEventListener("mousemove", (e) => {
+    if (pieSlices.length === 0) return;
+
+    const rect = pieEl.getBoundingClientRect();
+    const radius = rect.width / 2;
+    const dx = e.clientX - (rect.left + radius);
+    const dy = e.clientY - (rect.top + radius);
+    if (Math.sqrt(dx * dx + dy * dy) > radius) {
+      pieTooltipEl.style.display = "none";
+      return;
+    }
+
+    let angleDeg = Math.atan2(dx, -dy) * (180 / Math.PI); // 0deg = 12시, 시계 방향으로 증가
+    if (angleDeg < 0) angleDeg += 360;
+    const pct = (angleDeg / 360) * 100;
+    const slice = pieSlices.find((s) => pct >= s.start && pct < s.end) || pieSlices[pieSlices.length - 1];
+
+    pieTooltipEl.innerHTML = `
+      <div class="report-trend-tooltip-row">
+        <span class="report-legend-dot" style="background:${slice.color}"></span>
+        <span>${escapeHtml(slice.categoryName)}</span>
+        <strong>${slice.percentage.toFixed(1)}%</strong>
+      </div>
+    `;
+    pieTooltipEl.style.display = "block";
+
+    const wrapRect = pieWrapEl.getBoundingClientRect();
+    const left = Math.min(
+      Math.max(e.clientX - wrapRect.left + 12, 0),
+      Math.max(wrapRect.width - pieTooltipEl.offsetWidth - 4, 0)
+    );
+    pieTooltipEl.style.left = `${left}px`;
+    pieTooltipEl.style.top = `${e.clientY - wrapRect.top + 12}px`;
+  });
+
+  pieEl.addEventListener("mouseleave", () => {
+    pieTooltipEl.style.display = "none";
+  });
+}
+
+bindPieHover();
 
 const TREND_VIEW_W = 480;
 const TREND_VIEW_H = 140;

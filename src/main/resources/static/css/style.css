@@ -3250,6 +3250,7 @@ button {
 }
 
 .report-pie-wrap {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 20px;
@@ -3263,6 +3264,7 @@ button {
   flex-shrink: 0;
   background: var(--color-border);
   transform-origin: center;
+  cursor: pointer;
 }
 
 .report-legend {
