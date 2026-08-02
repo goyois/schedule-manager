@@ -3323,29 +3323,57 @@ button {
 
 .report-pie-box {
   position: relative;
-  width: 140px;
-  height: 140px;
+  width: 176px;
+  height: 176px;
   flex-shrink: 0;
 }
 
-.report-pie {
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
-  background: var(--color-border);
+/* report.js가 매 렌더마다 <defs>(그라데이션)+조각 <g>를 innerHTML로 새로 그리는 고정 SVG 노드 - viewBox는
+   report.html에서 PIE_R(70)+POP_PX/여유 패딩을 감안한 -88 -88 176 176으로 고정. overflow visible이라야
+   호버 시 조각이 바깥으로 튀어나오는(report-pie-slice-group.hovered) translate가 잘리지 않는다 */
+.report-pie-svg {
+  width: 176px;
+  height: 176px;
+  overflow: visible;
   transform-origin: center;
-  cursor: pointer;
 }
 
-/* 파이차트 위에 겹쳐 두는 하이라이트 레이어 - 조각별 DOM 요소가 없어(conic-gradient 배경 하나뿐이라)
-   호버 중인 조각만 빼고 나머지를 어둡게 덮는 conic-gradient를 report.js가 마우스 위치에 맞춰 매번
-   새로 계산해서 그린다(pointer-events:none이라 마우스 이벤트는 그대로 아래 .report-pie가 받는다) */
-.report-pie-highlight {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
+.report-pie-slice-group {
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.report-pie-slice {
+  cursor: pointer;
+  stroke: var(--color-surface);
+  stroke-width: 1.5px;
+  transition: opacity 160ms ease;
+}
+
+/* 마우스가 파이 위에 있을 때(has-hover)만 호버 중이 아닌 조각을 어둡게 - 조각 사이 간격만으로는
+   대비가 약해서(호버 요청 반영) 나머지 조각의 opacity를 낮춰 명암 대비를 준다 */
+.report-pie-svg.has-hover .report-pie-slice-group:not(.hovered) .report-pie-slice {
+  opacity: 0.45;
+}
+
+.report-pie-slice-group.hovered .report-pie-slice {
+  filter: drop-shadow(0 3px 6px rgba(20, 23, 45, 0.28));
+}
+
+/* 조각 안 퍼센트 라벨 - 어떤 파스텔 색 위에서도 읽히도록 흰 글자 + 어두운 외곽선(paint-order로 외곽선을
+   글자보다 먼저 그려 덮이지 않게 함)을 쓴다. 너무 작은 조각(6% 미만)은 report.js가 애초에 라벨을 생성하지
+   않는다(글자가 서로 겹치므로) */
+.report-pie-slice-label {
+  fill: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: rgba(20, 23, 45, 0.35);
+  stroke-width: 3px;
+  stroke-linejoin: round;
   pointer-events: none;
-  background: transparent;
+  user-select: none;
 }
 
 .report-legend {
@@ -3551,8 +3579,9 @@ button {
   }
 }
 
-/* pieEl은 innerHTML을 다시 만들지 않는 고정 노드라 이 클래스를 report.js의 replayAnimation()이 매번
-   떼었다 붙이는 방식으로 재생시킨다(레이아웃 재계산 없이는 CSS가 "이미 있던 클래스"로 보고 재생을 건너뜀) */
+/* pieSvgEl(svg 자체)은 innerHTML을 다시 만들지 않는 고정 노드라(내부의 조각 <g>만 매번 새로 그려짐) 이
+   클래스를 report.js의 replayAnimation()이 매번 떼었다 붙이는 방식으로 재생시킨다(레이아웃 재계산 없이는
+   CSS가 "이미 있던 클래스"로 보고 재생을 건너뜀) */
 .report-pie-animate-in {
   animation: reportPieIn 800ms cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -3616,6 +3645,10 @@ button {
   .report-trend-dot {
     animation: none;
     opacity: 1;
+  }
+
+  .report-pie-slice-group {
+    transition: none;
   }
 }
 

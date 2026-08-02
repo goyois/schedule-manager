@@ -54,12 +54,17 @@ const STATUS_LABELS = { PENDING: "대기", IN_PROGRESS: "진행중", COMPLETED: 
 const STATUS_ORDER = ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
 
 // 카테고리는 사용자마다 개수/이름이 제각각이라 상태(PENDING 등)처럼 고정 색을 못 쓴다 - 파이차트/범례/추이
-// 그래프에서 카테고리 인덱스 순서대로(항상 이 순서 고정, 절대 임의로 섞지 않음) 쓰는 팔레트. dataviz
-// 스킬의 검증된 8슬롯 categorical 테마(references/palette.md, 라이트 모드 값 - 이 앱은 다크모드 미지원)를
-// 그대로 썼다: 인접 쌍 기준 CVD ΔE ≥ 8, 일반 시야 ΔE ≥ 15를 모두 통과한 순서라 임의로 재배열하지 않는다.
-// 카테고리가 8개를 넘으면 다시 처음 색부터 순환한다(그 이상은 흔치 않은 경우라 "기타"로 접는 로직까지는
-// 두지 않음).
-const CATEGORY_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
+// 그래프에서 카테고리 인덱스 순서대로(항상 이 순서 고정, 절대 임의로 섞지 않음) 쓰는 팔레트. dataviz 스킬의
+// 검증된 8슬롯 categorical 테마(references/palette.md)를 흰색 25%로 밝힌 파스텔 톤으로 변형했다 - 순서는
+// 원본과 동일하게 유지(재배열은 CVD 안전성을 깨므로 하지 않음), 4번(노랑)·5번(마젠타)만 명도 밴드(OKLCH
+// L 0.43~0.77) 상한을 넘어 각각 2%/14%로 덜 밝혔다. validate_palette.js로 재검증 완료(라이트 모드 기준 -
+// 이 앱은 다크모드 미지원): lightness band/chroma floor/normal-vision floor 모두 PASS, CVD 인접쌍 ΔE는
+// 6~8 경고 구간(#54c39b↔#f08e67 7.8)이라 파이차트에 조각 간 간격 + 조각 내 퍼센트 라벨(큰 조각만) +
+// 범례를 secondary encoding으로 병행한다. CATEGORY_COLORS_LIGHT는 파이 조각의 방사형 그라데이션 중심부
+// (글로시한 볼록 효과) 색 - 각 베이스 색을 흰색 55%로 섞은 값. 카테고리가 8개를 넘으면 처음 색부터
+// 순환한다(그 이상은 흔치 않은 경우라 "기타"로 접는 로직까지는 두지 않음).
+const CATEGORY_COLORS = ["#5f9ae0", "#f08e67", "#54c39b", "#eda305", "#eb8db1", "#40a240", "#776bbd", "#ea7776"];
+const CATEGORY_COLORS_LIGHT = ["#b7d2f1", "#f8ccbb", "#b2e4d2", "#f7d68f", "#f6ccdc", "#a9d5a9", "#c2bce1", "#f6c2c1"];
 
 // 서버 LocalDate 응답("yyyy-MM-dd")을 그대로 쿼리 파라미터로 되돌려보낼 때 쓰는 포맷 - toISOString()은
 // UTC로 변환되며 로컬 자정 근처 날짜가 하루 밀릴 수 있어 로컬 연/월/일을 직접 이어붙인다
@@ -80,8 +85,7 @@ const completionRateEl = document.getElementById("report-completion-rate");
 const comparisonEl = document.getElementById("report-comparison");
 const statusListEl = document.getElementById("report-status-list");
 const pieWrapEl = document.getElementById("report-pie-wrap");
-const pieEl = document.getElementById("report-pie");
-const pieHighlightEl = document.getElementById("report-pie-highlight");
+const pieSvgEl = document.getElementById("report-pie-svg");
 const pieTooltipEl = document.getElementById("report-pie-tooltip");
 const legendEl = document.getElementById("report-legend");
 const trendChartBoxEl = document.getElementById("report-trend-chart-box");
@@ -117,9 +121,9 @@ function renderComparison(previous) {
   `;
 }
 
-// pieEl은 innerHTML로 다시 만들지 않고 style.background만 바꾸는 고정 DOM 노드라, 클래스를 붙이는 것만으로는
-// 두 번째 렌더부터 CSS 애니메이션이 재생되지 않는다(브라우저가 "이미 붙어있던 클래스"로 보고 무시함) -
-// 클래스를 뗐다가 강제로 리플로우시킨 뒤 다시 붙이는 표준 트릭으로 매번 처음부터 재생시킨다
+// 클래스를 붙이는 것만으로는 두 번째 렌더부터 CSS 애니메이션이 재생되지 않는다(브라우저가 "이미
+// 붙어있던 클래스"로 보고 무시함) - 클래스를 뗐다가 강제로 리플로우시킨 뒤 다시 붙이는 표준 트릭으로
+// 매번 처음부터 재생시킨다
 function replayAnimation(el, className) {
   if (prefersReducedMotion) return;
   el.classList.remove(className);
@@ -127,30 +131,86 @@ function replayAnimation(el, className) {
   el.classList.add(className);
 }
 
-// 파이차트는 SVG가 아니라 conic-gradient 배경 하나뿐인 div라 조각별 DOM 요소/hit-test가 없다 - 호버 시
-// 마우스 각도로 어느 조각인지 계산해야 해서(bindPieHover 참고), renderPieChart가 매번 채운 이 배열에
-// 조각별 시작/끝 각도(%)·색·카테고리 정보를 저장해두고 호버 핸들러가 참조한다
+// 파이차트 SVG 기하 상수 - 조각 12시 방향 기준 시계 방향 각도(도)로 계산한다. 조각 사이 각도 간격(GAP_DEG)과
+// 호버 시 바깥으로 튀어나오는 거리(POP_PX)를 담을 여유 패딩까지 포함한 값이 report.html의 viewBox(-88 -88
+// 176 176)와 맞아야 한다.
+const PIE_R = 70;
+const PIE_GAP_DEG = 3;
+const PIE_POP_PX = 9;
+
+// 12시 방향(0도) 기준 시계 방향 각도를 SVG 좌표(중심이 원점)의 [x, y]로 변환한다 - conic-gradient였던
+// 이전 구현과 같은 각도 관례를 유지해 "조각 시작=12시, 시계 방향 증가"가 그대로 성립한다
+function polarPoint(angleDeg, radius) {
+  const rad = (angleDeg * Math.PI) / 180;
+  return [radius * Math.sin(rad), -radius * Math.cos(rad)];
+}
+
+function pieArcPath(startDeg, endDeg, radius) {
+  const [x1, y1] = polarPoint(startDeg, radius);
+  const [x2, y2] = polarPoint(endDeg, radius);
+  const largeArc = endDeg - startDeg > 180 ? 1 : 0;
+  return `M0,0 L${x1.toFixed(2)},${y1.toFixed(2)} A${radius},${radius} 0 ${largeArc} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z`;
+}
+
+// 조각 DOM(<g class="report-pie-slice-group">)이 매 렌더마다 새로 만들어지므로(innerHTML 재작성) 실제
+// 좌표/색 정보는 이 배열에 인덱스로 저장해두고, 호버 핸들러는 이벤트 위임(container는 고정 노드)으로
+// event.target에서 data-idx만 읽어 조회한다
 let pieSlices = [];
+let hoveredPieIdx = null;
 
 function renderPieChart(categoryBreakdown) {
+  hoveredPieIdx = null;
   if (categoryBreakdown.length === 0) {
-    pieEl.style.background = "var(--color-border)";
+    pieSvgEl.innerHTML = "";
+    pieSvgEl.classList.remove("has-hover");
     legendEl.innerHTML = `<li class="report-legend-empty">해당 기간에 등록된 일정이 없어요.</li>`;
     pieSlices = [];
     return;
   }
 
+  // 조각 사이에 실제 빈틈(각도 간격)을 내기 위해 전체 각도(360deg)부터 계산한 뒤, 조각마다 절반씩 안쪽으로
+  // 좁힌다 - 조각이 너무 작아 좁히면 시작>끝으로 역전될 수 있어 최소 폭(1deg)은 보장한다. 조각이 1개뿐이면
+  // 간격을 주지 않는다(전체 원을 다 채워야 하므로)
+  const gapDeg = categoryBreakdown.length > 1 ? PIE_GAP_DEG : 0;
   let cursor = 0;
   pieSlices = categoryBreakdown.map((c, i) => {
-    const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+    const colorIdx = i % CATEGORY_COLORS.length;
     const start = cursor;
-    // 반올림 오차로 마지막 구간이 100%를 못 채우는 걸 방지하기 위해 마지막 항목은 100%까지 채운다
-    const end = i === categoryBreakdown.length - 1 ? 100 : cursor + c.percentage;
+    // 반올림 오차로 마지막 구간이 360deg를 못 채우는 걸 방지하기 위해 마지막 항목은 360deg까지 채운다
+    const end = i === categoryBreakdown.length - 1 ? 360 : cursor + (c.percentage / 100) * 360;
     cursor = end;
-    return { color, start, end, categoryName: c.categoryName, count: c.count, percentage: c.percentage };
+    const halfGap = Math.min(gapDeg / 2, Math.max((end - start) / 2 - 0.5, 0));
+    return {
+      start, end, mid: (start + end) / 2,
+      gStart: start + halfGap, gEnd: end - halfGap,
+      color: CATEGORY_COLORS[colorIdx], colorIdx,
+      categoryName: c.categoryName, count: c.count, percentage: c.percentage,
+    };
   });
-  pieEl.style.background = `conic-gradient(${pieSlices.map((s) => `${s.color} ${s.start}% ${s.end}%`).join(", ")})`;
-  replayAnimation(pieEl, "report-pie-animate-in");
+
+  const defs = CATEGORY_COLORS.map((color, i) => `
+    <radialGradient id="report-pie-grad-${i}" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="${PIE_R}">
+      <stop offset="0%" stop-color="${CATEGORY_COLORS_LIGHT[i]}" />
+      <stop offset="100%" stop-color="${color}" />
+    </radialGradient>
+  `).join("");
+
+  // 조각이 충분히 커야(6% 이상) 안에 퍼센트 글자가 겹치지 않고 들어간다 - 작은 조각은 라벨을 생략하고
+  // 범례가 대신 이름/퍼센트를 보여준다(dataviz 스킬의 "모든 점에 숫자를 찍지 말라" - 선택적 직접 라벨)
+  const paths = pieSlices.map((s, i) => {
+    const showLabel = s.percentage >= 6;
+    const [lx, ly] = polarPoint(s.mid, PIE_R * 0.62);
+    return `
+      <g class="report-pie-slice-group" data-idx="${i}">
+        <path class="report-pie-slice" data-idx="${i}" fill="url(#report-pie-grad-${s.colorIdx})"
+          d="${pieArcPath(s.gStart, s.gEnd, PIE_R)}"></path>
+        ${showLabel ? `<text class="report-pie-slice-label" data-idx="${i}" x="${lx.toFixed(2)}" y="${ly.toFixed(2)}">${Math.round(s.percentage)}%</text>` : ""}
+      </g>
+    `;
+  }).join("");
+
+  pieSvgEl.innerHTML = `<defs>${defs}</defs>${paths}`;
+  replayAnimation(pieSvgEl, "report-pie-animate-in");
 
   // 범례 <li>는 매번 innerHTML로 새로 만드는 요소라 별도 리플로우 없이도 애니메이션이 항상 처음부터
   // 재생된다 - 항목마다 --stagger-index로 순서대로 살짝 늦게 나타나게 한다
@@ -163,46 +223,37 @@ function renderPieChart(categoryBreakdown) {
   `).join("");
 }
 
-// 마우스 위치를 파이 중심 기준 각도로 변환해 어느 조각 위에 있는지 계산한다 - conic-gradient의 기본
-// 시작각(12시 방향)·회전 방향(시계 방향)과 맞춰야 pieSlices의 start/end(%)와 일치한다. pieEl은
-// innerHTML로 다시 만들어지지 않는 고정 노드라 리스너는 한 번만 붙이면 되고, 매 렌더마다 최신
-// pieSlices를 참조하기만 하면 된다
-// 호버 중인 조각만 남기고 나머지를 어둡게 덮는 conic-gradient를 만든다 - 조각별 DOM 요소가 없어(파이가
-// conic-gradient 배경 하나뿐이라) 실제 조각 색을 바꾸는 대신, 그 위에 겹친 투명 레이어(report-pie-highlight)의
-// 배경을 매번 다시 그리는 방식으로 "그 구간만 밝게(=안 덮임), 나머지만 어둡게" 대비를 낸다
-const PIE_DIM_COLOR = "rgba(20, 23, 45, 0.35)";
-
-function updatePieHighlight(slice) {
-  if (!slice) {
-    pieHighlightEl.style.background = "transparent";
-    return;
-  }
-  const stops = [`${PIE_DIM_COLOR} 0% ${slice.start}%`, `transparent ${slice.start}% ${slice.end}%`];
-  if (slice.end < 100) stops.push(`${PIE_DIM_COLOR} ${slice.end}% 100%`);
-  pieHighlightEl.style.background = `conic-gradient(${stops.join(", ")})`;
+// 호버 중인 조각만 중심 바깥으로 살짝(POP_PX) 밀어내고 나머지는 어둡게(CSS .has-hover 규칙) 만든다 -
+// 조각별 <g>가 실제 DOM 요소라 이전의 각도 계산식 호버(conic-gradient 시절) 대신 진짜 hit-test를 쓴다
+function setHoveredPie(idx) {
+  if (hoveredPieIdx === idx) return;
+  hoveredPieIdx = idx;
+  pieSvgEl.classList.toggle("has-hover", idx !== null);
+  pieSvgEl.querySelectorAll(".report-pie-slice-group").forEach((g) => {
+    const isHovered = Number(g.dataset.idx) === idx;
+    g.classList.toggle("hovered", isHovered);
+    if (!isHovered) g.style.transform = "";
+    else {
+      const [dx, dy] = polarPoint(pieSlices[idx].mid, PIE_POP_PX);
+      g.style.transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px)`;
+    }
+  });
 }
 
 function bindPieHover() {
-  pieEl.addEventListener("mousemove", (e) => {
-    if (pieSlices.length === 0) return;
-
-    const rect = pieEl.getBoundingClientRect();
-    const radius = rect.width / 2;
-    const dx = e.clientX - (rect.left + radius);
-    const dy = e.clientY - (rect.top + radius);
-    if (Math.sqrt(dx * dx + dy * dy) > radius) {
+  // 조각(<g>)이 매 렌더마다 새로 만들어지는 노드라 리스너는 고정 컨테이너(pieSvgEl)에 한 번만 위임해
+  // 붙이고, event.target에서 가장 가까운 조각 그룹을 찾아 data-idx로 pieSlices를 조회한다
+  pieSvgEl.addEventListener("mousemove", (e) => {
+    const group = e.target.closest(".report-pie-slice-group");
+    if (!group) {
+      setHoveredPie(null);
       pieTooltipEl.style.display = "none";
-      updatePieHighlight(null);
       return;
     }
+    const idx = Number(group.dataset.idx);
+    setHoveredPie(idx);
 
-    let angleDeg = Math.atan2(dx, -dy) * (180 / Math.PI); // 0deg = 12시, 시계 방향으로 증가
-    if (angleDeg < 0) angleDeg += 360;
-    const pct = (angleDeg / 360) * 100;
-    const slice = pieSlices.find((s) => pct >= s.start && pct < s.end) || pieSlices[pieSlices.length - 1];
-
-    updatePieHighlight(slice);
-
+    const slice = pieSlices[idx];
     pieTooltipEl.innerHTML = `
       <div class="report-trend-tooltip-row">
         <span class="report-legend-dot" style="background:${slice.color}"></span>
@@ -221,9 +272,9 @@ function bindPieHover() {
     pieTooltipEl.style.top = `${e.clientY - wrapRect.top + 12}px`;
   });
 
-  pieEl.addEventListener("mouseleave", () => {
+  pieSvgEl.addEventListener("mouseleave", () => {
+    setHoveredPie(null);
     pieTooltipEl.style.display = "none";
-    updatePieHighlight(null);
   });
 }
 
