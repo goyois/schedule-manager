@@ -2174,6 +2174,22 @@ select {
   border-top: 1px solid var(--color-border);
 }
 
+/* 겹치는 일정이 많아 레인이 상한(MAX_DAY_LANES_BEFORE_SCROLL)을 넘으면 이 레이어만 가로 스크롤된다 -
+   시간 그리드선(.cal-hour-line)/현재 시각선(.cal-now-line)은 .cal-day-column의 직계 자식으로 남아있어
+   스크롤과 무관하게 항상 그 자리에 고정된다 */
+.cal-day-column-lanes {
+  position: absolute;
+  inset: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.cal-day-column-lanes-inner {
+  position: relative;
+  height: 100%;
+  min-width: 100%;
+}
+
 .cal-event-block {
   position: absolute;
   border-radius: 6px;

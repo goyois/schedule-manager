@@ -1775,6 +1775,13 @@ function renderMonthView() {
 
 // -- 주간 / 일간: 0~24시 타임그리드 (numDays = 1 이면 일간, 7이면 주간) --
 
+// 겹치는 일정이 많아지면(assignHorizontalLanes가 만드는 레인이 계속 늘어남) 컬럼 폭을 레인 수만큼
+// 끝없이 나눠 카드가 실처럼 찌그러지던 문제 - 레인이 이 개수를 넘으면 폭을 더 줄이는 대신 최소
+// 가독 폭을 유지하고, 넘치는 만큼은 그 날짜 컬럼 안에서만 가로 스크롤되게 한다(다른 날짜 컬럼 폭에는
+// 영향 없음 - cal-day-column-lanes 참고)
+const MAX_DAY_LANES_BEFORE_SCROLL = 4;
+const MIN_DAY_LANE_WIDTH_PX = 76;
+
 function renderDayOrWeekView(numDays) {
   const rangeStart = numDays === 1 ? startOfDay(viewDate) : startOfWeek(viewDate);
   const days = Array.from({ length: numDays }, (_, i) => addDays(rangeStart, i));
@@ -1842,15 +1849,31 @@ function renderDayOrWeekView(numDays) {
 
     const laned = assignHorizontalLanes(dayEvents);
     const laneCount = laned.reduce((max, e) => Math.max(max, e.lane + 1), 1);
+    // 레인이 상한을 넘으면 그때부터는 비율(%) 대신 고정 최소 폭(px)을 쓰고, 그만큼 늘어난 전체 폭은
+    // lanesWrap의 가로 스크롤로 감당한다 - 상한 이하일 때는 기존과 동일하게 컬럼 폭을 그대로 나눈다
+    const useFixedLaneWidth = laneCount > MAX_DAY_LANES_BEFORE_SCROLL;
+
+    const lanesWrap = document.createElement("div");
+    lanesWrap.className = "cal-day-column-lanes";
+    const lanesInner = document.createElement("div");
+    lanesInner.className = "cal-day-column-lanes-inner";
+    if (useFixedLaneWidth) {
+      lanesInner.style.width = `${laneCount * MIN_DAY_LANE_WIDTH_PX}px`;
+    }
 
     laned.forEach((s) => {
       const block = document.createElement("div");
       block.className = "cal-event-block";
       block.style.top = `${(s.startMin / 60) * HOUR_PX}px`;
       block.style.height = `${((s.endMin - s.startMin) / 60) * HOUR_PX - 2}px`;
-      const width = 100 / laneCount;
-      block.style.left = `${s.lane * width}%`;
-      block.style.width = `calc(${width}% - 3px)`;
+      if (useFixedLaneWidth) {
+        block.style.left = `${s.lane * MIN_DAY_LANE_WIDTH_PX}px`;
+        block.style.width = `${MIN_DAY_LANE_WIDTH_PX - 3}px`;
+      } else {
+        const width = 100 / laneCount;
+        block.style.left = `${s.lane * width}%`;
+        block.style.width = `calc(${width}% - 3px)`;
+      }
       block.style.background = STATUS_BG_VAR[s.status] || "var(--color-bg)";
       block.style.color = STATUS_COLOR_VAR[s.status] || "var(--color-text-muted)";
       block.style.borderLeftColor = STATUS_COLOR_VAR[s.status] || "var(--color-text-muted)";
@@ -1864,8 +1887,11 @@ function renderDayOrWeekView(numDays) {
       block.appendChild(timeEl);
 
       block.addEventListener("click", () => openDetailModal(s.id));
-      col.appendChild(block);
+      lanesInner.appendChild(block);
     });
+
+    lanesWrap.appendChild(lanesInner);
+    col.appendChild(lanesWrap);
 
     if (isSameDay(d, today)) {
       const nowMin = today.getHours() * 60 + today.getMinutes();
