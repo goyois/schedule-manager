@@ -155,6 +155,9 @@ class MandalartGoalEmbeddingServiceTest {
         assertThat(sentRequest.getQuery()).isEqualTo("체력 기르기");
         assertThat(sentRequest.getTopK()).isEqualTo(1);
         assertThat(sentRequest.hasFilterExpression()).isTrue();
+        // topK=1이라 하한선이 없으면 무관한 과거 블록도 "가장 비슷한 것"이라는 이유만으로 항상 few-shot에
+        // 끼워 넣게 된다 - ScheduleEmbeddingService와 동일한 근거(실측값)로 고정한 하한선
+        assertThat(sentRequest.getSimilarityThreshold()).isEqualTo(0.35);
     }
 
     @Test

@@ -100,6 +100,9 @@ class ScheduleEmbeddingServiceTest {
         // excludeIds는 필터(nin)로 내려보내지 않고 애플리케이션에서 걸러내므로, 그만큼 더 넉넉히 요청한다
         assertThat(sentRequest.getTopK()).isEqualTo(6);
         assertThat(sentRequest.hasFilterExpression()).isTrue();
+        // 유사도 하한선 없이 topK를 무조건 채우던 버그의 재발 방지 - 실측(text-embedding-3-small,
+        // 한국어) 기준 0.35 미만은 대부분 무관했다는 근거로 고정한 값
+        assertThat(sentRequest.getSimilarityThreshold()).isEqualTo(0.35);
     }
 
     @Test

@@ -8,6 +8,7 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.Filter;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -33,8 +34,16 @@ public class ScheduleEmbeddingService {
 
     private static final String DOC_TYPE = "schedule";
 
+    // 코사인 유사도 하한선 - text-embedding-3-small(한국어)로 실측한 결과(2026-08-03, 등산/프로젝트
+    // 발표 질의 각 6개 후보 기준), 실제로 관련 있는 일정끼리는 0.39~0.49, 무관한 일정은 0.18~0.34
+    // 범위였다. 완전히 분리되는 값은 아니지만(무관한 항목이 0.34까지 올라간 사례도 있었음), 0.35 밑으로는
+    // 대부분 무관했다 - topK를 무조건 채워서 "그나마 제일 나은 걸" 끼워 넣는 대신, 이 값 미만은 버리고
+    // 차라리 RAG 보강 없이 진행하는 쪽을 택했다.
+    private static final double SIMILARITY_THRESHOLD = 0.35;
+
     private final VectorStore vectorStore;
 
+    @Async("embeddingTaskExecutor")
     public void reindexSchedule(Long userId, Schedule schedule) {
         try {
             String content = schedule.getContent() == null || schedule.getContent().isBlank()
@@ -68,7 +77,10 @@ public class ScheduleEmbeddingService {
             Filter.Expression filter = b.and(b.eq("docType", DOC_TYPE), b.eq("userId", userId)).build();
 
             List<Document> results = vectorStore.similaritySearch(
-                    SearchRequest.query(queryText).withTopK(topK + excludeIds.size()).withFilterExpression(filter));
+                    SearchRequest.query(queryText)
+                            .withTopK(topK + excludeIds.size())
+                            .withSimilarityThreshold(SIMILARITY_THRESHOLD)
+                            .withFilterExpression(filter));
             return results.stream()
                     .map(d -> ((Number) d.getMetadata().get("scheduleId")).longValue())
                     .filter(id -> !excludeIds.contains(id))
@@ -80,6 +92,7 @@ public class ScheduleEmbeddingService {
         }
     }
 
+    @Async("embeddingTaskExecutor")
     public void deleteScheduleEmbedding(Long scheduleId) {
         try {
             vectorStore.delete(List.of(scheduleDocumentId(scheduleId)));

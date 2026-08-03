@@ -9,6 +9,7 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.Filter;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -44,6 +45,11 @@ public class MandalartGoalEmbeddingService {
     // 도메인을 구분해둔다 - 없으면 userId만 겹쳐도 검색 결과에 일정 문서가 섞여 들어올 수 있다
     private static final String DOC_TYPE = "mandalart_block";
 
+    // ScheduleEmbeddingService와 동일한 근거로 정한 코사인 유사도 하한선(같은 임베딩 모델/언어) - 여기는
+    // topK=1(가장 비슷한 블록 1개만 few-shot으로 씀)이라 하한선이 없으면 무관한 과거 목표라도 "가장 비슷한
+    // 것"이라는 이유만으로 매번 프롬프트에 끼워 넣게 된다.
+    private static final double SIMILARITY_THRESHOLD = 0.35;
+
     private final VectorStore vectorStore;
     private final MandalartCellRepository mandalartCellRepository;
 
@@ -60,6 +66,7 @@ public class MandalartGoalEmbeddingService {
         return new int[] {row / 3, col / 3};
     }
 
+    @Async("embeddingTaskExecutor")
     public void reindexBlockIfComplete(Long userId, Long boardId, int blockRow, int blockCol) {
         try {
             Optional<MandalartCell> subGoalCellOpt = mandalartCellRepository
@@ -111,6 +118,7 @@ public class MandalartGoalEmbeddingService {
             List<Document> results = vectorStore.similaritySearch(
                     SearchRequest.query(subGoalText)
                             .withTopK(topK)
+                            .withSimilarityThreshold(SIMILARITY_THRESHOLD)
                             .withFilterExpression(filter)
             );
             return results.stream()
@@ -122,6 +130,7 @@ public class MandalartGoalEmbeddingService {
         }
     }
 
+    @Async("embeddingTaskExecutor")
     public void deleteBoardEmbeddings(Long boardId) {
         try {
             List<String> ids = OUTER_BLOCK_COORDS.stream()
