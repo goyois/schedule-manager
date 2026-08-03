@@ -1,16 +1,34 @@
-// 사이트 전체 다크/라이트 테마 토글 - 로그인 계정과 무관한 순수 UI 취향이라(sidebar.js의 사이드바
-// 접힘 상태와 같은 이유) 서버가 아니라 브라우저 localStorage에 저장한다.
+// 계정별 다크/라이트 테마 토글 - 서버 컬럼 없이 브라우저 localStorage에 저장하되, 키에 로그인
+// 계정(email)을 넣어 계정별로 분리한다. 예전엔 "sm_theme" 단일 키를 썼는데, 그러면 같은 브라우저에서
+// 여러 계정을 번갈아 로그인하는 경우(테스트 계정, 공용 PC 등) 한 계정에서 바꾼 테마가 그대로 다른
+// 계정에도 적용되는 것처럼 보였다 - localStorage는 브라우저(오리진) 단위지 계정 단위가 아니기 때문.
+// 로그인 전(로그인/회원가입 페이지)에는 계정을 모르므로 "sm_theme_anonymous" 하나를 공유해서 쓴다.
 //
 // 실제 테마 적용(css/style.css의 :root[data-theme])은 이 파일이 아니라 각 HTML <head> 안의 인라인
 // <script>가 담당한다 - 화면이 라이트로 한번 그려졌다가 다크로 바뀌는 깜빡임(FOUC)을 막으려면 CSS가
 // 파싱되기 전에 data-theme 속성이 이미 심어져 있어야 하는데, 이 파일처럼 </body> 직전에 로드되는
-// 외부 스크립트로는 너무 늦다. 이 파일은 그 뒤에 이어서 두 UI를 서로 동기화한다: 설정 페이지의
-// 토글 스위치(#dark-mode-toggle)와, 로그아웃 버튼 왼쪽의 아이콘 버튼(#theme-toggle-btn, 대시보드/
-// 만다라트/리포트/설정 quote-bar) - 한쪽에서 바꾸면 같은 페이지에 둘 다 있어도 항상 같이 갱신된다.
-const THEME_STORAGE_KEY = "sm_theme";
+// 외부 스크립트로는 너무 늦다. 그 인라인 스크립트는 api.js보다도 먼저 실행되므로 계정별 키를 만드는
+// 로직(currentUserThemeKey와 동일한 내용)을 각 HTML에 그대로 복제해뒀다 - 한쪽만 고치고 다른 쪽을
+// 놓치지 않도록, 이 두 곳의 로직을 바꿀 땐 항상 같이 맞춰야 한다.
+// 이 파일은 그 뒤에 이어서 두 UI를 서로 동기화한다: 설정 페이지의 토글 스위치(#dark-mode-toggle)와,
+// 로그아웃 버튼 왼쪽의 아이콘 버튼(#theme-toggle-btn, 대시보드/만다라트/리포트/설정 quote-bar) -
+// 한쪽에서 바꾸면 같은 페이지에 둘 다 있어도 항상 같이 갱신된다.
+const THEME_STORAGE_KEY_PREFIX = "sm_theme_";
+const USER_STORAGE_KEY = "sm_current_user"; // api.js의 USER_KEY와 같은 값
+
+function currentUserThemeKey() {
+  try {
+    const raw = localStorage.getItem(USER_STORAGE_KEY);
+    const user = raw ? JSON.parse(raw) : null;
+    const identifier = user && (user.email || user.id);
+    return THEME_STORAGE_KEY_PREFIX + (identifier || "anonymous");
+  } catch (e) {
+    return THEME_STORAGE_KEY_PREFIX + "anonymous";
+  }
+}
 
 function currentEffectiveTheme() {
-  const stored = localStorage.getItem(THEME_STORAGE_KEY);
+  const stored = localStorage.getItem(currentUserThemeKey());
   if (stored === "dark" || stored === "light") return stored;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
@@ -51,7 +69,7 @@ function updateThemeUi(theme) {
 
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  localStorage.setItem(THEME_STORAGE_KEY, theme);
+  localStorage.setItem(currentUserThemeKey(), theme);
   updateThemeUi(theme);
 }
 

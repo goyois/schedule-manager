@@ -8,7 +8,16 @@
        저장된 테마를 동기적으로 먼저 심어둔다(js/theme.js는 </body> 직전에 로드돼 너무 늦다) -->
   <script>
     (function () {
-      var t = localStorage.getItem("sm_theme");
+      // theme.js의 currentUserThemeKey()와 반드시 같은 로직이어야 한다 - 계정별로 테마를 분리하기
+      // 위해 로그인 계정(email/id)을 키에 넣는다(없으면 로그인 전 공용 anonymous 버킷)
+      var key = "sm_theme_anonymous";
+      try {
+        var raw = localStorage.getItem("sm_current_user");
+        var user = raw ? JSON.parse(raw) : null;
+        var identifier = user && (user.email || user.id);
+        if (identifier) key = "sm_theme_" + identifier;
+      } catch (e) {}
+      var t = localStorage.getItem(key);
       if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
     })();
   </script>
