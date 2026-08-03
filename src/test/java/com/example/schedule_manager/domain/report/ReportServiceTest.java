@@ -41,8 +41,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
@@ -130,7 +132,7 @@ class ReportServiceTest {
                 schedule(5L, "다음 주 일정", afterWeek, ScheduleStatus.PENDING, "업무"),
                 schedule(6L, "지난 주 완료", lastWeekWednesday, ScheduleStatus.COMPLETED, "업무")
         );
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(all);
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(all);
 
         ReportStatsDto stats = reportService.getStats("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
 
@@ -161,7 +163,7 @@ class ReportServiceTest {
     void getStats_emptyPeriod_returnsZeroRatesWithoutDivideByZero() {
         User requester = user(1L);
         when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(List.of());
 
         ReportStatsDto stats = reportService.getStats("tester@example.com", ReportPeriod.MONTH, LocalDate.now());
 
@@ -176,7 +178,7 @@ class ReportServiceTest {
     void getStats_nullDate_defaultsToToday() {
         User requester = user(1L);
         when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(List.of());
 
         ReportStatsDto stats = reportService.getStats("tester@example.com", ReportPeriod.YEAR, null);
 
@@ -197,7 +199,7 @@ class ReportServiceTest {
                 schedule(3L, "보고서", sunday, ScheduleStatus.PENDING, "업무"),
                 schedule(4L, "헬스장", monday.plusDays(2), ScheduleStatus.COMPLETED, "운동")
         );
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(all);
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(all);
 
         ReportStatsDto stats = reportService.getStats("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
         CategoryTrendDto trend = stats.categoryTrend();
@@ -229,7 +231,7 @@ class ReportServiceTest {
                 schedule(1L, "신년 계획", yearStart, ScheduleStatus.COMPLETED, "업무"),
                 schedule(2L, "여름 휴가", yearStart.plusMonths(5), ScheduleStatus.COMPLETED, "일상")
         );
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(all);
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(all);
 
         ReportStatsDto stats = reportService.getStats("tester@example.com", ReportPeriod.YEAR, LocalDate.now());
         CategoryTrendDto trend = stats.categoryTrend();
@@ -253,7 +255,7 @@ class ReportServiceTest {
     void getStats_emptyPeriod_categoryTrendHasLabelsButNoSeries() {
         User requester = user(1L);
         when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(List.of());
 
         ReportStatsDto stats = reportService.getStats("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
 
@@ -280,7 +282,7 @@ class ReportServiceTest {
 
         LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
         List<ScheduleResponseDto> all = List.of(schedule(1L, "팀 회의", monday, ScheduleStatus.COMPLETED, "업무"));
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(all);
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(all);
 
         stubChatClient(new ReportInsightDto(
                 List.of("완료율이 높아요"), List.of("운동이 부족해요"), "평일 오전에 일정이 몰려있어요", "계획적인 편이에요"));
@@ -308,10 +310,13 @@ class ReportServiceTest {
 
         LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
         ScheduleResponseDto inRange = schedule(1L, "팀 회의", monday, ScheduleStatus.COMPLETED, "업무");
+        // 저번 분기(3개월 전)는 이번/직전 기간 범위 밖이라 getSchedulesInRange로는 안 잡힌다 -
+        // buildRagContext가 매칭된 id(2L)를 getSchedulesByIds로 targeted 조회해서 가져온다
         ScheduleResponseDto similarPast = schedule(2L, "저번 분기 킥오프", monday.minusMonths(3), ScheduleStatus.COMPLETED, "업무");
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(inRange, similarPast));
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(List.of(inRange));
         when(scheduleEmbeddingService.findSimilarScheduleIds(eq(1L), anyString(), any(), eq(5)))
                 .thenReturn(List.of(2L));
+        when(scheduleService.getSchedulesByIds(anySet())).thenReturn(List.of(similarPast));
 
         stubChatClient(new ReportInsightDto(List.of(), List.of(), "패턴", "성향"));
 
@@ -331,7 +336,7 @@ class ReportServiceTest {
         when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
 
         LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
-        when(scheduleService.getSchedules("tester@example.com", 1L, null))
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class)))
                 .thenReturn(List.of(schedule(1L, "팀 회의", monday, ScheduleStatus.COMPLETED, "업무")));
         // findSimilarScheduleIds는 스텁하지 않음 - Mockito 기본값(빈 리스트)을 그대로 씀
 
@@ -349,7 +354,7 @@ class ReportServiceTest {
     void getInsight_sanitizesNullAndOversizedLists() {
         User requester = user(1L);
         when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(List.of());
 
         List<String> sevenItems = List.of("1", "2", "3", "4", "5", "6", "7");
         stubChatClient(new ReportInsightDto(sevenItems, null, null, null));
@@ -367,7 +372,7 @@ class ReportServiceTest {
     void getInsight_chatClientThrows_wrapsAsBusinessException() {
         User requester = user(1L);
         when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(requester));
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of());
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(List.of());
 
         when(chatClient.prompt()).thenReturn(chatClientRequest);
         when(chatClientRequest.system(anyString())).thenReturn(chatClientRequest);
@@ -419,7 +424,7 @@ class ReportServiceTest {
         List<ScheduleResponseDto> all = List.of(
                 schedule(1L, "회의", monday, ScheduleStatus.COMPLETED, "업무", earlierUpdatedAt),
                 schedule(2L, "운동", monday.plusDays(1), ScheduleStatus.COMPLETED, "운동", laterUpdatedAt));
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(all);
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(all);
         stubChatClient(new ReportInsightDto(List.of("잘함"), List.of("아쉬움"), "패턴", "성향"));
 
         reportService.getInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
@@ -455,7 +460,7 @@ class ReportServiceTest {
         LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
         List<ScheduleResponseDto> all = List.of(
                 schedule(1L, "회의", monday, ScheduleStatus.COMPLETED, "업무", monday.atTime(9, 0)));
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(all);
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(all);
         stubChatClient(new ReportInsightDto(List.of("잘함1", "잘함2"), List.of("아쉬움"), "패턴", "성향"));
         reportService.getInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
 
@@ -481,7 +486,7 @@ class ReportServiceTest {
 
         LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
         ScheduleResponseDto original = schedule(1L, "회의", monday, ScheduleStatus.COMPLETED, "업무", monday.atTime(9, 0));
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(original));
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(List.of(original));
         stubChatClient(new ReportInsightDto(List.of("잘함"), List.of(), "패턴", "성향"));
         reportService.getInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
 
@@ -494,7 +499,7 @@ class ReportServiceTest {
         List<ScheduleResponseDto> changed = List.of(
                 original,
                 schedule(2L, "새 일정", monday.plusDays(1), ScheduleStatus.PENDING, "일상", monday.plusDays(1).atTime(10, 0)));
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(changed);
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(changed);
 
         ReportInsightCacheDto cached = reportService.getCachedInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
 
@@ -510,7 +515,7 @@ class ReportServiceTest {
 
         LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
         ScheduleResponseDto original = schedule(1L, "회의", monday, ScheduleStatus.PENDING, "업무", monday.atTime(9, 0));
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(original));
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(List.of(original));
         stubChatClient(new ReportInsightDto(List.of("잘함"), List.of(), "패턴", "성향"));
         reportService.getInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
 
@@ -521,7 +526,7 @@ class ReportServiceTest {
 
         // 같은 일정(건수 그대로 1건)이지만 상태가 바뀌어 updatedAt만 갱신됨
         ScheduleResponseDto updated = schedule(1L, "회의", monday, ScheduleStatus.COMPLETED, "업무", monday.atTime(18, 0));
-        when(scheduleService.getSchedules("tester@example.com", 1L, null)).thenReturn(List.of(updated));
+        when(scheduleService.getSchedulesInRange(eq("tester@example.com"), eq(1L), isNull(), any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(List.of(updated));
 
         ReportInsightCacheDto cached = reportService.getCachedInsight("tester@example.com", ReportPeriod.WEEK, LocalDate.now());
 

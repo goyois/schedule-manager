@@ -17,6 +17,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 import static com.example.schedule_manager.domain.category.entity.QCategory.*;
 import static com.example.schedule_manager.domain.schedule.entity.QSchedule.*;
@@ -97,6 +98,53 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryCustom {
                         schedule.status.eq(status),
                         overlapsRange(schedule, rangeStart, rangeEnd))
                 .fetchOne());
+    }
+
+    // ReportService 전용 - status 필터/페이징 없이 [rangeStart, rangeEnd) 범위와 겹치는 일정만 조회한다
+    @Override
+    public List<ScheduleResponseDto> searchSchedulesInRange(Long userId, Long categoryId,
+                                                              LocalDateTime rangeStart, LocalDateTime rangeEnd) {
+        return queryFactory.select(Projections.constructor(ScheduleResponseDto.class,
+                        schedule.id,
+                        schedule.title,
+                        schedule.content,
+                        schedule.startAt,
+                        schedule.endAt,
+                        schedule.status,
+                        user.username,
+                        category.name,
+                        schedule.updatedAt))
+                .from(schedule)
+                .join(schedule.user, user)
+                .join(schedule.category, category)
+                .where(
+                        userIdEq(schedule, userId),
+                        categoryIdEq(schedule, categoryId),
+                        overlapsRange(schedule, rangeStart, rangeEnd))
+                .fetch();
+    }
+
+    // ReportService.buildRagContext 전용 - RAG가 매칭한 (기간 밖일 수 있는) 소수의 id를 바로 조회한다
+    @Override
+    public List<ScheduleResponseDto> searchSchedulesByIds(Set<Long> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return queryFactory.select(Projections.constructor(ScheduleResponseDto.class,
+                        schedule.id,
+                        schedule.title,
+                        schedule.content,
+                        schedule.startAt,
+                        schedule.endAt,
+                        schedule.status,
+                        user.username,
+                        category.name,
+                        schedule.updatedAt))
+                .from(schedule)
+                .join(schedule.user, user)
+                .join(schedule.category, category)
+                .where(schedule.id.in(ids))
+                .fetch();
     }
 
     // null 을 반환하면 QueryDSL 이 where() 절에서 해당 조건을 통째로 무시한다

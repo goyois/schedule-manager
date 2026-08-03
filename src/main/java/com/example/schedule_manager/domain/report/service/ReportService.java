@@ -107,8 +107,20 @@ public class ReportService {
     public ReportStatsDto getStats(String requesterEmail, ReportPeriod period, LocalDate referenceDate) {
         User requester = findUserByEmail(requesterEmail);
         LocalDate ref = referenceDate != null ? referenceDate : LocalDate.now();
-        List<ScheduleResponseDto> all = scheduleService.getSchedules(requesterEmail, requester.getId(), null);
-        return computeStats(period, ref, all);
+        List<ScheduleResponseDto> windowed = fetchStatsWindow(requesterEmail, requester.getId(), period, ref);
+        return computeStats(period, ref, windowed);
+    }
+
+    // getStats/getInsight가 필요로 하는 건 이번 기간(range) + 직전 동일 기간(previousRange) 비교뿐인데,
+    // 예전엔 computeStats에 유저 전체 이력을 무제한으로 넘겨서 그 안에서 메모리로 걸러냈다(요청마다
+    // 일정이 쌓일수록 비용이 커지는 구조). 두 기간은 항상 붙어있으므로(prevRange[1] = range[0]-1일)
+    // [prevRange[0], range[1]] 하나의 DB 범위 조회로 두 구간을 한 번에 커버한다 - computeStats 내부
+    // 로직(resolveRange/previousRange/overlapping)은 그대로 두고 입력 리스트만 이렇게 좁힌다
+    private List<ScheduleResponseDto> fetchStatsWindow(String requesterEmail, Long userId, ReportPeriod period, LocalDate ref) {
+        LocalDate[] range = resolveRange(period, ref);
+        LocalDate[] prevRange = previousRange(period, range[0]);
+        return scheduleService.getSchedulesInRange(requesterEmail, userId, null,
+                prevRange[0].atStartOfDay(), range[1].plusDays(1).atStartOfDay());
     }
 
     // AI를 실제로 호출해 재생성하고, 결과를 ReportInsightSnapshot에 upsert한다(그래서 더 이상
@@ -120,15 +132,15 @@ public class ReportService {
         aiRateLimiter.checkLimit(requester.getId(), requester.getUserType());
 
         LocalDate ref = referenceDate != null ? referenceDate : LocalDate.now();
-        List<ScheduleResponseDto> all = scheduleService.getSchedules(requesterEmail, requester.getId(), null);
-        ReportStatsDto stats = computeStats(period, ref, all);
+        List<ScheduleResponseDto> windowed = fetchStatsWindow(requesterEmail, requester.getId(), period, ref);
+        ReportStatsDto stats = computeStats(period, ref, windowed);
 
         LocalDate[] range = resolveRange(period, ref);
-        List<ScheduleResponseDto> inRange = overlapping(all, range[0].atStartOfDay(), range[1].plusDays(1).atStartOfDay());
+        List<ScheduleResponseDto> inRange = overlapping(windowed, range[0].atStartOfDay(), range[1].plusDays(1).atStartOfDay());
 
         String userPrompt = "[기간 통계]\n" + buildStatsContext(stats)
                 + "\n\n[이번 기간 일정 목록]\n" + buildScheduleListContext(inRange)
-                + buildRagContext(requester.getId(), inRange, all);
+                + buildRagContext(requester.getId(), inRange);
 
         ReportInsightDto suggestion;
         try {
@@ -162,8 +174,8 @@ public class ReportService {
             return new ReportInsightCacheDto(null, false, null);
         }
 
-        List<ScheduleResponseDto> all = scheduleService.getSchedules(requesterEmail, requester.getId(), null);
-        List<ScheduleResponseDto> inRange = overlapping(all, range[0].atStartOfDay(), range[1].plusDays(1).atStartOfDay());
+        List<ScheduleResponseDto> inRange = scheduleService.getSchedulesInRange(requesterEmail, requester.getId(), null,
+                range[0].atStartOfDay(), range[1].plusDays(1).atStartOfDay());
         Fingerprint current = fingerprintOf(inRange);
         boolean stale = current.count() != snapshot.getScheduleCount()
                 || !Objects.equals(current.latestUpdatedAt(), snapshot.getLatestScheduleUpdatedAt());
@@ -398,8 +410,12 @@ public class ReportService {
     // 보강한다(AiService.sendMessage가 채팅 응답에 하는 것과 같은 목적의 RAG, 다만 질의가 사용자 메시지가
     // 아니라 "이번 기간 일정 제목들"이라는 점이 다르다) - "이런 활동이 예전에도 있었다" 같은 연속성 있는
     // 서술을 가능하게 한다. 검색 자체가 실패해도 ScheduleEmbeddingService가 이미 fail-open으로 빈 목록을
-    // 돌려주므로 여기서 별도 예외 처리는 필요 없다
-    private String buildRagContext(Long userId, List<ScheduleResponseDto> inRange, List<ScheduleResponseDto> all) {
+    // 돌려주므로 여기서 별도 예외 처리는 필요 없다.
+    //
+    // 매칭된 일정은 이번/직전 기간 밖(몇 달 전 등)일 수 있어 getSchedulesByIds로 그 (RAG_TOP_K=5개 이하)
+    // id만 targeted 조회한다 - 예전엔 이 조회를 피하려고 유저 전체 이력을 항상 미리 들고 있었는데,
+    // 그 대가(매 리포트 요청마다 무제한 전체 조회)가 실제 매칭이 있을 때만 발생하는 이 작은 조회보다 컸다
+    private String buildRagContext(Long userId, List<ScheduleResponseDto> inRange) {
         if (inRange.isEmpty()) {
             return "";
         }
@@ -418,12 +434,7 @@ public class ReportService {
             return "";
         }
 
-        Map<Long, ScheduleResponseDto> byId = all.stream()
-                .collect(Collectors.toMap(ScheduleResponseDto::id, dto -> dto, (a, b) -> a));
-        List<ScheduleResponseDto> similar = similarIds.stream()
-                .map(byId::get)
-                .filter(Objects::nonNull)
-                .toList();
+        List<ScheduleResponseDto> similar = scheduleService.getSchedulesByIds(Set.copyOf(similarIds));
         if (similar.isEmpty()) {
             return "";
         }

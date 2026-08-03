@@ -162,6 +162,28 @@ public class ScheduleService {
         return scheduleCacheQueryService.getSchedules(requesterEmail, targetUserId, categoryId);
     }
 
+    // ReportService 전용 - status 필터/페이징 없이 [rangeStart, rangeEnd) 범위와 겹치는 일정만 조회한다.
+    // getSchedules()와 같은 권한 규칙을 따르되(다만 ReportService는 항상 본인 id를 그대로 넘기므로
+    // ADMIN 분기는 사실상 타지 않는다), 캐싱은 하지 않는다 - 리포트 기간(WEEK/MONTH/YEAR × referenceDate)
+    // 조합이 getBoardSchedules의 페이지 조합만큼 다양해 캐시 적중률이 낮다(같은 이유로 getBoardSchedules도
+    // 캐싱하지 않는다)
+    @Transactional(readOnly = true)
+    public List<ScheduleResponseDto> getSchedulesInRange(String requesterEmail, Long userId, Long categoryId,
+                                                          LocalDateTime rangeStart, LocalDateTime rangeEnd) {
+        User requester = findUserByEmail(requesterEmail);
+        Long targetUserId = requester.getUserType() == UserType.ADMIN ? userId : requester.getId();
+
+        return scheduleRepository.searchSchedulesInRange(targetUserId, categoryId, rangeStart, rangeEnd);
+    }
+
+    // ReportService.buildRagContext 전용 - RAG가 매칭한 (기간 밖일 수 있는) id들을 바로 조회한다.
+    // 이 id들은 이미 ScheduleEmbeddingService가 requester 본인 소유로 스코프해 찾아낸 것이므로
+    // (docType+userId 필터) 여기서 다시 소유권을 확인할 필요가 없다
+    @Transactional(readOnly = true)
+    public List<ScheduleResponseDto> getSchedulesByIds(Set<Long> ids) {
+        return scheduleRepository.searchSchedulesByIds(ids);
+    }
+
     // 보드 뷰 상태 컬럼 하나("더보기" 대상)를 서버에서 LIMIT/OFFSET(Pageable)으로 페이징 조회한다.
     // getSchedules()와 같은 권한 규칙(USER는 본인 id로 강제, ADMIN은 요청 userId 그대로)을 따르되,
     // 대상 범위는 하루(date, 없으면 오늘)로 고정한다 - 보드 자체가 하루치 일정만 보여주는 뷰이기 때문
