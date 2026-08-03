@@ -19,8 +19,13 @@ import lombok.NoArgsConstructor;
 )
 public class MandalartCell extends BaseEntity {
 
+    // Schedule.id와 동일한 이유/제약(IDENTITY는 JDBC 배치 INSERT를 막고, 그 내부 시퀀스는
+    // information_schema.sequences에서 스펙상 제외돼 ddl-auto: validate와 충돌한다 - Schedule.id의
+    // 주석 참고) - MandalartService.createBoard가 보드 하나당 81개 셀을 saveAll로 한 번에 저장한다.
+    // 별도 시퀀스(mandalart_cell_id_seq_v2)를 새로 만들어 기존 시퀀스보다 충분히 위에서 시작하게 했다
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "mandalart_cell_id_generator")
+    @SequenceGenerator(name = "mandalart_cell_id_generator", sequenceName = "mandalart_cell_id_seq_v2", allocationSize = 50)
     @Column(name = "mandalart_cell_id")
     private Long id;
 

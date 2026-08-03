@@ -32,6 +32,16 @@ spring:
     # 메서드 안에서 완성된 DTO(record)만 반환하므로(지연 로딩 엔티티를 컨트롤러까지 들고 가지 않음)
     # 꺼도 안전하다
     open-in-view: false
+    properties:
+      hibernate:
+        # Schedule/MandalartCell이 SEQUENCE 전략(allocationSize=50)으로 바뀐 뒤에만 의미가 있다 -
+        # IDENTITY 전략은 이 설정과 무관하게 여전히 배치되지 않는다. order_inserts/order_updates는
+        # 같은 배치 안에서 엔티티 타입이 섞여도(예: Schedule 저장 중간에 다른 엔티티 저장이 끼어드는
+        # 경우) INSERT를 타입별로 재정렬해 배치가 끊기지 않게 한다
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
 
 management:
   endpoints:
