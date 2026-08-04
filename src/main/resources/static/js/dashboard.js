@@ -2701,6 +2701,44 @@ aiSuggestForm.addEventListener("submit", async (e) => {
   }
 });
 
+// /settings 페이지까지 이동하지 않고도 채팅창의 ⚙️ 버튼으로 "AI 추천 일정 자동 등록" 토글을 바로 켜고
+// 끌 수 있게 하는 작은 모달 - /settings의 ai-auto-register-toggle(settings.js의 bindSettingToggle)과
+// 완전히 같은 PUT /api/users/me/ai-auto-register API를 공유한다. 저장에 성공하면 renderAiChatMessages()로
+// 다시 그려서, isAiAutoRegisterSettingEnabled()를 참조하는 "자동 등록" 버튼들이 패널을 다시 열지 않아도
+// 바로 나타나거나 사라지게 한다
+const aiChatSettingsBtn = document.getElementById("ai-chat-settings-btn");
+const aiChatSettingsModalOverlay = document.getElementById("ai-chat-settings-modal-overlay");
+const aiChatSettingsAutoRegisterToggle = document.getElementById("ai-chat-settings-auto-register-toggle");
+
+function openAiChatSettingsModal() {
+  aiChatSettingsAutoRegisterToggle.checked = isAiAutoRegisterSettingEnabled();
+  aiChatSettingsModalOverlay.classList.add("show");
+}
+
+function closeAiChatSettingsModal() {
+  aiChatSettingsModalOverlay.classList.remove("show");
+}
+
+aiChatSettingsBtn.addEventListener("click", openAiChatSettingsModal);
+document.getElementById("ai-chat-settings-close-btn").addEventListener("click", closeAiChatSettingsModal);
+aiChatSettingsModalOverlay.addEventListener("click", (e) => {
+  if (e.target === aiChatSettingsModalOverlay) closeAiChatSettingsModal();
+});
+
+aiChatSettingsAutoRegisterToggle.addEventListener("change", async () => {
+  const enabled = aiChatSettingsAutoRegisterToggle.checked;
+  try {
+    const updated = await API.put("/api/users/me/ai-auto-register", { enabled });
+    const current = API.getCurrentUser() || {};
+    API.setCurrentUser(Object.assign({}, current, { aiAutoRegisterEnabled: updated.aiAutoRegisterEnabled }));
+    renderAiChatMessages();
+    showToast("설정을 저장했습니다.");
+  } catch (err) {
+    aiChatSettingsAutoRegisterToggle.checked = !enabled; // 저장 실패 시 토글을 원래 상태로 되돌린다
+    showToast(`설정을 저장하지 못했습니다. ${err.message}`);
+  }
+});
+
 aiChatClearBtn.addEventListener("click", async () => {
   if (aiChatMessages.length === 0) return;
   if (!confirm("대화 내용을 모두 지울까요? 되돌릴 수 없습니다.")) return;

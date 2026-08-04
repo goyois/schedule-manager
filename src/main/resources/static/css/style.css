@@ -2357,6 +2357,15 @@ select {
   margin: 0 0 16px;
 }
 
+.ai-chat-settings-modal {
+  max-width: 340px;
+}
+
+.ai-chat-settings-modal .settings-row {
+  padding-top: 0;
+  border-top: none;
+}
+
 .mandalart-preview-link {
   display: flex;
   flex-direction: column;
@@ -2669,16 +2678,25 @@ select {
   width: 56px;
   height: 56px;
   border: none;
+  border-radius: 50%;
   background: transparent;
-  font-size: 40px;
+  padding: 0;
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
   /* 계속 움직이면 시선을 뺏고 거슬리므로(클릭 대상이 끊임없이 흔들리는 것도 문제) 페이지를 열었을 때
      인사하듯 몇 번만 통통 튀고 멈춘다 - infinite 로 두지 않는다 */
   animation: ai-bot-bounce 1.4s ease-in-out 3;
+}
+
+.ai-chatbot-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .ai-chatbot-avatar:hover {
