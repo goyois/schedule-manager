@@ -292,7 +292,14 @@
 
   <div class="modal-overlay" id="schedule-modal-overlay">
     <div class="modal">
-      <h2 id="modal-title">새 일정</h2>
+      <!-- 새로 만들 때는(openCreateModal) 이 탭으로 "새 일정"/"반복 일정" 폼을 모달 하나 안에서 바로
+           전환한다 - 예전엔 서로 다른 모달이라 반복으로 등록하려면 일단 취소하고 다시 열어야 했다.
+           기존 일정을 수정할 때는(openEditModal) 반복 개념이 없으므로 탭 대신 "일정 수정" 제목만 보인다 -->
+      <div class="modal-tabs" id="schedule-modal-tabs">
+        <button type="button" class="modal-tab" id="schedule-modal-tab-single" data-modal-tab="single">새 일정</button>
+        <button type="button" class="modal-tab" id="schedule-modal-tab-recurring" data-modal-tab="recurring">반복 일정</button>
+      </div>
+      <h2 id="modal-title" style="display: none">일정 수정</h2>
       <form id="schedule-form">
         <input type="hidden" id="schedule-id" />
 
@@ -363,17 +370,13 @@
           <button type="submit" class="btn btn-primary" style="width: auto">저장</button>
         </div>
       </form>
-    </div>
-  </div>
 
-  <!-- 영양제 먹기/운동/식단처럼 매번 손으로 입력하기 귀찮은 반복 일정 - 이 폼에서 규칙(요일/시간/기간)만
-       한 번 만들어두면 서버가 실제 일정을 미리 여러 개 만들어둔다(RecurringScheduleService).
-       각 occurrence는 그냥 평범한 일정이라 만든 뒤엔 기존 상세보기/수정/삭제를 그대로 쓸 수 있고,
-       반복 자체를 그만두려면 /settings 페이지에서 중단할 수 있다 -->
-  <div class="modal-overlay" id="recurring-modal-overlay">
-    <div class="modal">
-      <h2>반복 일정 추가</h2>
-      <form id="recurring-form">
+      <!-- 영양제 먹기/운동/식단처럼 매번 손으로 입력하기 귀찮은 반복 일정 - 이 폼에서 규칙(요일/시간/기간)만
+           한 번 만들어두면 서버가 실제 일정을 미리 여러 개 만들어둔다(RecurringScheduleService).
+           각 occurrence는 그냥 평범한 일정이라 만든 뒤엔 기존 상세보기/수정/삭제를 그대로 쓸 수 있고,
+           반복 자체를 그만두려면 /settings 페이지에서 중단할 수 있다. 위 "반복 일정" 탭을 골랐을 때만
+           보인다(schedule-form과 같은 모달 안, display:none으로 전환) -->
+      <form id="recurring-form" style="display: none">
         <div class="field">
           <label for="recurring-title">제목</label>
           <input type="text" id="recurring-title" placeholder="예: 영양제 먹기" required />

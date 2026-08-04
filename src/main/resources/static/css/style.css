@@ -2380,6 +2380,38 @@ select {
   margin: 0 0 18px;
 }
 
+/* 새 일정 모달 상단의 "새 일정"/"반복 일정" 탭 - 두 폼이 같은 모달 안에 같이 있고, 이 탭으로만
+   전환한다(schedule-form과 recurring-form 중 하나만 display:block, dashboard.js의 setModalTab) */
+.modal-tabs {
+  display: flex;
+  gap: 4px;
+  margin: -4px 0 18px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-tab {
+  flex: 1;
+  padding: 10px 0 9px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.modal-tab:hover {
+  color: var(--color-text);
+}
+
+.modal-tab.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
 .mandalart-preview-modal {
   max-width: 360px;
   display: flex;

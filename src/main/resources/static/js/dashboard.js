@@ -2098,6 +2098,24 @@ async function deleteSchedule(id) {
 const modalOverlay = document.getElementById("schedule-modal-overlay");
 const scheduleForm = document.getElementById("schedule-form");
 const modalTitle = document.getElementById("modal-title");
+const scheduleModalTabs = document.getElementById("schedule-modal-tabs");
+const scheduleModalTabSingleBtn = document.getElementById("schedule-modal-tab-single");
+const scheduleModalTabRecurringBtn = document.getElementById("schedule-modal-tab-recurring");
+
+// 새 일정 모달 안의 "새 일정"/"반복 일정" 탭 전환 - schedule-form과 recurring-form(아래 "반복 일정"
+// 섹션)이 같은 모달에 같이 들어 있고, 이 함수로 둘 중 하나만 보이게 한다. 탭을 눌러 전환할 땐(사용자가
+// 직접 클릭) 입력 중이던 내용을 지우지 않는다 - 초기화는 모달을 새로 열 때(openCreateModal)만 한다
+function setModalTab(tab) {
+  const single = tab !== "recurring";
+  scheduleModalTabSingleBtn.classList.toggle("active", single);
+  scheduleModalTabRecurringBtn.classList.toggle("active", !single);
+  scheduleForm.style.display = single ? "" : "none";
+  recurringForm.style.display = single ? "none" : "";
+}
+
+scheduleModalTabSingleBtn.addEventListener("click", () => setModalTab("single"));
+scheduleModalTabRecurringBtn.addEventListener("click", () => setModalTab("recurring"));
+
 const startAtInput = document.getElementById("startAt");
 const endAtInput = document.getElementById("endAt");
 const noEndTimeToggle = document.getElementById("no-end-time-toggle");
@@ -2209,6 +2227,11 @@ function openCreateModal(initialStatus) {
   noEndTimeToggle.checked = false;
   applyEndTimeToggleUI();
 
+  scheduleModalTabs.style.display = "flex";
+  modalTitle.style.display = "none";
+  resetRecurringForm();
+  setModalTab("single");
+
   modalOverlay.classList.add("show");
 }
 
@@ -2288,6 +2311,10 @@ function openEditModal(id) {
   const currentUser = API.getCurrentUser();
   document.getElementById("user-id-input").value = meta.userId ?? (currentUser && currentUser.id) ?? "";
 
+  scheduleModalTabs.style.display = "none";
+  modalTitle.style.display = "";
+  setModalTab("single");
+
   modalOverlay.classList.add("show");
 }
 
@@ -2353,14 +2380,17 @@ scheduleForm.addEventListener("submit", async (e) => {
 // 영양제 먹기/운동/식단처럼 매번 손으로 새 일정을 만들기 귀찮은 것들을 위한 기능 - 여기서는 규칙(요일/
 // 시간/기간)만 한 번 서버에 등록하면, 서버(RecurringScheduleService)가 실제 일정을 미리 여러 개
 // 만들어둔다. 그렇게 만들어진 일정 하나하나는 그냥 평범한 일정이라 상세보기/수정/삭제/상태변경 모두
-// 기존 기능을 그대로 쓸 수 있고, 반복 자체를 그만두는 것만 /settings 페이지에서 따로 한다
+// 기존 기능을 그대로 쓸 수 있고, 반복 자체를 그만두는 것만 /settings 페이지에서 따로 한다.
+// 예전엔 별도 모달이었지만, 지금은 schedule-form과 같은 모달 안에서 위쪽 탭(setModalTab)으로만
+// 전환한다 - 열고/닫는 것도 같은 modalOverlay/closeModal을 그대로 쓴다
 
-const recurringModalOverlay = document.getElementById("recurring-modal-overlay");
 const recurringForm = document.getElementById("recurring-form");
 const recurringWeekdayPicker = document.getElementById("recurring-weekday-picker");
 const recurringCategorySelect = document.getElementById("recurring-category-select");
 
-function openRecurringModal() {
+// 모달을 새로 열 때마다(openCreateModal) 호출해 반복 일정 탭도 항상 깨끗한 상태로 시작하게 한다 -
+// 탭을 오가는 것만으로는(setModalTab) 입력 중이던 내용이 지워지지 않는다
+function resetRecurringForm() {
   recurringForm.reset();
   recurringWeekdayPicker.querySelectorAll(".weekday-btn").forEach((btn) => btn.classList.remove("active"));
   document.getElementById("recurring-start-date").value = toDatetimeLocalValue(new Date()).slice(0, 10);
@@ -2369,18 +2399,14 @@ function openRecurringModal() {
   const activeCat = categories.find((c) => String(c.id) === String(activeCategoryId));
   if (activeCat) recurringCategorySelect.value = String(activeCat.id);
   else if (categories.length) recurringCategorySelect.value = String(categories[0].id);
-  recurringModalOverlay.classList.add("show");
 }
 
-function closeRecurringModal() {
-  recurringModalOverlay.classList.remove("show");
-}
-
-document.getElementById("open-recurring-modal").addEventListener("click", openRecurringModal);
-document.getElementById("cancel-recurring-modal-btn").addEventListener("click", closeRecurringModal);
-recurringModalOverlay.addEventListener("click", (e) => {
-  if (e.target === recurringModalOverlay) closeRecurringModal();
+// "🔁 반복 일정" 버튼은 같은 새 일정 모달을 반복 탭이 활성화된 채로 연다
+document.getElementById("open-recurring-modal").addEventListener("click", () => {
+  openCreateModal();
+  setModalTab("recurring");
 });
+document.getElementById("cancel-recurring-modal-btn").addEventListener("click", closeModal);
 
 recurringWeekdayPicker.querySelectorAll(".weekday-btn").forEach((btn) => {
   btn.addEventListener("click", () => btn.classList.toggle("active"));
@@ -2413,7 +2439,7 @@ recurringForm.addEventListener("submit", async (e) => {
   submitBtn.disabled = true;
   try {
     await API.post("/api/recurring-schedules", payload);
-    closeRecurringModal();
+    closeModal();
     showToast("반복 일정을 추가했습니다.");
     await refreshAll();
   } catch (err) {
@@ -3087,7 +3113,6 @@ document.addEventListener("keydown", (e) => {
   }
   if (modalOverlay.classList.contains("show")) closeModal();
   if (detailModalOverlay.classList.contains("show")) closeDetailModal();
-  if (recurringModalOverlay.classList.contains("show")) closeRecurringModal();
   if (aiChatPanel.classList.contains("show")) closeAiSuggestModal();
   if (mandalartPreviewModalOverlay.classList.contains("show")) closeMandalartPreviewModal();
   if (clockFilterPopover.classList.contains("show")) clockFilterPopover.classList.remove("show");
