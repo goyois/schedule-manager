@@ -41,9 +41,15 @@
       placement: "left",
     },
     {
-      target: ["#open-recurring-modal", "#open-create-modal"],
+      target: "#open-create-modal",
       title: "새 일정 추가",
-      text: "여기를 눌러 새 일정을 만들거나, 반복되는 일정을 한 번에 등록할 수 있어요.",
+      text: "여기를 눌러 새 일정을 만들 수 있어요. 모달 위쪽 탭에서 '반복 일정'을 고르면 요일마다 반복되는 일정도 한 번에 등록할 수 있어요.",
+      placement: "bottom",
+    },
+    {
+      target: "#open-recurring-modal",
+      title: "반복 일정 관리",
+      text: "지금 등록해둔 반복 일정 목록을 볼 수 있어요. 여기서 중단하거나, '+ 새 반복 일정'으로 새로 등록할 수도 있어요.",
       placement: "bottom",
     },
     {
