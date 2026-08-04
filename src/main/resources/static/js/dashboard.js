@@ -2702,27 +2702,30 @@ aiSuggestForm.addEventListener("submit", async (e) => {
 });
 
 // /settings 페이지까지 이동하지 않고도 채팅창의 ⚙️ 버튼으로 "AI 추천 일정 자동 등록" 토글을 바로 켜고
-// 끌 수 있게 하는 작은 모달 - /settings의 ai-auto-register-toggle(settings.js의 bindSettingToggle)과
-// 완전히 같은 PUT /api/users/me/ai-auto-register API를 공유한다. 저장에 성공하면 renderAiChatMessages()로
+// 끌 수 있게 하는 작은 팝오버(clock-filter-popover와 같은 패턴 - 버튼 클릭으로 토글, 바깥 클릭/ESC로
+// 닫힘) - /settings의 ai-auto-register-toggle(settings.js의 bindSettingToggle)과 완전히 같은
+// PUT /api/users/me/ai-auto-register API를 공유한다. 저장에 성공하면 renderAiChatMessages()로
 // 다시 그려서, isAiAutoRegisterSettingEnabled()를 참조하는 "자동 등록" 버튼들이 패널을 다시 열지 않아도
 // 바로 나타나거나 사라지게 한다
 const aiChatSettingsBtn = document.getElementById("ai-chat-settings-btn");
-const aiChatSettingsModalOverlay = document.getElementById("ai-chat-settings-modal-overlay");
+const aiChatSettingsPopover = document.getElementById("ai-chat-settings-popover");
 const aiChatSettingsAutoRegisterToggle = document.getElementById("ai-chat-settings-auto-register-toggle");
 
-function openAiChatSettingsModal() {
-  aiChatSettingsAutoRegisterToggle.checked = isAiAutoRegisterSettingEnabled();
-  aiChatSettingsModalOverlay.classList.add("show");
+function closeAiChatSettingsPopover() {
+  aiChatSettingsPopover.classList.remove("show");
 }
 
-function closeAiChatSettingsModal() {
-  aiChatSettingsModalOverlay.classList.remove("show");
-}
+aiChatSettingsBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const opening = !aiChatSettingsPopover.classList.contains("show");
+  if (opening) aiChatSettingsAutoRegisterToggle.checked = isAiAutoRegisterSettingEnabled();
+  aiChatSettingsPopover.classList.toggle("show");
+});
 
-aiChatSettingsBtn.addEventListener("click", openAiChatSettingsModal);
-document.getElementById("ai-chat-settings-close-btn").addEventListener("click", closeAiChatSettingsModal);
-aiChatSettingsModalOverlay.addEventListener("click", (e) => {
-  if (e.target === aiChatSettingsModalOverlay) closeAiChatSettingsModal();
+document.addEventListener("click", (e) => {
+  if (!aiChatSettingsPopover.contains(e.target) && e.target !== aiChatSettingsBtn) {
+    closeAiChatSettingsPopover();
+  }
 });
 
 aiChatSettingsAutoRegisterToggle.addEventListener("change", async () => {
@@ -3076,6 +3079,12 @@ aiChatMessagesEl.addEventListener("click", (e) => {
 // 순서대로 다 확인한다
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  // AI 채팅 설정 팝오버는 채팅창 위에 겹쳐 뜨므로, 열려 있으면 이것부터 닫고 끝낸다(같은 ESC 한 번에
+  // 채팅창까지 같이 닫히지 않도록) - 채팅창을 닫으려면 ESC를 한 번 더 눌러야 한다
+  if (aiChatSettingsPopover.classList.contains("show")) {
+    closeAiChatSettingsPopover();
+    return;
+  }
   if (modalOverlay.classList.contains("show")) closeModal();
   if (detailModalOverlay.classList.contains("show")) closeDetailModal();
   if (recurringModalOverlay.classList.contains("show")) closeRecurringModal();

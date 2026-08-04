@@ -2357,15 +2357,6 @@ select {
   margin: 0 0 16px;
 }
 
-.ai-chat-settings-modal {
-  max-width: 340px;
-}
-
-.ai-chat-settings-modal .settings-row {
-  padding-top: 0;
-  border-top: none;
-}
-
 .mandalart-preview-link {
   display: flex;
   flex-direction: column;
@@ -2611,13 +2602,13 @@ select {
 
 /* 오른쪽 하단 고정 챗봇 캐릭터 - "새 일정 추가"가 FAB에서 보드 제목 줄의 버튼으로 옮겨가면서 이
    자리(우측 하단)를 그대로 차지한다.
-   right:26px(32px가 아니라)인 이유 - 바로 위에 쌓이는 도움말 버튼(.help-widget, 44px, right:32px)과
-   지름이 달라서(이 아바타는 56px) 오른쪽 "끝"만 맞추면 가로 중심이 6px 어긋나 보인다. 지름 차이의
-   절반만큼 안쪽으로 당겨 두 원의 중심을 같은 수직선에 맞춘다 */
+   right:32px는 바로 위에 쌓이는 도움말 버튼(.help-widget, 44px, right:32px)과 같은 값이다 - 아바타도
+   같은 44px 지름이라 오른쪽 "끝"만 맞추면 두 원의 중심이 같은 수직선에 자연히 맞는다(지름이 다를 땐
+   차이의 절반만큼 보정이 필요하지만 지금은 필요 없다) */
 .ai-chatbot-widget {
   position: fixed;
   bottom: 32px;
-  right: 26px;
+  right: 32px;
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -2675,8 +2666,8 @@ select {
 }
 
 .ai-chatbot-avatar {
-  width: 56px;
-  height: 56px;
+  width: 44px;
+  height: 44px;
   border: none;
   border-radius: 50%;
   background: transparent;
@@ -2788,10 +2779,10 @@ select {
 
 /* 전체 화면을 덮는 .modal-overlay와 달리 배경이 없는 작은 패널이라, 열어둔 채로 뒤의 보드/사이드바를
    그대로 클릭·조작할 수 있다. .ai-chatbot-widget(bottom:32px)의 아바타 바로 위에 오도록 고정 위치를
-   맞춘다: 아바타 위쪽 끝이 32+56=88px 지점이므로, 거기서 12px 띄운 100px를 패널의 bottom으로 쓴다 */
+   맞춘다: 아바타 위쪽 끝이 32+44=76px 지점이므로, 거기서 12px 띄운 88px를 패널의 bottom으로 쓴다 */
 .ai-chat-panel {
   position: fixed;
-  bottom: 100px;
+  bottom: 88px;
   right: 32px;
   z-index: 42;
   width: 380px;
@@ -2832,9 +2823,46 @@ select {
 }
 
 .ai-chat-header-actions {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* ⚙️ 버튼 바로 아래에 뜨는 작은 팝오버 - clock-filter-popover와 같은 패턴(전체 화면 오버레이 대신
+   버튼 그룹(.ai-chat-header-actions)의 relative 부모 기준 절대 위치). 그룹 자체가 헤더에서 이미
+   오른쪽 끝에 붙어 있으므로(justify-content:space-between) 팝오버도 오른쪽 끝(right:0)에 맞춰 왼쪽으로
+   펼친다 - 패널 폭(380px, 안쪽 내용 기준 약 344px)에 260px면 여유 있게 들어간다 */
+.ai-chat-settings-popover {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  z-index: 3;
+  width: 260px;
+  max-width: calc(100vw - 64px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 12px 14px;
+}
+
+.ai-chat-settings-popover.show {
+  display: block;
+}
+
+.ai-chat-settings-popover-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+.ai-chat-settings-popover .settings-row {
+  padding-top: 0;
+  border-top: none;
 }
 
 .ai-chat-close-btn {

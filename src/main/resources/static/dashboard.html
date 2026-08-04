@@ -207,10 +207,33 @@
   <div class="ai-chat-panel" id="ai-chat-panel">
     <div class="ai-chat-header">
       <h2>AI 일정 추천</h2>
+      <!-- ⚙️ 버튼 바로 아래에 붙는 작은 팝오버 - clock-filter-popover(오늘 24시간 시계 카테고리 필터)와 같은
+           패턴: 전체 화면 오버레이 없이 이 액션 그룹의 relative 부모 기준으로 절대 위치, 바깥 클릭/ESC로
+           닫힌다. 팝오버(260px)를 ⚙️ 버튼 자체가 아니라 액션 그룹 오른쪽 끝(right:0)에 맞춘 이유 - 패널
+           안쪽 폭이 344px뿐이라 그룹 안에서 맨 왼쪽인 ⚙️ 버튼 기준으로 오른쪽으로 펼치면 패널 밖으로
+           넘친다. 그룹 자체는 헤더에서 이미 오른쪽 끝에 붙어 있어(justify-content:space-between) 그
+           오른쪽 끝에 맞추면 항상 패널 안쪽에 들어간다 -->
       <div class="ai-chat-header-actions">
         <button type="button" class="btn btn-ghost btn-sm" id="ai-chat-settings-btn" title="AI 채팅 설정" aria-label="AI 채팅 설정">⚙️</button>
         <button type="button" class="btn btn-ghost btn-sm" id="ai-chat-clear-btn" title="대화 내용을 모두 지웁니다">대화 초기화</button>
         <button type="button" class="ai-chat-close-btn" id="ai-chat-close-btn" title="닫기" aria-label="닫기">×</button>
+        <div class="ai-chat-settings-popover" id="ai-chat-settings-popover">
+          <div class="ai-chat-settings-popover-title">AI 채팅 설정</div>
+          <div class="settings-row">
+            <div class="settings-row-text">
+              <div class="settings-row-title">AI 추천 일정 자동 등록 허용</div>
+              <div class="settings-row-desc">
+                켜면 제목/시작 시각/카테고리가 모두 갖춰진 AI 추천에 "자동 등록" 버튼이 나타나고, 새
+                추천을 받으면 확인 없이 바로 등록됩니다. 꺼두면 항상 "수동 등록"으로 내용을 확인한 뒤
+                저장합니다.
+              </div>
+            </div>
+            <label class="settings-switch">
+              <input type="checkbox" id="ai-chat-settings-auto-register-toggle" />
+              <span>사용</span>
+            </label>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -229,31 +252,6 @@
       <textarea id="ai-suggest-prompt" rows="1" placeholder="무엇을 추천받고 싶으신가요?" required></textarea>
       <button type="submit" class="btn btn-primary" style="width: auto" id="ai-suggest-submit-btn">전송</button>
     </form>
-  </div>
-
-  <!-- 채팅창의 ⚙️ 버튼으로 여는 작은 설정 모달 - /settings 페이지까지 이동하지 않고도 "AI 추천 일정
-       자동 등록" 토글을 바로 켜고 끌 수 있다. 값은 /settings의 ai-auto-register-toggle과 완전히 같은
-       API(PUT /api/users/me/ai-auto-register)를 공유하므로 어느 쪽에서 바꾸든 항상 동기화돼 있다 -->
-  <div class="modal-overlay" id="ai-chat-settings-modal-overlay">
-    <div class="modal ai-chat-settings-modal">
-      <h2>AI 채팅 설정</h2>
-      <div class="settings-row">
-        <div class="settings-row-text">
-          <div class="settings-row-title">AI 추천 일정 자동 등록 허용</div>
-          <div class="settings-row-desc">
-            켜면 제목/시작 시각/카테고리가 모두 갖춰진 AI 추천에 "자동 등록" 버튼이 나타나고, 새 추천을
-            받으면 확인 없이 바로 등록됩니다. 꺼두면 항상 "수동 등록"으로 내용을 확인한 뒤 저장합니다.
-          </div>
-        </div>
-        <label class="settings-switch">
-          <input type="checkbox" id="ai-chat-settings-auto-register-toggle" />
-          <span>사용</span>
-        </label>
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="ai-chat-settings-close-btn">닫기</button>
-      </div>
-    </div>
   </div>
 
   <!-- 만다라트 위젯을 누르면 바로 이동하지 않고 이 미리보기 모달부터 보여준다 - 배경(오버레이)을
