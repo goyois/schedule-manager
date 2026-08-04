@@ -103,7 +103,14 @@
 
       <div class="main-header">
         <div class="header-widgets">
-          <div class="wordcloud-widget" id="wordcloud-widget" title="내 일정 제목에 자주 등장하는 단어">
+          <div class="wordcloud-widget" id="wordcloud-widget" title="내 일정 제목에 자주 등장하는 단어 (달별 집계)">
+            <!-- 캔버스/렌즈의 좌표계(dashboard.js 주석 참고)를 안 건드리려고 흐름에 끼워 넣지 않고
+                 위젯 모서리에 떠 있는 오버레이로 얹는다(⚙ 필터 버튼들과 같은 패턴) -->
+            <div class="wordcloud-month-nav">
+              <button type="button" class="wordcloud-month-nav-btn" id="wordcloud-month-prev" title="이전 달">‹</button>
+              <span class="wordcloud-month-label" id="wordcloud-month-label"></span>
+              <button type="button" class="wordcloud-month-nav-btn" id="wordcloud-month-next" title="다음 달">›</button>
+            </div>
             <div class="wordcloud-canvas" id="wordcloud-canvas"></div>
             <div class="wordcloud-lens" id="wordcloud-lens"></div>
           </div>

@@ -1192,6 +1192,24 @@ const WORDCLOUD_MAX_WORDS = 40;
 const WORDCLOUD_MIN_FONT = 11;
 const WORDCLOUD_MAX_FONT = 30;
 
+// 예전엔 계정을 만든 뒤로 등록한 "전체" 일정 제목을 다 모아 집계했는데, 계정을 오래 쓸수록 이미
+// 지난 옛날 단어까지 잔뜩 섞여 지금 관심사와 무관해졌다 - 달 단위로 끊어서, 그 달에 등록한 일정
+// 제목만 집계하도록 바꿨다. 0 = 이번 달, 음수 = 과거, 양수 = 미래(미리 등록해둔 다음 달 일정도
+// 확인할 수 있게 막지 않는다) - 위젯 모서리의 "‹ ›"로 이동한다
+let wordcloudMonthOffset = 0;
+
+function getWordcloudMonthRange(offset) {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 1);
+  return { start, end };
+}
+
+function updateWordcloudMonthLabel() {
+  const { start } = getWordcloudMonthRange(wordcloudMonthOffset);
+  document.getElementById("wordcloud-month-label").textContent = `${start.getFullYear()}년 ${start.getMonth() + 1}월`;
+}
+
 // 마우스 위치 기준 원형 돋보기(볼록렌즈) 효과에 쓰는 값 - RADIUS는 렌즈 반경(px, CSS .wordcloud-lens의
 // 지름 130px과 맞춤), MAX_SCALE은 커서 정중앙에 있는 단어가 커지는 배수. 렌더될 때마다 새로 만들어지는
 // 단어 <span>들의 중심 좌표를 여기 담아뒀다가, mousemove 핸들러(bindWordcloudLens)가 커서와의 거리를
@@ -1233,11 +1251,17 @@ function findWordCloudSpot(placed, cx, cy, wordW, wordH, boundW, boundH, margin)
 
 function renderWordCloud() {
   const canvas = document.getElementById("wordcloud-canvas");
-  const counts = extractWordCloudFrequencies(schedules);
+  updateWordcloudMonthLabel();
+  const { start, end } = getWordcloudMonthRange(wordcloudMonthOffset);
+  const monthSchedules = schedules.filter((s) => {
+    const t = new Date(s.startAt).getTime();
+    return t >= start.getTime() && t < end.getTime();
+  });
+  const counts = extractWordCloudFrequencies(monthSchedules);
   const entries = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, WORDCLOUD_MAX_WORDS);
 
   if (entries.length === 0) {
-    canvas.innerHTML = `<div class="wordcloud-empty">일정 제목이 쌓이면<br>자주 쓴 단어가 여기 나타나요</div>`;
+    canvas.innerHTML = `<div class="wordcloud-empty">이 달엔 일정 제목이 없어요<br>‹ › 로 다른 달을 확인해보세요</div>`;
     wordcloudEntries = [];
     return;
   }
@@ -1359,6 +1383,17 @@ function bindWordcloudLens() {
 }
 
 bindWordcloudLens();
+
+document.getElementById("wordcloud-month-prev").addEventListener("click", (e) => {
+  e.stopPropagation(); // 위젯 자체엔 클릭 핸들러가 없지만, 혹시 나중에 생기더라도 이동 버튼 클릭이 같이 걸리지 않게
+  wordcloudMonthOffset -= 1;
+  renderWordCloud();
+});
+document.getElementById("wordcloud-month-next").addEventListener("click", (e) => {
+  e.stopPropagation();
+  wordcloudMonthOffset += 1;
+  renderWordCloud();
+});
 
 // renderWordCloud()는 렌더 시점의 위젯 폭(canvas.getBoundingClientRect())을 기준으로 단어마다
 // 절대좌표(px)를 한 번 계산해서 박아둔다 - 그 뒤 브라우저 창을 줄였다가 늘리거나 사이드바를

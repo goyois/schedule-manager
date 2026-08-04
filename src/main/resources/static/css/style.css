@@ -1194,6 +1194,52 @@ select {
   padding: 0 12px;
 }
 
+/* 달 이동 컨트롤 - 캔버스 흐름에 끼워 넣으면(dashboard.js가 매 렌더마다 canvas.innerHTML을 통째로
+   갈아치우고, 렌즈 좌표는 canvas가 위젯 패딩 박스를 꽉 채운다는 전제로 계산돼 있어) 캔버스 높이가
+   줄어 그 전제가 깨진다 - 대신 캔버스는 그대로 두고 모서리에 겹쳐 띄운다(⚙ 필터 버튼들과 같은 패턴) */
+.wordcloud-month-nav {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 1px 4px;
+  box-shadow: var(--shadow-card);
+}
+
+.wordcloud-month-nav-btn {
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.wordcloud-month-nav-btn:hover {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
+}
+
+.wordcloud-month-label {
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+  padding: 0 2px;
+  white-space: nowrap;
+}
+
 /* wordcloud.js가 단어마다 절대 좌표(중심점)·글자 크기·색·회전 여부를 인라인 style로 계산해 배치한다
    (레이아웃 자체가 JS 쪽 타원형 스파이럴 배치 알고리즘의 결과라 CSS만으로는 재현 불가) - 회전은
    --wc-rotate 커스텀 프로퍼티로 받아 기본/호버 transform 양쪽에서 공통으로 쓴다(안 그러면 호버 시
