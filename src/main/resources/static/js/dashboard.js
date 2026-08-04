@@ -2380,7 +2380,8 @@ scheduleForm.addEventListener("submit", async (e) => {
 // 영양제 먹기/운동/식단처럼 매번 손으로 새 일정을 만들기 귀찮은 것들을 위한 기능 - 여기서는 규칙(요일/
 // 시간/기간)만 한 번 서버에 등록하면, 서버(RecurringScheduleService)가 실제 일정을 미리 여러 개
 // 만들어둔다. 그렇게 만들어진 일정 하나하나는 그냥 평범한 일정이라 상세보기/수정/삭제/상태변경 모두
-// 기존 기능을 그대로 쓸 수 있고, 반복 자체를 그만두는 것만 /settings 페이지에서 따로 한다.
+// 기존 기능을 그대로 쓸 수 있고, 반복 자체를 그만두는 것은 아래 "반복 일정 목록 모달"에서 한다
+// (예전엔 /settings 페이지에 있었지만, 대시보드에서 바로 볼 수 있게 옮겨왔다 - settings.js 쪽은 제거).
 // 예전엔 별도 모달이었지만, 지금은 schedule-form과 같은 모달 안에서 위쪽 탭(setModalTab)으로만
 // 전환한다 - 열고/닫는 것도 같은 modalOverlay/closeModal을 그대로 쓴다
 
@@ -2445,10 +2446,10 @@ recurringForm.addEventListener("submit", async (e) => {
 });
 
 // ---------- 반복 일정 목록 모달 ----------
-// "🔁 반복 일정" 버튼은 바로 등록 폼을 여는 대신, 지금 등록되어 있는 반복 규칙이 뭔지부터 보여준다 -
-// settings.js의 반복 일정 관리 패널과 같은 정보(GET /api/recurring-schedules)/중단(DELETE) API를
-// 공유하지만, 목록을 그릴 요소가 서로 다른 페이지에 있어 렌더 함수는 따로 둔다. 여기서
-// "+ 새 반복 일정"을 누르면 이 목록 모달을 닫고 새 일정 모달을 반복 일정 탭으로 연다
+// "🔁 반복 일정" 버튼은 바로 등록 폼을 여는 대신, 지금 등록되어 있는 반복 규칙이 뭔지부터 보여준다
+// (예전엔 이 목록/중단 기능이 /settings 페이지에만 있었는데, 여기로 옮겨오면서 그쪽은 제거했다 -
+// GET/DELETE /api/recurring-schedules는 그대로). 여기서 "+ 새 반복 일정"을 누르면 이 목록 모달을
+// 닫고 새 일정 모달을 반복 일정 탭으로 연다
 
 const recurringListModalOverlay = document.getElementById("recurring-list-modal-overlay");
 const dashboardRecurringScheduleListEl = document.getElementById("dashboard-recurring-schedule-list");
@@ -2461,8 +2462,8 @@ function formatRecurringDays(days) {
   return RECURRING_WEEKDAY_ORDER.filter((d) => days.includes(d)).map((d) => RECURRING_WEEKDAY_LABELS[d]).join(", ");
 }
 
-// settings.js의 동명 로직과 같지만, 저 파일의 formatTimeRange는 시간만(HH:mm:ss) 다루는 반면
-// dashboard.js에는 이미 전체 일정용 formatTimeRange(startAt, endAt)가 있어 이름이 겹친다
+// dashboard.js에는 이미 전체 일정용 formatTimeRange(startAt, endAt)가 있어 이름이 겹치므로
+// 시간만(HH:mm:ss) 다루는 이 함수는 다른 이름을 쓴다
 function formatRecurringTimeRange(startTime, endTime) {
   const short = (t) => t.slice(0, 5); // "HH:mm:ss" -> "HH:mm"
   return endTime ? `${short(startTime)} ~ ${short(endTime)}` : short(startTime);
