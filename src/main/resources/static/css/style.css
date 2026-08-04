@@ -1260,7 +1260,7 @@ select {
   line-height: 1;
   cursor: default;
   user-select: none;
-  transition: transform 90ms linear, filter 90ms linear;
+  transition: transform 45ms linear, filter 45ms linear;
   animation: wordcloudWordIn 260ms ease-out backwards;
   animation-delay: calc(var(--stagger-index, 0) * 30ms);
 }
