@@ -2401,11 +2401,6 @@ function resetRecurringForm() {
   else if (categories.length) recurringCategorySelect.value = String(categories[0].id);
 }
 
-// "🔁 반복 일정" 버튼은 같은 새 일정 모달을 반복 탭이 활성화된 채로 연다
-document.getElementById("open-recurring-modal").addEventListener("click", () => {
-  openCreateModal();
-  setModalTab("recurring");
-});
 document.getElementById("cancel-recurring-modal-btn").addEventListener("click", closeModal);
 
 recurringWeekdayPicker.querySelectorAll(".weekday-btn").forEach((btn) => {
@@ -2446,6 +2441,91 @@ recurringForm.addEventListener("submit", async (e) => {
     showToast(`반복 일정 추가에 실패했습니다. ${err.message}`);
   } finally {
     submitBtn.disabled = false;
+  }
+});
+
+// ---------- 반복 일정 목록 모달 ----------
+// "🔁 반복 일정" 버튼은 바로 등록 폼을 여는 대신, 지금 등록되어 있는 반복 규칙이 뭔지부터 보여준다 -
+// settings.js의 반복 일정 관리 패널과 같은 정보(GET /api/recurring-schedules)/중단(DELETE) API를
+// 공유하지만, 목록을 그릴 요소가 서로 다른 페이지에 있어 렌더 함수는 따로 둔다. 여기서
+// "+ 새 반복 일정"을 누르면 이 목록 모달을 닫고 새 일정 모달을 반복 일정 탭으로 연다
+
+const recurringListModalOverlay = document.getElementById("recurring-list-modal-overlay");
+const dashboardRecurringScheduleListEl = document.getElementById("dashboard-recurring-schedule-list");
+
+const RECURRING_WEEKDAY_ORDER = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
+const RECURRING_WEEKDAY_LABELS = { MONDAY: "월", TUESDAY: "화", WEDNESDAY: "수", THURSDAY: "목", FRIDAY: "금", SATURDAY: "토", SUNDAY: "일" };
+
+function formatRecurringDays(days) {
+  if (days.length === 7) return "매일";
+  return RECURRING_WEEKDAY_ORDER.filter((d) => days.includes(d)).map((d) => RECURRING_WEEKDAY_LABELS[d]).join(", ");
+}
+
+// settings.js의 동명 로직과 같지만, 저 파일의 formatTimeRange는 시간만(HH:mm:ss) 다루는 반면
+// dashboard.js에는 이미 전체 일정용 formatTimeRange(startAt, endAt)가 있어 이름이 겹친다
+function formatRecurringTimeRange(startTime, endTime) {
+  const short = (t) => t.slice(0, 5); // "HH:mm:ss" -> "HH:mm"
+  return endTime ? `${short(startTime)} ~ ${short(endTime)}` : short(startTime);
+}
+
+function renderDashboardRecurringSchedules(rules) {
+  if (rules.length === 0) {
+    dashboardRecurringScheduleListEl.innerHTML = `<li class="recurring-schedule-empty">등록된 반복 일정이 없습니다.</li>`;
+    return;
+  }
+  dashboardRecurringScheduleListEl.innerHTML = rules.map((r) => `
+    <li class="recurring-schedule-item">
+      <div>
+        <div class="recurring-schedule-title">${escapeHtml(r.title)}</div>
+        <div class="recurring-schedule-meta">${escapeHtml(formatRecurringDays(r.daysOfWeek))} · ${escapeHtml(formatRecurringTimeRange(r.startTime, r.endTime))} · ${escapeHtml(r.categoryName)}</div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" style="width: auto" data-delete-recurring="${r.id}">중단</button>
+    </li>
+  `).join("");
+}
+
+async function openRecurringListModal() {
+  dashboardRecurringScheduleListEl.innerHTML = `<li class="recurring-schedule-empty">불러오는 중...</li>`;
+  recurringListModalOverlay.classList.add("show");
+  try {
+    const rules = await API.get("/api/recurring-schedules");
+    renderDashboardRecurringSchedules(rules);
+  } catch (err) {
+    dashboardRecurringScheduleListEl.innerHTML = `<li class="recurring-schedule-empty">반복 일정을 불러오지 못했습니다. ${escapeHtml(err.message)}</li>`;
+  }
+}
+
+function closeRecurringListModal() {
+  recurringListModalOverlay.classList.remove("show");
+}
+
+document.getElementById("open-recurring-modal").addEventListener("click", openRecurringListModal);
+document.getElementById("close-recurring-list-modal-btn").addEventListener("click", closeRecurringListModal);
+recurringListModalOverlay.addEventListener("click", (e) => {
+  if (e.target === recurringListModalOverlay) closeRecurringListModal();
+});
+
+document.getElementById("add-recurring-from-list-btn").addEventListener("click", () => {
+  closeRecurringListModal();
+  openCreateModal();
+  setModalTab("recurring");
+});
+
+dashboardRecurringScheduleListEl.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-delete-recurring]");
+  if (!btn) return;
+  if (!confirm("이 반복 일정을 중단할까요? 아직 지나지 않은 일정만 정리되고, 이미 지난/진행 중인 기록은 남습니다.")) return;
+
+  btn.disabled = true;
+  try {
+    await API.del(`/api/recurring-schedules/${btn.dataset.deleteRecurring}`);
+    showToast("반복 일정을 중단했습니다.");
+    const rules = await API.get("/api/recurring-schedules");
+    renderDashboardRecurringSchedules(rules);
+    await refreshAll(); // 중단으로 아직 지나지 않은 occurrence들이 정리됐을 수 있으므로 보드도 새로고침
+  } catch (err) {
+    showToast(`반복 일정 중단에 실패했습니다. ${err.message}`);
+    btn.disabled = false;
   }
 });
 
@@ -3113,6 +3193,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (modalOverlay.classList.contains("show")) closeModal();
   if (detailModalOverlay.classList.contains("show")) closeDetailModal();
+  if (recurringListModalOverlay.classList.contains("show")) closeRecurringListModal();
   if (aiChatPanel.classList.contains("show")) closeAiSuggestModal();
   if (mandalartPreviewModalOverlay.classList.contains("show")) closeMandalartPreviewModal();
   if (clockFilterPopover.classList.contains("show")) clockFilterPopover.classList.remove("show");

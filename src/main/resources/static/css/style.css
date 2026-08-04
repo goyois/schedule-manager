@@ -2380,6 +2380,12 @@ select {
   margin: 0 0 18px;
 }
 
+/* 반복 일정이 많아지면 모달이 화면 밖으로 늘어나지 않도록 목록만 스크롤한다 */
+.recurring-list-modal .recurring-schedule-list {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
 /* 새 일정 모달 상단의 "새 일정"/"반복 일정" 탭 - 두 폼이 같은 모달 안에 같이 있고, 이 탭으로만
    전환한다(schedule-form과 recurring-form 중 하나만 display:block, dashboard.js의 setModalTab) */
 .modal-tabs {

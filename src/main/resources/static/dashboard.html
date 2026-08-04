@@ -436,6 +436,20 @@
     </div>
   </div>
 
+  <!-- "🔁 반복 일정" 버튼으로 여는 목록 모달 - 바로 등록 폼을 여는 대신 지금 등록되어 있는 반복 규칙이
+       뭔지부터 보여준다(/settings의 반복 일정 관리 패널과 같은 정보/중단 기능). "+ 새 반복 일정"을
+       누르면 이 목록을 닫고 새 일정 모달을 반복 일정 탭으로 연다(dashboard.js) -->
+  <div class="modal-overlay" id="recurring-list-modal-overlay">
+    <div class="modal recurring-list-modal">
+      <h2>반복 일정</h2>
+      <ul class="recurring-schedule-list" id="dashboard-recurring-schedule-list"></ul>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="close-recurring-list-modal-btn">닫기</button>
+        <button type="button" class="btn btn-primary" style="width: auto" id="add-recurring-from-list-btn">+ 새 반복 일정</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <!-- 일정 시작 시각 알림. 여러 일정이 동시에 시작하면 카드가 세로로 쌓인다 -->
