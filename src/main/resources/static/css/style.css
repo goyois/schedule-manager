@@ -1013,11 +1013,46 @@ select {
   padding-top: 2px;
 }
 
+/* 네이티브 체크박스 대신 흔히 보는 슬라이딩 토글 모양으로 - appearance:none으로 기본 UI를 지우고
+   트랙(배경)은 input 자체에, 움직이는 동그란 손잡이는 ::after 가상 요소로 그린다(별도 마크업 불필요) */
 .settings-switch input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
   width: 34px;
   height: 20px;
   flex-shrink: 0;
-  accent-color: var(--color-primary);
+  margin: 0;
+  border-radius: 999px;
+  background: var(--color-border);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.settings-switch input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+
+.settings-switch input[type="checkbox"]:checked {
+  background: var(--color-primary);
+}
+
+.settings-switch input[type="checkbox"]:checked::after {
+  transform: translateX(14px);
+}
+
+.settings-switch input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .recurring-schedule-list {
