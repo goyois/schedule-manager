@@ -46,7 +46,8 @@ const BOARD_COMPACT_KEY = "board-cards-compact";
     const next = !board.classList.contains("compact");
     applyCompact(next);
     localStorage.setItem(BOARD_COMPACT_KEY, String(next));
-    renderBoard();
+    // 카드 데이터는 그대로고 board.compact 클래스만 바뀌므로, 스냅샷 비교로는 감지가 안 된다 - 강제로 다시 그린다
+    renderBoard({ force: true });
   });
 })();
 
@@ -1435,129 +1436,193 @@ async function loadBoardColumns() {
   );
 }
 
-function renderBoard() {
-  board.innerHTML = STATUS_COLUMNS.map((col) => {
-    const data = boardColumnData.get(col.key) ?? { items: [], totalElements: 0 };
-    const items = data.items;
-    const hiddenCount = data.totalElements - items.length;
+// 예전엔 SSE로 갱신 신호를 받을 때마다 renderBoard()가 board.innerHTML을 통째로 지우고 다시 그렸다.
+// 내 일정 중 하나만 바뀌어도 4개 컬럼 전체가 깜빡였고, 드래그 중이던 카드나 방금 편 카드가 순간적으로
+// 사라졌다 되돌아왔다 - 컬럼/카드 DOM은 그대로 두고, 실제로 내용이 바뀐 카드만 새로 그리는 방식으로 바꿨다.
+const boardCardSnapshots = new Map(); // scheduleId -> 마지막으로 그린 내용의 JSON 스냅샷(변경 여부 판단용)
 
-    return `
-      <div class="board-column ${col.key}" data-status-column="${col.key}">
-        <div class="board-column-header">
-          <div class="title"><span class="status-dot ${col.key}"></span>${col.label}</div>
-          <div class="board-column-header-right">
-            <span class="count-badge">${data.totalElements}</span>
-            <button type="button" class="board-column-add-btn" data-create-in-column="${col.key}" title="${col.label}에 새 일정 추가">+</button>
-          </div>
-        </div>
-        <div class="board-column-body">
-          ${items.length ? items.map(scheduleCardHtml).join("") : `<div class="empty-hint">일정이 없습니다</div>`}
-        </div>
-        ${
-          hiddenCount > 0
-            ? `<button type="button" class="board-more-btn" data-toggle-more="${col.key}">더보기 (${hiddenCount})</button>`
-            : ""
-        }
-      </div>`;
-  }).join("");
+function ensureBoardColumnSkeleton(col) {
+  let columnEl = board.querySelector(`[data-status-column="${col.key}"]`);
+  if (columnEl) return columnEl;
 
-  board.querySelectorAll("[data-toggle-more]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const key = btn.dataset.toggleMore;
-      const current = boardColumnVisibleCount.get(key) ?? BOARD_COLUMN_VISIBLE_LIMIT;
-      boardColumnVisibleCount.set(key, current + BOARD_COLUMN_VISIBLE_LIMIT);
-      const size = boardColumnVisibleCount.get(key);
-      try {
-        const res = await fetchBoardColumnPage(key, size);
-        boardColumnData.set(key, { items: res.content, totalElements: res.totalElements });
-      } catch (err) {
-        showToast(`더 불러오지 못했습니다. ${err.message}`);
-        return;
-      }
-      renderBoard();
-    });
-  });
+  columnEl = document.createElement("div");
+  columnEl.className = `board-column ${col.key}`;
+  columnEl.dataset.statusColumn = col.key;
+  columnEl.innerHTML = `
+    <div class="board-column-header">
+      <div class="title"><span class="status-dot ${col.key}"></span>${col.label}</div>
+      <div class="board-column-header-right">
+        <span class="count-badge">0</span>
+        <button type="button" class="board-column-add-btn" data-create-in-column="${col.key}" title="${col.label}에 새 일정 추가">+</button>
+      </div>
+    </div>
+    <div class="board-column-body"></div>`;
+  board.appendChild(columnEl);
 
-  board.querySelectorAll("[data-create-in-column]").forEach((btn) => {
-    btn.addEventListener("click", () => openCreateModal(btn.dataset.createInColumn));
-  });
-
-  board.querySelectorAll("[data-status-for]").forEach((sel) => {
-    sel.addEventListener("change", async () => {
-      const id = sel.dataset.statusFor;
-      await updateScheduleStatus(id, sel.value);
-    });
-  });
-
-  board.querySelectorAll("[data-card-collapse]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = String(btn.dataset.cardCollapse);
-      const card = btn.closest(".schedule-card");
-      const collapsed = !card.classList.contains("collapsed");
-      card.classList.toggle("collapsed", collapsed);
-      btn.textContent = collapsed ? "▸" : "▾";
-      btn.title = collapsed ? "일정 카드 펼치기" : "일정 카드 접기";
-      // 전체 접기(board.compact)가 켜져 있을 땐 기본이 접힘이라 "펼침 예외"를 forceExpandedCardIds에,
-      // 꺼져 있을 땐 기본이 펼침이라 "접힘 예외"를 collapsedCardIds에 반영한다(isCardVisuallyCollapsed와 동일 기준)
-      if (board.classList.contains("compact")) {
-        if (collapsed) forceExpandedCardIds.delete(id);
-        else forceExpandedCardIds.add(id);
-        saveForceExpandedCardIds();
-      } else {
-        if (collapsed) collapsedCardIds.add(id);
-        else collapsedCardIds.delete(id);
-        saveCollapsedCardIds();
-      }
-    });
-  });
-
-  board.querySelectorAll("[data-edit]").forEach((btn) => {
-    btn.addEventListener("click", () => openEditModal(btn.dataset.edit));
-  });
-
-  board.querySelectorAll("[data-delete]").forEach((btn) => {
-    btn.addEventListener("click", () => deleteSchedule(btn.dataset.delete));
-  });
+  columnEl.querySelector("[data-create-in-column]").addEventListener("click", () => openCreateModal(col.key));
 
   // 카드를 마우스로 눌러 다른 상태 컬럼으로 끌어놓으면 상태 select와 같은 updateScheduleStatus()를
   // 그대로 재사용해 상태를 바꾼다 - 드롭 대상 컬럼은 카드 사이 좁은 틈이 아니라 컬럼 전체(헤더/더보기
-  // 버튼 영역 포함)로 넉넉하게 잡는다
-  board.querySelectorAll(".schedule-card").forEach((card) => {
-    card.addEventListener("dragstart", (e) => {
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", card.dataset.id); // Firefox는 setData 없으면 드래그 자체가 시작되지 않는다
-      card.classList.add("dragging");
-    });
-    card.addEventListener("dragend", () => card.classList.remove("dragging"));
-
-    // 카드를 클릭하면(상태 select·수정·삭제 버튼이 아닌 부분) 상세보기 모달을 띄운다 - 수정 폼이
-    // 아니라 읽기 전용 화면이고, 거기서 "수정"을 눌러야 기존 입력 폼(openEditModal)이 열린다
-    card.addEventListener("click", (e) => {
-      if (e.target.closest("select, button")) return;
-      openDetailModal(card.dataset.id);
-    });
+  // 버튼 영역 포함)로 넉넉하게 잡는다. 컬럼 스켈레톤은 한 번만 만들어지므로 이 리스너들도 한 번만 붙인다
+  columnEl.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    columnEl.classList.add("drop-target");
+  });
+  columnEl.addEventListener("dragleave", (e) => {
+    // 컬럼 내부 자식 요소 사이를 이동할 때마다 dragleave가 계속 발생해 깜빡이지 않도록,
+    // 실제로 컬럼 바깥으로 나갈 때만 하이라이트를 지운다
+    if (!columnEl.contains(e.relatedTarget)) columnEl.classList.remove("drop-target");
+  });
+  columnEl.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    columnEl.classList.remove("drop-target");
+    const id = e.dataTransfer.getData("text/plain");
+    const schedule = schedules.find((x) => String(x.id) === String(id));
+    if (!schedule || schedule.status === col.key) return;
+    await updateScheduleStatus(id, col.key);
   });
 
-  board.querySelectorAll("[data-status-column]").forEach((columnEl) => {
-    columnEl.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      columnEl.classList.add("drop-target");
-    });
-    columnEl.addEventListener("dragleave", (e) => {
-      // 컬럼 내부 자식 요소 사이를 이동할 때마다 dragleave가 계속 발생해 깜빡이지 않도록,
-      // 실제로 컬럼 바깥으로 나갈 때만 하이라이트를 지운다
-      if (!columnEl.contains(e.relatedTarget)) columnEl.classList.remove("drop-target");
-    });
-    columnEl.addEventListener("drop", async (e) => {
-      e.preventDefault();
-      columnEl.classList.remove("drop-target");
-      const id = e.dataTransfer.getData("text/plain");
-      const targetStatus = columnEl.dataset.statusColumn;
-      const schedule = schedules.find((x) => String(x.id) === String(id));
-      if (!schedule || schedule.status === targetStatus) return;
-      await updateScheduleStatus(id, targetStatus);
-    });
+  return columnEl;
+}
+
+// 카드 하나(새로 만들었거나, 내용이 바뀌어 통째로 교체된 카드)에 리스너를 붙인다. 내용이 안 바뀐
+// 카드는 노드를 그대로 두므로 여기를 다시 타지 않고, 이미 붙어있던 리스너가 그대로 유지된다
+function bindCardListeners(cardEl) {
+  cardEl.querySelector("[data-status-for]").addEventListener("change", async (e) => {
+    await updateScheduleStatus(cardEl.dataset.id, e.target.value);
+  });
+
+  cardEl.querySelector("[data-card-collapse]").addEventListener("click", () => {
+    const id = String(cardEl.dataset.id);
+    const collapsed = !cardEl.classList.contains("collapsed");
+    cardEl.classList.toggle("collapsed", collapsed);
+    const btn = cardEl.querySelector("[data-card-collapse]");
+    btn.textContent = collapsed ? "▸" : "▾";
+    btn.title = collapsed ? "일정 카드 펼치기" : "일정 카드 접기";
+    // 전체 접기(board.compact)가 켜져 있을 땐 기본이 접힘이라 "펼침 예외"를 forceExpandedCardIds에,
+    // 꺼져 있을 땐 기본이 펼침이라 "접힘 예외"를 collapsedCardIds에 반영한다(isCardVisuallyCollapsed와 동일 기준)
+    if (board.classList.contains("compact")) {
+      if (collapsed) forceExpandedCardIds.delete(id);
+      else forceExpandedCardIds.add(id);
+      saveForceExpandedCardIds();
+    } else {
+      if (collapsed) collapsedCardIds.add(id);
+      else collapsedCardIds.delete(id);
+      saveCollapsedCardIds();
+    }
+  });
+
+  cardEl.querySelector("[data-edit]").addEventListener("click", () => openEditModal(cardEl.dataset.id));
+  cardEl.querySelector("[data-delete]").addEventListener("click", () => deleteSchedule(cardEl.dataset.id));
+
+  cardEl.addEventListener("dragstart", (e) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", cardEl.dataset.id); // Firefox는 setData 없으면 드래그 자체가 시작되지 않는다
+    cardEl.classList.add("dragging");
+  });
+  cardEl.addEventListener("dragend", () => cardEl.classList.remove("dragging"));
+
+  // 카드를 클릭하면(상태 select·수정·삭제 버튼이 아닌 부분) 상세보기 모달을 띄운다 - 수정 폼이
+  // 아니라 읽기 전용 화면이고, 거기서 "수정"을 눌러야 기존 입력 폼(openEditModal)이 열린다
+  cardEl.addEventListener("click", (e) => {
+    if (e.target.closest("select, button")) return;
+    openDetailModal(cardEl.dataset.id);
+  });
+}
+
+function createCardElement(s) {
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = scheduleCardHtml(s).trim();
+  const cardEl = wrapper.firstElementChild;
+  bindCardListeners(cardEl);
+  return cardEl;
+}
+
+// force=true 는 카드 데이터 자체는 안 바뀌었어도 무조건 다시 그려야 하는 경우에 쓴다: 전체 접기 토글
+// (표시 여부가 board.compact 클래스에서 오므로 데이터 스냅샷만으론 변경을 감지할 수 없음), 상태 변경
+// 실패 시 되돌리기(select에 남은 사용자의 임시 선택값을 서버 상태로 되돌려야 함)
+function patchBoardColumn(col, data, force) {
+  const columnEl = ensureBoardColumnSkeleton(col);
+  const items = data.items;
+  const hiddenCount = data.totalElements - items.length;
+
+  columnEl.querySelector(".count-badge").textContent = String(data.totalElements);
+
+  const bodyEl = columnEl.querySelector(".board-column-body");
+  const existingCards = new Map();
+  bodyEl.querySelectorAll(":scope > .schedule-card").forEach((el) => existingCards.set(el.dataset.id, el));
+  bodyEl.querySelector(":scope > .empty-hint")?.remove();
+
+  let prevNode = null;
+  items.forEach((s) => {
+    const id = String(s.id);
+    const snapshot = JSON.stringify(s);
+    let cardEl = existingCards.get(id);
+
+    if (cardEl) {
+      existingCards.delete(id);
+      if (force || boardCardSnapshots.get(id) !== snapshot) {
+        const fresh = createCardElement(s);
+        cardEl.replaceWith(fresh);
+        cardEl = fresh;
+      }
+    } else {
+      cardEl = createCardElement(s);
+    }
+    boardCardSnapshots.set(id, snapshot);
+
+    // 순서를 맞춘다: 방금 처리한 카드가 이전 카드 바로 다음 자리에 있지 않으면 그 자리로 옮긴다
+    const anchor = prevNode ? prevNode.nextElementSibling : bodyEl.firstElementChild;
+    if (anchor !== cardEl) bodyEl.insertBefore(cardEl, anchor);
+    prevNode = cardEl;
+  });
+
+  // 새 목록에 더 이상 없는 카드만 지운다(안 바뀐 카드는 손대지 않으므로 나머지는 그대로 남는다)
+  existingCards.forEach((el, id) => {
+    el.remove();
+    boardCardSnapshots.delete(id);
+  });
+
+  if (items.length === 0) {
+    const hint = document.createElement("div");
+    hint.className = "empty-hint";
+    hint.textContent = "일정이 없습니다";
+    bodyEl.appendChild(hint);
+  }
+
+  let moreBtn = columnEl.querySelector("[data-toggle-more]");
+  if (hiddenCount > 0) {
+    if (!moreBtn) {
+      moreBtn = document.createElement("button");
+      moreBtn.type = "button";
+      moreBtn.className = "board-more-btn";
+      moreBtn.dataset.toggleMore = col.key;
+      columnEl.appendChild(moreBtn);
+      moreBtn.addEventListener("click", async () => {
+        const current = boardColumnVisibleCount.get(col.key) ?? BOARD_COLUMN_VISIBLE_LIMIT;
+        boardColumnVisibleCount.set(col.key, current + BOARD_COLUMN_VISIBLE_LIMIT);
+        const size = boardColumnVisibleCount.get(col.key);
+        try {
+          const res = await fetchBoardColumnPage(col.key, size);
+          boardColumnData.set(col.key, { items: res.content, totalElements: res.totalElements });
+        } catch (err) {
+          showToast(`더 불러오지 못했습니다. ${err.message}`);
+          return;
+        }
+        renderBoard();
+      });
+    }
+    moreBtn.textContent = `더보기 (${hiddenCount})`;
+  } else if (moreBtn) {
+    moreBtn.remove();
+  }
+}
+
+function renderBoard({ force = false } = {}) {
+  STATUS_COLUMNS.forEach((col) => {
+    const data = boardColumnData.get(col.key) ?? { items: [], totalElements: 0 };
+    patchBoardColumn(col, data, force);
   });
 }
 
@@ -2010,7 +2075,9 @@ async function updateScheduleStatus(id, status) {
     await refreshAll();
   } catch (err) {
     const refreshed = await notifyScheduleMutationError(err, "상태 변경");
-    if (!refreshed) renderBoard();
+    // 서버 데이터는 안 바뀌었지만 select는 사용자가 이미 값을 바꿔놓은 상태라, 강제로 다시 그려서
+    // 화면을 서버 상태로 되돌린다
+    if (!refreshed) renderBoard({ force: true });
   }
 }
 
