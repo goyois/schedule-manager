@@ -2950,22 +2950,27 @@ select {
   }
 }
 
-/* ---------- 도움말 버튼 (AI 챗봇 아이콘 위, js/onboarding.js) ----------
-   bottom:100px(아바타 바로 위, .ai-chat-panel과 같은 간격)로는 안 되는 게, 아직 안 닫은 인사
-   말풍선(#ai-chatbot-bubble)이 그 자리에도 떠서 겹친다(아바타 클릭으로 패널을 열 때만 dashboard.js가
-   말풍선을 숨기지, 평소엔 계속 떠 있다) - 말풍선까지 확실히 위로 넘어간 165px를 bottom으로 써서
-   말풍선을 닫기 전/후 어느 쪽이든 겹치지 않게 한다.
-   right:32px는 이 버튼(44px)의 가로 중심 기준값이다 - .ai-chatbot-widget 쪽을 이 중심에 맞춰
-   옮겼다(아래 주석 참고), 지름이 다른 두 원을 오른쪽 "끝"만 맞추면 중심축이 어긋나 보이기 때문 */
+/* ---------- 도움말 버튼 (js/onboarding.js, report-onboarding.js, mandalart-onboarding.js) ----------
+   dashboard.html에만 있는 AI 챗봇 아바타와 겹치지 않도록 그 페이지에서만 더 띄운다(.help-widget-with-chatbot
+   참고) - 챗봇이 없는 report/mandalart에서는 .ai-chatbot-widget과 같은 bottom:32px로 우하단에 붙인다 */
 .help-widget {
   position: fixed;
-  bottom: 100px;
+  bottom: 32px;
   right: 32px;
   z-index: 40;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+}
+
+/* dashboard.html 전용 - bottom:100px(아바타 바로 위, .ai-chat-panel과 같은 간격)로는 안 되는 게,
+   아직 안 닫은 인사 말풍선(#ai-chatbot-bubble)이 그 자리에도 떠서 겹친다(아바타 클릭으로 패널을 열
+   때만 dashboard.js가 말풍선을 숨기지, 평소엔 계속 떠 있다) - 말풍선과도 안 겹치는 100px를 쓴다.
+   right:32px는 이 버튼(44px)의 가로 중심 기준값이다 - .ai-chatbot-widget 쪽을 이 중심에 맞춰
+   옮겼다(아래 주석 참고), 지름이 다른 두 원을 오른쪽 "끝"만 맞추면 중심축이 어긋나 보이기 때문 */
+.help-widget.help-widget-with-chatbot {
+  bottom: 100px;
 }
 
 .help-widget-tooltip {
