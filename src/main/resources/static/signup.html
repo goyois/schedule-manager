@@ -51,6 +51,9 @@
         <button type="submit" class="btn btn-primary">회원가입</button>
       </form>
 
+      <div class="auth-divider"><span>또는</span></div>
+      <div id="google-signin-button" class="google-signin-button"></div>
+
       <div class="auth-footer">
         이미 계정이 있으신가요? <a href="/login">로그인</a>
       </div>
@@ -59,5 +62,6 @@
 
   <script src="/js/api.js"></script>
   <script src="/js/signup.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer onload="initGoogleSignIn()"></script>
 </body>
 </html>

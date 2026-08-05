@@ -271,6 +271,25 @@ function initDemoChrome() {
   document.getElementById("demo-login-btn").style.display = "";
   document.getElementById("demo-signup-btn").style.display = "";
   API.setDemoAuthRequiredHandler(openDemoAuthModal);
+
+  // AI 채팅 입력창: 데모 모드에서는 히스토리/패널은 그대로 보여주되(기능 소개), 입력창 자리만 막아서
+  // 메시지를 보내려 하면 곧바로 안내 모달이 뜨게 한다 - 서버로 절대 실제 메시지를 보내지 않는다
+  document.getElementById("ai-chat-input-demo-block").classList.add("show");
+  document.getElementById("ai-chat-input-demo-block").addEventListener("click", openDemoAuthModal);
+  document.getElementById("ai-suggest-prompt").disabled = true;
+  document.getElementById("ai-suggest-submit-btn").disabled = true;
+
+  // 상단 "기간별 리포트"/"설정" 아이콘, 만다라트 미리보기 모달의 "만다라트 페이지로 이동" 링크:
+  // 원래는 각 페이지로 실제 이동한 뒤 그 페이지의 requireAuth가 다시 /login으로 돌려보냈다 - 데모
+  // 모드에서는 이동 자체를 막고 그 자리에서(대시보드를 떠나지 않고) 바로 안내 모달을 띄운다.
+  // mandalart-preview-link는 만다라트 위젯을 눌러 미리보기 모달을 연 다음에만 나타나므로, 그 모달이
+  // 이미 열려 있는 채로 안내 모달이 위(z-index 60)에 겹쳐 뜬다
+  ["report-link", "settings-link", "mandalart-preview-link"].forEach((id) => {
+    document.getElementById(id).addEventListener("click", (e) => {
+      e.preventDefault();
+      openDemoAuthModal();
+    });
+  });
 }
 
 function renderUserChip() {

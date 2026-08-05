@@ -308,10 +308,18 @@
       </div>
     </div>
 
-    <form id="ai-suggest-form" class="ai-chat-input-row">
-      <textarea id="ai-suggest-prompt" rows="1" placeholder="무엇을 추천받고 싶으신가요?" required></textarea>
-      <button type="submit" class="btn btn-primary" style="width: auto" id="ai-suggest-submit-btn">전송</button>
-    </form>
+    <div class="ai-chat-input-wrap">
+      <form id="ai-suggest-form" class="ai-chat-input-row">
+        <textarea id="ai-suggest-prompt" rows="1" placeholder="무엇을 추천받고 싶으신가요?" required></textarea>
+        <button type="submit" class="btn btn-primary" style="width: auto" id="ai-suggest-submit-btn">전송</button>
+      </form>
+      <!-- 데모 모드에서 입력창 자리를 그대로 덮는 블록 - 기본은 숨김, js/dashboard.js가
+           API.isDemoMode()일 때만 보여준다. 눌러서 열리는 게 데모 안내 모달(#demo-auth-modal-overlay)이라
+           "모달창으로 입력창을 막는다"는 요구를 그대로 만족한다 -->
+      <button type="button" class="ai-chat-input-demo-block" id="ai-chat-input-demo-block">
+        로그인 후 이용할 수 있어요 →
+      </button>
+    </div>
   </div>
 
   <!-- 만다라트 위젯을 누르면 바로 이동하지 않고 이 미리보기 모달부터 보여준다 - 배경(오버레이)을

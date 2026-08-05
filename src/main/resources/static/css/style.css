@@ -3302,11 +3302,41 @@ select {
   margin-top: 10px;
 }
 
+.ai-chat-input-wrap {
+  position: relative;
+}
+
 .ai-chat-input-row {
   display: flex;
   align-items: flex-end;
   gap: 8px;
   margin-top: 12px;
+}
+
+/* 데모 모드에서 .ai-chat-input-row 자리를 정확히 덮는 블록 버튼 - 누르면 데모 안내 모달이 뜬다 */
+.ai-chat-input-demo-block {
+  display: none;
+  position: absolute;
+  inset: 12px 0 0 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--color-bg);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.ai-chat-input-demo-block.show {
+  display: flex;
+}
+
+.ai-chat-input-demo-block:hover {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
+  border-color: var(--color-primary-soft);
 }
 
 .ai-chat-input-row textarea {
