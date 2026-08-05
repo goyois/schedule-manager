@@ -113,6 +113,10 @@ public class AiService {
                - reason에는 무엇을 어떻게 바꾸는지 한두 문장으로 설명하세요.
                - 어느 일정을 말하는지 [기존 일정] 목록에서 특정할 수 없으면 SCHEDULE_UPDATE로 분류하지 말고
                  GENERAL로 답하며 어느 일정인지 되물으세요.
+               - SCHEDULE_UPDATE는 한 번에 일정 하나만 바꿀 수 있습니다. "이번 주 일정 다 미뤄줘", "회의들
+                 전부 취소해줘"처럼 여러 일정을 한꺼번에 바꾸거나 삭제해달라는 요청은 SCHEDULE_UPDATE로
+                 분류하지 말고 GENERAL로 답하며, 한 번에 하나씩만 처리할 수 있다는 점과(삭제 요청이면) AI
+                 채팅으로는 일정을 삭제할 수 없고 직접 삭제해야 한다는 점을 안내하세요.
             3) 그게 아니라 [기존 일정]에 없는 완전히 새로운 일정을 만들어 추천받고 싶어하는 경우면
                SCHEDULE_RECOMMENDATION으로 분류하세요. 사용자가 한 번에 여러 일정을 요청했다면(예: "이번
                주에 운동, 팀 회의, 병원 예약 등록해줘") scheduleItems 배열에 요청받은 일정 하나마다 원소
@@ -132,10 +136,21 @@ public class AiService {
                  관련 있는지 짧게 언급하세요. 다만 사용자가 이미 구체적으로 무엇을 원하는지 말했다면
                  그 요청을 우선하고, 목표와 무관해 보여도 억지로 끼워 맞추지 마세요.
                - reason에는 왜 이 일정(들)을 추천하는지 한두 문장으로 설명하세요.
-            4) 그 외 모든 경우(기존 일정 조회/설명, 잡담, 대상을 특정할 수 없는 수정/채우기 요청 등)는
-               GENERAL로 분류하세요. targetScheduleId/targetMandalartBoardId, scheduleItems,
-               title/content/startAt/endAt/categoryId를 전부 null(또는 빈 배열)로 두고, reason에 답변
-               내용을 쓰세요.
+            4) 그 외 모든 경우는 GENERAL로 분류하세요. 아래는 대표적인 예시이지 전체 목록이 아닙니다 -
+               1)~3)에 해당하지 않으면 항상 GENERAL입니다.
+               - 조회/요약형 질문: "이번 주 일정 뭐 있어?", "다음 회의 언제야?", "이 카테고리 일정 몇
+                 개야?" 처럼 [기존 일정]을 바탕으로 조회·설명만 하면 되는 경우.
+               - 통계/분석형 질문: "이번 달 완료율 어때?", "요즘 무슨 카테고리를 제일 많이 써?" 처럼
+                 [기존 일정]을 집계·요약해서 답해야 하는 경우.
+               - 조언/코칭형 질문: "시간 관리 팁 알려줘", "일정 너무 빡빡한 것 같은데 어떻게 줄이지?" 처럼
+                 새 일정을 만들거나 기존 일정을 바꾸는 게 아니라 의견/조언을 구하는 경우.
+               - 인사/잡담: 일정과 무관한 대화.
+               - 대상을 특정할 수 없는 수정/채우기/삭제 요청, 여러 일정을 한꺼번에 다루는 요청(2번 항목의
+                 예외 참고).
+               - 이 서비스가 할 수 없는 일을 요청하는 경우(예: 일정 삭제, 다른 사용자 일정 조회): 할 수
+                 없다는 점과 대안(직접 조작해야 한다는 안내 등)을 reason에 답하세요.
+               targetScheduleId/targetMandalartBoardId, scheduleItems, title/content/startAt/endAt/
+               categoryId를 전부 null(또는 빈 배열)로 두고, reason에 답변 내용을 쓰세요.
 
             SCHEDULE_UPDATE의 startAt/endAt, SCHEDULE_RECOMMENDATION의 scheduleItems 각 원소의
             startAt/endAt은 모두 "yyyy-MM-ddTHH:mm:ss" 형식(타임존 없음)으로 쓰세요.
