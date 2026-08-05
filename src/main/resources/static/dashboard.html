@@ -42,7 +42,33 @@
     </a>
     <button type="button" class="btn btn-ghost btn-sm quote-bar-icon-btn" id="theme-toggle-btn" title="다크 모드로 전환" aria-label="다크 모드로 전환"></button>
     <button class="btn btn-ghost btn-sm" id="logout-btn">로그아웃</button>
+    <!-- 데모 모드(로그인 없이 들어온 방문자)에서 로그아웃 버튼 대신 보여준다 - 기본은 숨김, js/dashboard.js가
+         API.isDemoMode()일 때만 보여준다 -->
+    <a class="btn btn-ghost btn-sm" id="demo-login-btn" href="/login" style="display: none">로그인</a>
+    <a class="btn btn-primary btn-sm" style="width: auto; display: none" id="demo-signup-btn" href="/signup">회원가입</a>
   </div>
+
+  <!-- 데모 모드 안내 배너 - 기본은 숨김, js/dashboard.js가 API.isDemoMode()일 때만 보여준다 -->
+  <div class="demo-banner" id="demo-banner">
+    <span class="demo-banner-text">🎬 지금 보고 계신 건 둘러보기용 데모 데이터예요. 회원가입하면 나만의 일정을 만들 수 있어요.</span>
+    <a class="btn btn-primary btn-sm" style="width: auto" href="/signup">회원가입하기</a>
+    <a class="btn btn-ghost btn-sm" href="/login">로그인</a>
+  </div>
+
+  <!-- 데모 모드에서 저장/수정/삭제 등을 시도했을 때 뜨는 모달 - schedule-detail-modal-overlay와 같은
+       .modal-overlay/.modal/.modal-actions 패턴을 그대로 재사용한다 -->
+  <div class="modal-overlay" id="demo-auth-modal-overlay">
+    <div class="modal">
+      <h2>로그인이 필요해요</h2>
+      <p class="detail-content">지금은 둘러보기용 데모라 저장되지 않아요. 회원가입하면 방금 하신 것처럼 자유롭게 일정을 만들고 관리할 수 있어요.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="close-demo-auth-modal-btn">닫기</button>
+        <a class="btn btn-ghost" href="/login">로그인</a>
+        <a class="btn btn-primary" style="width: auto" href="/signup">회원가입</a>
+      </div>
+    </div>
+  </div>
+
   <div class="app-shell">
     <aside class="sidebar">
       <div class="sidebar-brand-row">
@@ -159,19 +185,54 @@
       <div class="board-title-center">
         <div class="board-title-text">
           <h1 id="board-title">전체 일정</h1>
-          <div class="today-nav show" id="today-nav">
-            <button type="button" class="icon-btn" id="today-nav-prev" title="전날">‹</button>
-            <div class="today" id="today-label"></div>
-            <button type="button" class="icon-btn" id="today-nav-next" title="다음날">›</button>
-          </div>
-          <div class="today-nav" id="view-nav">
-            <button type="button" class="icon-btn" id="view-nav-prev" title="이전">‹</button>
-            <div class="today" id="view-range-label"></div>
-            <button type="button" class="icon-btn" id="view-nav-next" title="다음">›</button>
+          <div class="board-title-date-row">
+            <div class="today-nav show" id="today-nav">
+              <button type="button" class="icon-btn" id="today-nav-prev" title="전날">‹</button>
+              <div class="today" id="today-label"></div>
+              <button type="button" class="icon-btn" id="today-nav-next" title="다음날">›</button>
+            </div>
+            <div class="today-nav" id="view-nav">
+              <button type="button" class="icon-btn" id="view-nav-prev" title="이전">‹</button>
+              <div class="today" id="view-range-label"></div>
+              <button type="button" class="icon-btn" id="view-nav-next" title="다음">›</button>
+            </div>
+            <div class="board-calendar-picker" id="board-calendar-picker">
+              <button type="button" class="icon-btn board-calendar-btn" id="board-calendar-btn" title="날짜를 선택해서 이동">📅</button>
+              <div class="board-calendar-popover" id="board-calendar-popover">
+                <div class="board-calendar-popover-header">
+                  <button type="button" class="icon-btn" id="board-calendar-prev" title="이전 달">‹</button>
+                  <span class="board-calendar-popover-label" id="board-calendar-label"></span>
+                  <button type="button" class="icon-btn" id="board-calendar-next" title="다음 달">›</button>
+                </div>
+                <div class="cal-mini-weekdays" id="board-calendar-weekdays"></div>
+                <div class="cal-mini-grid" id="board-calendar-grid"></div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="board-title-actions">
           <button type="button" class="btn btn-ghost btn-sm" id="board-compact-toggle-btn" title="일정 카드 접기">▤ 접기</button>
+          <!-- ai-chat-settings-popover와 같은 패턴(⚙ 버튼 → 작은 팝오버, 바깥 클릭/ESC로 닫힘) - /settings의
+               "일정 자동화" 패널(js/settings.js)과 같은 PUT API 두 개를 공유해, 설정 페이지로 이동하지
+               않고도 여기서 바로 켜고 끌 수 있게 한다. 자세한 설명 문구는 생략하고 /settings 링크로 대신한다 -->
+          <div class="board-automation-picker" id="board-automation-picker">
+            <button type="button" class="btn btn-ghost btn-sm" id="board-automation-btn" title="일정 자동화 설정">⚙ 자동화</button>
+            <div class="board-automation-popover" id="board-automation-popover">
+              <div class="settings-row">
+                <div class="settings-row-title">시작/종료 자동 상태 변경</div>
+                <label class="settings-switch">
+                  <input type="checkbox" id="board-automation-auto-status-toggle" aria-label="시작/종료 시각에 맞춰 상태 자동 변경" />
+                </label>
+              </div>
+              <div class="settings-row">
+                <div class="settings-row-title">AI 추천 자동 등록</div>
+                <label class="settings-switch">
+                  <input type="checkbox" id="board-automation-ai-auto-register-toggle" aria-label="AI 추천 일정 자동 등록 허용" />
+                </label>
+              </div>
+              <a class="board-automation-more-link" href="/settings">자세히 보기 →</a>
+            </div>
+          </div>
           <button type="button" class="btn btn-ghost btn-sm" id="open-recurring-modal" title="반복 일정 추가">🔁 반복 일정</button>
           <button type="button" class="btn btn-primary btn-sm" id="open-create-modal" title="새 일정 추가">+ 새 일정</button>
         </div>
@@ -466,6 +527,7 @@
   <script src="/js/sidebar.js"></script>
   <script src="/js/theme.js"></script>
   <script src="/js/api.js"></script>
+  <script src="/js/demo-data.js"></script>
   <script src="/js/dashboard.js"></script>
   <script src="/js/tour.js"></script>
   <script src="/js/onboarding.js"></script>

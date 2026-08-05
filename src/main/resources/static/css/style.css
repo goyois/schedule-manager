@@ -127,6 +127,48 @@ body {
   padding-right: 20px;
 }
 
+/* 로그인 없이 들어온 방문자에게만 보이는 데모 안내 배너(js/dashboard.js가 API.isDemoMode()일 때
+   .show를 토글) - quote-bar 바로 아래, 실제 화면 콘텐츠 위에 얇게 붙인다 */
+.demo-banner {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 20px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 13px;
+  text-align: center;
+}
+
+.demo-banner.show {
+  display: flex;
+}
+
+.demo-banner-text {
+  font-weight: 500;
+}
+
+.demo-banner .btn-ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  color: #fff;
+}
+
+.demo-banner .btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.demo-banner .btn-primary {
+  background: #fff;
+  color: var(--color-primary-dark);
+}
+
+.demo-banner .btn-primary:hover {
+  background: rgba(255, 255, 255, 0.85);
+}
+
 /* 사이드바 접기/펼치기 토글(js/sidebar.js) - .sidebar-brand-row 안에서 "Schedule Manager"
    로고 오른쪽 끝에 배치된다. Claude 앱의 사이드바 토글 아이콘과 같은 느낌으로 테두리 없는
    아이콘 버튼 스타일을 쓴다 */
@@ -862,12 +904,20 @@ select {
 /* 보드 뷰에서는 #today-nav(실제 오늘/viewDate 기준 전날·다음날 이동), 일/주/월/년 뷰에서는
    #view-nav(현재 보고 있는 날짜/주/월/년 단위 이동)가 이 자리에서 서로 자리를 바꿔가며 나온다
    (switchView가 .show 토글) - 같은 자리·같은 스타일을 공유하도록 둘 다 .today-nav 클래스를 쓴다 */
+/* today-nav/view-nav와 📅 캘린더 버튼을 한 줄로 나란히 놓고 그 줄 전체를 가운데 정렬한다 */
+.board-title-date-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
 .today-nav {
   display: none;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin-top: 4px;
 }
 
 .today-nav.show {
@@ -2383,6 +2433,111 @@ select {
   background: #fff;
 }
 
+/* -- 보드 상단 "📅 캘린더" 버튼 팝오버 (clock-filter-popover와 같은 토글 패턴) -- */
+
+.board-calendar-picker {
+  position: relative;
+}
+
+/* board-title-actions 줄의 ⚙ 자동화 버튼 팝오버 - clock-filter-popover/ai-chat-settings-popover와
+   같은 위치 패턴이지만, 이 줄은 위쪽이 header-widgets라 아래(top:100%)로 펼쳐도 가릴 게 없다 */
+.board-automation-picker {
+  position: relative;
+}
+
+.board-automation-popover {
+  display: none;
+  position: absolute;
+  top: 32px;
+  right: 0;
+  z-index: 6;
+  width: 250px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 10px 12px;
+}
+
+.board-automation-popover.show {
+  display: block;
+}
+
+.board-automation-popover .settings-row {
+  align-items: center;
+  padding: 6px 0;
+  border-top: none;
+}
+
+.board-automation-popover .settings-row-title {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.board-automation-more-link {
+  display: block;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.board-automation-more-link:hover {
+  color: var(--color-primary-dark);
+}
+
+.board-calendar-btn {
+  font-size: 14px;
+  padding: 2px 8px;
+  line-height: 1.4;
+}
+
+.board-calendar-popover {
+  display: none;
+  position: absolute;
+  top: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: 240px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 10px 12px;
+}
+
+.board-calendar-popover.show {
+  display: block;
+}
+
+.board-calendar-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cal-mini-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-align: center;
+  margin-bottom: 2px;
+}
+
+.board-calendar-popover .cal-mini-cell.is-selected {
+  background: var(--color-primary-dark);
+  color: #fff;
+  font-weight: 700;
+}
+
 @media (max-width: 1200px) {
   .cal-year-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -2410,6 +2565,14 @@ select {
 
 .modal-overlay.show {
   display: flex;
+}
+
+/* 데모 모드 안내 모달은 다른 모달(예: 일정 생성 폼)이 이미 열려 있는 채로 뜰 수 있다(제출 버튼을
+   누른 시점에 열림) - 같은 z-index(50)라면 DOM 순서상 뒤에 오는 모달에 가려지므로, 항상 맨 위에
+   보이도록 더 높은 값을 준다. 밑에 있던 모달은 일부러 닫지 않는다 - 안내 모달을 닫으면 방금 쓰던
+   입력값이 그대로 남아 있어야 자연스럽다 */
+#demo-auth-modal-overlay {
+  z-index: 60;
 }
 
 .modal {

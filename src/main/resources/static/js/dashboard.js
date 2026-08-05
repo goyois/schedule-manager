@@ -51,6 +51,64 @@ const BOARD_COMPACT_KEY = "board-cards-compact";
   });
 })();
 
+// board-title-actions 줄의 ⚙ 자동화 팝오버: /settings로 이동하지 않고도 "시작/종료 자동 상태 변경"과
+// "AI 추천 자동 등록" 두 토글을 바로 켜고 끌 수 있게 한다(clock-filter-popover/ai-chat-settings-popover와
+// 같은 토글 패턴). /settings(js/settings.js)의 bindSettingToggle과 완전히 같은 PUT API를 그대로
+// 공유하고, 열 때마다 API.getCurrentUser()의 최신 값으로 체크 상태를 다시 맞춘다 - 그래서 AI 채팅
+// 패널 안의 ⚙️ 자동 등록 토글(둘 다 열려 있을 수는 없다, 바깥 클릭 시 서로를 닫으므로)과도 항상 같은 값을 보여준다
+(function initBoardAutomationPopover() {
+  const btn = document.getElementById("board-automation-btn");
+  const popover = document.getElementById("board-automation-popover");
+  const autoStatusToggle = document.getElementById("board-automation-auto-status-toggle");
+  const aiAutoRegisterToggle = document.getElementById("board-automation-ai-auto-register-toggle");
+  if (!btn || !popover) return;
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const opening = !popover.classList.contains("show");
+    if (opening) {
+      const user = API.getCurrentUser() || {};
+      autoStatusToggle.checked = !!user.autoStatusMode;
+      aiAutoRegisterToggle.checked = !!user.aiAutoRegisterEnabled;
+    }
+    popover.classList.toggle("show");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!popover.contains(e.target) && e.target !== btn) {
+      popover.classList.remove("show");
+    }
+  });
+
+  autoStatusToggle.addEventListener("change", async () => {
+    const enabled = autoStatusToggle.checked;
+    try {
+      const updated = await API.put("/api/users/me/auto-status-mode", { enabled });
+      const current = API.getCurrentUser() || {};
+      API.setCurrentUser(Object.assign({}, current, { autoStatusMode: updated.autoStatusMode }));
+      showToast("설정을 저장했습니다.");
+    } catch (err) {
+      autoStatusToggle.checked = !enabled; // 저장 실패 시 토글을 원래 상태로 되돌린다
+      showToast(`설정을 저장하지 못했습니다. ${err.message}`);
+    }
+  });
+
+  aiAutoRegisterToggle.addEventListener("change", async () => {
+    const enabled = aiAutoRegisterToggle.checked;
+    try {
+      const updated = await API.put("/api/users/me/ai-auto-register", { enabled });
+      const current = API.getCurrentUser() || {};
+      API.setCurrentUser(Object.assign({}, current, { aiAutoRegisterEnabled: updated.aiAutoRegisterEnabled }));
+      // isAiAutoRegisterSettingEnabled()를 참조하는 "자동 등록" 버튼들이 패널을 다시 열지 않아도 바로 반영되게 한다
+      renderAiChatMessages();
+      showToast("설정을 저장했습니다.");
+    } catch (err) {
+      aiAutoRegisterToggle.checked = !enabled;
+      showToast(`설정을 저장하지 못했습니다. ${err.message}`);
+    }
+  });
+})();
+
 // 일정 카드 하나씩 개별로 접기: 전체 접기(위 BOARD_COMPACT_KEY)와 달리 카드별로 켜고 끌 수 있다.
 // renderBoard()가 SSE 이벤트 등으로 board.innerHTML을 통째로 다시 그리기 때문에, 접힘 여부를 DOM
 // 클래스만으로 들고 있으면 재렌더링될 때마다 사라진다 - 접힌 일정 id를 따로 기억해두고
@@ -176,16 +234,54 @@ function bindDateTimeGroup(hiddenInput, dateInput, hourInput, minuteInput) {
   return { syncVisibleFromHidden };
 }
 
+// 예전엔 토큰이 없으면 무조건 /login으로 돌려보냈다. 이제 대시보드는 로그인 없이도 들어올 수 있는
+// 첫 화면(ViewController의 "/")이라, 토큰이 없을 때 리다이렉트하는 대신 데모 모드를 켜고 그대로
+// 진행한다 - init()의 나머지 데이터 로딩 코드는 하나도 안 바뀐다(API.get 등이 데모 모드에서는
+// api.js가 알아서 demo-data.js의 가짜 데이터를 돌려준다). 항상 true를 돌려주므로 `if (!requireAuth())
+// return;`은 더 이상 실제로 막지 않지만, 호출부를 그대로 두어 변경 범위를 이 함수 안으로 좁혔다
 function requireAuth() {
   if (!API.getToken()) {
-    window.location.href = "/login";
-    return false;
+    API.enableDemoMode();
   }
   return true;
 }
 
+// schedule-detail-modal-overlay 등 다른 모달과 같은 열기/닫기 패턴(.show 토글) - 아래 "모달/팝오버
+// ESC로 닫기" 공용 리스너에도 이 오버레이를 추가해뒀다
+const demoAuthModalOverlay = document.getElementById("demo-auth-modal-overlay");
+
+function openDemoAuthModal() {
+  demoAuthModalOverlay.classList.add("show");
+}
+
+function closeDemoAuthModal() {
+  demoAuthModalOverlay.classList.remove("show");
+}
+
+demoAuthModalOverlay.addEventListener("click", (e) => {
+  if (e.target === demoAuthModalOverlay) closeDemoAuthModal();
+});
+document.getElementById("close-demo-auth-modal-btn").addEventListener("click", closeDemoAuthModal);
+
+// 데모 모드 전용 화면 요소를 켠다: 안내 배너, 헤더의 로그아웃 버튼을 로그인/회원가입 버튼으로 교체,
+// 저장/수정/삭제 등을 시도하면 뜨는 안내 모달을 api.js에 등록한다
+function initDemoChrome() {
+  document.getElementById("demo-banner").classList.add("show");
+  document.getElementById("logout-btn").style.display = "none";
+  document.getElementById("demo-login-btn").style.display = "";
+  document.getElementById("demo-signup-btn").style.display = "";
+  API.setDemoAuthRequiredHandler(openDemoAuthModal);
+}
+
 function renderUserChip() {
   const user = API.getCurrentUser();
+  // 데모 모드에서는 로그인한 사용자가 없으므로, "사용자"/"-" 기본값 대신 데모 상태를 알려준다
+  if (API.isDemoMode()) {
+    document.getElementById("user-avatar").textContent = "🎬";
+    document.getElementById("user-name").textContent = "데모 체험 중";
+    document.getElementById("user-email").textContent = "지금은 둘러보는 중이에요";
+    return;
+  }
   const email = (user && user.email) || "-";
   const initial = email !== "-" ? email[0].toUpperCase() : "?";
   document.getElementById("user-avatar").textContent = initial;
@@ -2074,6 +2170,82 @@ function renderYearView() {
   calendarViewEl.appendChild(grid);
 }
 
+// -- 보드 상단 "📅 캘린더" 버튼: 팝오버에서 날짜를 누르면 보드가 그 날짜(viewDate)로 이동한다 --
+
+const boardCalendarBtn = document.getElementById("board-calendar-btn");
+const boardCalendarPopover = document.getElementById("board-calendar-popover");
+const boardCalendarLabelEl = document.getElementById("board-calendar-label");
+const boardCalendarWeekdaysEl = document.getElementById("board-calendar-weekdays");
+const boardCalendarGridEl = document.getElementById("board-calendar-grid");
+
+boardCalendarWeekdaysEl.innerHTML = WEEKDAY_LABELS_KO.map((d) => `<div>${d}</div>`).join("");
+
+// 팝오버에 표시 중인 달(월 이동 화살표로 바뀐다) - 열 때마다 viewDate가 속한 달로 초기화한다
+let boardCalendarPickerMonth = new Date();
+
+function renderBoardCalendarPopover() {
+  const year = boardCalendarPickerMonth.getFullYear();
+  const month = boardCalendarPickerMonth.getMonth();
+  boardCalendarLabelEl.textContent = `${year}년 ${month + 1}월`;
+
+  const gridStart = startOfWeek(new Date(year, month, 1));
+  const today = new Date();
+  const list = visibleSchedules();
+
+  boardCalendarGridEl.innerHTML = "";
+  for (let i = 0; i < 42; i++) {
+    const cellDate = addDays(gridStart, i);
+    const cell = document.createElement("div");
+    cell.className = "cal-mini-cell";
+
+    if (cellDate.getMonth() !== month) {
+      cell.classList.add("other-month");
+    } else {
+      cell.textContent = String(cellDate.getDate());
+      if (isSameDay(cellDate, today)) cell.classList.add("is-today");
+      if (isSameDay(cellDate, viewDate)) cell.classList.add("is-selected");
+      const dayStart = startOfDay(cellDate);
+      if (schedulesOverlappingRange(list, dayStart, addDays(dayStart, 1)).length > 0) cell.classList.add("has-events");
+      cell.addEventListener("click", () => {
+        viewDate = cellDate;
+        boardCalendarPopover.classList.remove("show");
+        // 다른 뷰(일/주/월/년)에서 열었더라도 "보드 화면이 해당 날짜로" 가야 하므로 board로 전환한다
+        if (viewMode !== "board") switchView("board");
+        else refreshVisibleView();
+      });
+    }
+    boardCalendarGridEl.appendChild(cell);
+  }
+}
+
+boardCalendarBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const opening = !boardCalendarPopover.classList.contains("show");
+  if (opening) {
+    boardCalendarPickerMonth = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+    renderBoardCalendarPopover();
+  }
+  boardCalendarPopover.classList.toggle("show");
+});
+
+document.getElementById("board-calendar-prev").addEventListener("click", (e) => {
+  e.stopPropagation();
+  boardCalendarPickerMonth = addMonths(boardCalendarPickerMonth, -1);
+  renderBoardCalendarPopover();
+});
+
+document.getElementById("board-calendar-next").addEventListener("click", (e) => {
+  e.stopPropagation();
+  boardCalendarPickerMonth = addMonths(boardCalendarPickerMonth, 1);
+  renderBoardCalendarPopover();
+});
+
+document.addEventListener("click", (e) => {
+  if (!boardCalendarPopover.contains(e.target) && e.target !== boardCalendarBtn) {
+    boardCalendarPopover.classList.remove("show");
+  }
+});
+
 viewSwitcherEl.querySelectorAll(".view-tab").forEach((btn) => {
   btn.addEventListener("click", () => switchView(btn.dataset.view));
 });
@@ -3234,6 +3406,7 @@ document.addEventListener("keydown", (e) => {
   if (mandalartPreviewModalOverlay.classList.contains("show")) closeMandalartPreviewModal();
   if (clockFilterPopover.classList.contains("show")) clockFilterPopover.classList.remove("show");
   if (radarFilterPopover.classList.contains("show")) radarFilterPopover.classList.remove("show");
+  if (demoAuthModalOverlay.classList.contains("show")) closeDemoAuthModal();
 });
 
 // ---------- 카테고리 추가 ----------
@@ -3646,6 +3819,7 @@ function scheduleStreamReconnect() {
 
 (async function init() {
   if (!requireAuth()) return;
+  if (API.isDemoMode()) initDemoChrome();
   renderUserChip();
   renderToday();
   loadMandalartWidgetPreview();

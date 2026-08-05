@@ -8,9 +8,12 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class ViewController {
 
+    // 루트는 더 이상 로그인 화면이 아니다 - dashboard.html이 토큰 유무에 따라 실제 대시보드/데모
+    // 화면을 알아서 갈라 그리므로(js/dashboard.js requireAuth 참고), 로그인 여부와 무관하게 항상
+    // 대시보드 셸로 보낸다. 로그인 화면 자체는 여전히 /login 에서 볼 수 있다
     @GetMapping("/")
     public String index() {
-        return "forward:/index.html";
+        return "forward:/dashboard.html";
     }
 
     @GetMapping("/login")
