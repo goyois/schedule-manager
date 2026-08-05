@@ -43,7 +43,7 @@
       startAt,
       endAt,
       status,
-      username: "데모 사용자",
+      username: "사용자",
       categoryName,
       updatedAt: startAt,
       _categoryId: CATEGORY_ID_BY_NAME[categoryName], // DTO엔 없는 필드 - 아래 stripInternal()이 응답 직전에 걷어낸다
@@ -86,8 +86,8 @@
 
   const USER = {
     id: 90001,
-    username: "데모 사용자",
-    email: "demo@example.com",
+    username: "사용자",
+    email: "user@example.com",
     userType: "USER",
     autoStatusMode: true,
     aiAutoRegisterEnabled: true,

@@ -263,10 +263,10 @@ demoAuthModalOverlay.addEventListener("click", (e) => {
 });
 document.getElementById("close-demo-auth-modal-btn").addEventListener("click", closeDemoAuthModal);
 
-// 데모 모드 전용 화면 요소를 켠다: 안내 배너, 헤더의 로그아웃 버튼을 로그인/회원가입 버튼으로 교체,
-// 저장/수정/삭제 등을 시도하면 뜨는 안내 모달을 api.js에 등록한다
+// 데모 모드 전용 화면 요소를 켠다. "지금 보시는 건 데모예요" 식의 안내 문구는 일부러 두지 않는다 -
+// 로그아웃 버튼을 로그인/회원가입 버튼으로 바꾸는 것과, 저장/수정/삭제 등을 실제로 시도할 때만 뜨는
+// 안내 모달(api.js에 등록)만 있으면 충분하다
 function initDemoChrome() {
-  document.getElementById("demo-banner").classList.add("show");
   document.getElementById("logout-btn").style.display = "none";
   document.getElementById("demo-login-btn").style.display = "";
   document.getElementById("demo-signup-btn").style.display = "";
@@ -292,15 +292,10 @@ function initDemoChrome() {
   });
 }
 
+// 데모 모드에서도 "데모 체험 중" 같은 안내 문구는 따로 보여주지 않는다 - 로그인한 사용자가 없을 때의
+// 원래 기본값("사용자"/"-")을 그대로 쓴다
 function renderUserChip() {
   const user = API.getCurrentUser();
-  // 데모 모드에서는 로그인한 사용자가 없으므로, "사용자"/"-" 기본값 대신 데모 상태를 알려준다
-  if (API.isDemoMode()) {
-    document.getElementById("user-avatar").textContent = "🎬";
-    document.getElementById("user-name").textContent = "데모 체험 중";
-    document.getElementById("user-email").textContent = "지금은 둘러보는 중이에요";
-    return;
-  }
   const email = (user && user.email) || "-";
   const initial = email !== "-" ? email[0].toUpperCase() : "?";
   document.getElementById("user-avatar").textContent = initial;
